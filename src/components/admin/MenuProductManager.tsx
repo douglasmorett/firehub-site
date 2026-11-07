@@ -1037,6 +1037,56 @@ export default function MenuProductManager({
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState("TODAS");
 
+  // ── CHIPS DE CANAL (como no iFood) ──────────────────────────────────────
+  // Com um canal escolhido a lista continua inteira, mas o produto desligado
+  // naquele canal fica apagado e ganha o botão "Pausar/Ativar no <canal>".
+  type CanalChip = "todos" | "delivery" | "totem" | "mesa" | "balcao";
+  const CANAIS_CHIP: { id: CanalChip; rotulo: string; campo: string | null }[] = [
+    { id: "todos", rotulo: "Todos os canais", campo: null },
+    { id: "delivery", rotulo: "🛵 Delivery", campo: "activeDelivery" },
+    { id: "totem", rotulo: "🖥 Totem", campo: "activeTotem" },
+    { id: "mesa", rotulo: "🍽 Mesa", campo: "activeGarcom" },
+    { id: "balcao", rotulo: "🧾 Balcão", campo: "activePDV" },
+  ];
+  const [canalChip, setCanalChip] = useState<CanalChip>("todos");
+  useEffect(() => {
+    try {
+      const salvo = localStorage.getItem("cardapio.canal");
+      if (salvo && CANAIS_CHIP.some(c => c.id === salvo)) setCanalChip(salvo as CanalChip);
+    } catch {}
+  }, []);
+  const escolherCanalChip = (c: CanalChip) => {
+    setCanalChip(c);
+    try { localStorage.setItem("cardapio.canal", c); } catch {}
+  };
+  const canalAtual = CANAIS_CHIP.find(c => c.id === canalChip)!;
+  // `products` vem por prop: até o router.refresh() voltar, o valor recém
+  // salvo fica aqui para a tela responder na hora (chave `${id}:${campo}`).
+  const [canalNaTela, setCanalNaTela] = useState<Record<string, boolean>>({});
+  const ligadoNoCanal = (p: any) => {
+    if (!canalAtual.campo) return true;
+    const local = canalNaTela[`${p.id}:${canalAtual.campo}`];
+    return local !== undefined ? local : (p[canalAtual.campo] ?? true);
+  };
+  const alternarNoCanal = async (p: any) => {
+    const campo = canalAtual.campo;
+    if (!campo) return;
+    const novo = !ligadoNoCanal(p);
+    const nome = canalAtual.rotulo.replace(/^\S+\s/, "");
+    setCanalNaTela(antes => ({ ...antes, [`${p.id}:${campo}`]: novo }));
+    const r = await fetch("/api/admin/menu-products", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: p.id, [campo]: novo }),
+    }).catch(() => null);
+    if (!r?.ok) {
+      setCanalNaTela(antes => { const { [`${p.id}:${campo}`]: _d, ...resto } = antes; return resto; });
+      showToast(`⚠️ Não deu para ${novo ? "ativar" : "pausar"} “${p.name}” no ${nome}. Tente de novo.`, "#C92E09");
+      return;
+    }
+    showToast(novo ? `▶️ Ativado no ${nome}` : `⏸️ Pausado no ${nome}`, novo ? "#5EEAD4" : "#FCD34D");
+    router.refresh();
+  };
+
   // === FICHA TÉCNICA (Recipe) State ===
   const [showRecipeModal, setShowRecipeModal] = useState(false);
   const [recipeProductId, setRecipeProductId] = useState<string | null>(null);
@@ -2126,6 +2176,18 @@ export default function MenuProductManager({
               ))}
           </select>
         </div>
+      </div>
+
+      {/* CHIPS DE CANAL: a lista fica inteira; o item desligado no canal fica apagado e ganha o botão de pausar/ativar ali */}
+      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap", marginBottom: "1rem" }}>
+        {CANAIS_CHIP.map(c => (
+          <button key={c.id} type="button" onClick={() => escolherCanalChip(c.id)}
+            className={`btn ${canalChip === c.id ? "btn-primary" : "btn-outline"}`}
+            style={{ padding: "5px 12px", fontSize: "0.8rem", fontWeight: 700, borderRadius: "999px" }}
+            title={c.campo ? `Ver quem está fora do ${c.rotulo.replace(/^\S+\s/, "")} e pausar/ativar ali mesmo` : "Lista normal, sem filtro de canal"}>
+            {c.rotulo}
+          </button>
+        ))}
       </div>
 
       {/* NOVA CATEGORIA, pelo botão do topo */}
@@ -3939,7 +4001,7 @@ export default function MenuProductManager({
                                 background: p.id === copiaRecemCriada ? "#F0FDFA" : p.active ? "#FFFFFF" : "#F8FAFC",
                                 borderRadius: "12px",
                                 border: p.id === copiaRecemCriada ? "2px solid #0F766E" : !p.active ? "1.5px dashed #C92E09" : "1px solid #E2E8F0",
-                                opacity: p.active ? 1 : 0.65,
+                                opacity: !ligadoNoCanal(p) ? 0.45 : p.active ? 1 : 0.65,
                                 gap: "12px",
                                 flexWrap: "wrap",
                                 transition: "all 0.15s ease",
@@ -3957,6 +4019,11 @@ export default function MenuProductManager({
                                 <div style={{ minWidth: 0, flex: 1 }}>
                                   <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
                                     <h4 style={{ margin: 0, fontSize: "0.92rem", fontWeight: 800, color: "#0F172A" }}>{p.name}</h4>
+                                    {canalAtual.campo && !ligadoNoCanal(p) && (
+                                      <span style={{ fontSize: "0.64rem", fontWeight: 800, padding: "2px 7px", borderRadius: "6px", background: "#FEF2F2", color: "#C92E09", border: "1px solid #FECACA" }}>
+                                        fora do {canalAtual.rotulo.replace(/^\S+\s/, "")}
+                                      </span>
+                                    )}
                                     {p.isCombo ? (
                                       <span style={{ fontSize: "0.68rem", fontWeight: 800, padding: "2px 7px", borderRadius: "6px", background: "#FAF6F2", color: "#1C1917", border: "1.5px solid #E7DDD3", display: "inline-flex", alignItems: "center", gap: "3px" }}>
                                         📦 COMBO {(() => {
@@ -4099,6 +4166,18 @@ export default function MenuProductManager({
                                 >
                                   <ClipboardList size={12} style={{ marginRight: 2 }} /> {productsWithRecipe.has(p.id) ? "Ficha" : "Ficha"}
                                 </button>
+
+                                {canalAtual.campo && (
+                                  <button
+                                    type="button"
+                                    onClick={() => alternarNoCanal(p)}
+                                    className="btn btn-outline"
+                                    style={{ padding: "4px 8px", fontSize: "0.72rem", borderRadius: "8px", fontWeight: 700, borderColor: ligadoNoCanal(p) ? "#CBD5E1" : "#0F766E", color: ligadoNoCanal(p) ? "#64748B" : "#0F766E", background: ligadoNoCanal(p) ? "#FFF" : "#F0FDFA" }}
+                                    title={`${ligadoNoCanal(p) ? "Pausar" : "Ativar"} só no ${canalAtual.rotulo.replace(/^\S+\s/, "")}; os outros canais não mudam`}
+                                  >
+                                    {ligadoNoCanal(p) ? "Pausar" : "Ativar"} no {canalAtual.rotulo.replace(/^\S+\s/, "")}
+                                  </button>
+                                )}
 
                                 <button
                                   onClick={() => handleToggle(p.id, p.active)}
