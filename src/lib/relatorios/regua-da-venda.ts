@@ -206,6 +206,14 @@ export type AtendimentosDaVenda = {
    * `abre.has(id)` onde o pedido cai.
    */
   abre: Set<string>;
+  /**
+   * De cada pedido que entra na venda, o id do pedido que ABRE a venda dele
+   * (a mesa inteira aponta para o primeiro lançamento; o acréscimo, para o
+   * pai). É o que deixa um relatório dizer algo da VENDA a partir de qualquer
+   * um dos seus pedidos — "esta venda teve combo" quando o combo veio na
+   * segunda rodada da mesa (lib/relatorios/faturamento-combos.ts).
+   */
+  vendaDe: Map<string, string>;
 };
 
 const instante = (d: Date | string) => (d instanceof Date ? d.getTime() : new Date(d).getTime());
@@ -248,12 +256,15 @@ export function atendimentosDaVenda(pedidos: PedidoDaRegua[]): AtendimentosDaVen
     }
   }
   const mesas = [...primeiro.keys()].filter((k) => k.startsWith("s:")).length;
+  const vendaDe = new Map<string, string>();
+  for (const p of validos) vendaDe.set(p.id, primeiro.get(chaveDe(p))!.id);
   return {
     vendas: primeiro.size,
     mesas,
     lancamentos: validos.length,
     lancamentosDeMesa,
     abre: new Set([...primeiro.values()].map((p) => p.id)),
+    vendaDe,
   };
 }
 
