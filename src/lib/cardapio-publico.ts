@@ -123,7 +123,7 @@ export async function propsDoCardapio(franchisee: any, canal: CanalDoCardapio) {
       // NOT em vez de `apenasEmCombo: false` para cobrir NULL de linha antiga.
       where: canal === "salao"
         ? { active: true, activeGarcom: true, franchiseeId: franchisee.id, AND: [{ NOT: { apenasEmCombo: true } }, SEM_PRODUTO_DE_INTEGRACAO] }
-        : { active: true, activeDelivery: true, franchiseeId: franchisee.id, NOT: { apenasEmCombo: true } },
+        : { active: true, activeDelivery: true, franchiseeId: franchisee.id, AND: [{ NOT: { apenasEmCombo: true } }, SEM_PRODUTO_DE_INTEGRACAO] },
       orderBy: ordem,
       // SELECT explícito: com include, TODAS as colunas do produto iam
       // serializadas para o HTML público — inclusive `cost` (o CUSTO de
@@ -142,6 +142,9 @@ export async function propsDoCardapio(franchisee: any, canal: CanalDoCardapio) {
         promoPrice: true,
         imageUrl: true,
         category: true,
+        // Espelho de integração nunca vai para o cliente; o filtro em memória
+        // abaixo lê este campo (lib/espelho-de-integracao.ts).
+        origemIntegracao: true,
         isCombo: true,
         comboConfig: true,
         tags: true,
@@ -261,15 +264,12 @@ export async function propsDoCardapio(franchisee: any, canal: CanalDoCardapio) {
   // `active: true`, então a regra do prefixo (que só vale para espelho
   // INATIVO) não tem como condenar cardápio real importado com id
   // `ifood-…` — o caso que já escondeu 43 itens vendáveis uma vez.
-  const semEspelho = (menuProducts as any[]).filter(
-    (p) => !ehProdutoDeIntegracao(p.category, p.id, p.active),
+  // Sem rede de segurança (Douglas, 07/11/2026): loja sem produto próprio
+  // mostra a página vazia, nunca o espelho. O espelho fica oculto de todo
+  // mundo, inclusive do dono da loja (lib/espelho-de-integracao.ts).
+  const menuSemEspelho = (menuProducts as any[]).filter(
+    (p) => !ehProdutoDeIntegracao(p.category, p.id, p.active, p.origemIntegracao),
   );
-  // REDE DE SEGURANÇA: loja que ainda não montou cardápio próprio e vive do
-  // espelho ficaria com a página VAZIA — pior do que mostrar o espelho. A
-  // DUGABURGUER estava exatamente assim (0 produtos próprios, 5 de espelho,
-  // 51 pedidos em 30 dias). Sem cardápio próprio, nada muda para ela; no dia
-  // em que importar o dela, o espelho sai sozinho.
-  const menuSemEspelho = semEspelho.length > 0 ? semEspelho : (menuProducts as any[]);
 
   // Com o AGENDAMENTO ligado (lib/agendamento.ts), o cliente pode montar o
   // pedido de outro dia/horário — a marmita das 10h–14h agendada à noite para

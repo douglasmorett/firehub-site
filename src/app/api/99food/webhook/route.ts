@@ -548,7 +548,7 @@ export async function POST(req: NextRequest) {
         {
           const p = pedido;
 
-          const items = itens99ParaPrisma(
+          const items = await itens99ParaPrisma(
             p.itens,
             franchisee!.id,
             await categoriasPeloNome(franchisee!.id, p.itens.map((i) => i.nome)).catch(() => undefined),

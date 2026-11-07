@@ -3,6 +3,7 @@
  * Lógica centralizada de processamento de eventos Open Delivery (JotaJá).
  * Usada por: webhook, cron-poll e dashboard-poll — elimina triplicação.
  */
+import { camposDoEspelho, ORIGENS } from "@/lib/espelho-de-integracao";
 import { observacaoDoItem } from "@/lib/observacao-do-item";
 import { prisma } from "@/lib/prisma";
 import { lojaBloqueadaPorMensalidade } from "@/lib/loja-bloqueada";
@@ -477,7 +478,7 @@ export async function processJotajaEvent(
                 category: i.category || "Jotajá",
                 // Só pelo nome BASE: combo com refri entre as opções não é bebida.
                 isBeverage: isBeverageName(itemName),
-                active: false,
+                ...camposDoEspelho(ORIGENS.JOTAJA, itemId),
               } as any,
             } as any,
           },
@@ -858,7 +859,7 @@ export async function processJotajaEvent(
                         description: "Pedido recuperado automaticamente",
                         price: total,
                         category: "Jotajá",
-                        active: true,
+                        ...camposDoEspelho(ORIGENS.JOTAJA, orderId),
                       } as any,
                     } as any,
                   },

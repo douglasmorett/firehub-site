@@ -4,6 +4,7 @@
  * Separado de processWabizOrder para ser testado com os exemplos da doc:
  *   npx tsx scripts/teste-traducao-wabiz.ts
  */
+import { camposDoEspelho, ORIGENS } from "@/lib/espelho-de-integracao";
 import { observacaoDasPartes } from "@/lib/observacao-do-item";
 import { dataHoraDaLoja } from "@/lib/fuso";
 import { coordenadasDoParceiro } from "./coordenadas-do-parceiro";
@@ -332,7 +333,7 @@ export function traduzirPedidoWabiz(
               price: precoUnit,
               category: texto(grupo?.groupName) || "Wabiz",
               isBeverage: isBeverageName(nomeComTamanho) || isBeverageName(texto(grupo?.groupName)),
-              active: false,
+              ...camposDoEspelho(ORIGENS.WABIZ, codigo),
             },
           },
         },

@@ -33,6 +33,8 @@ export async function catalogoDoRelatorio(lojaIds: string[]): Promise<CatalogoDo
     where: { franchiseeId: { in: lojaIds } },
     select: {
       id: true, franchiseeId: true, name: true, category: true, price: true, cost: true, active: true,
+      // Carimbo do espelho (lib/espelho-de-integracao.ts): `ehProdutoEspelho` lê.
+      origemIntegracao: true,
       // O que `idsSoDeOpcaoDeCombo` lê para dizer quem é complemento, e o preço
       // da opção em cada grupo (lib/itens-do-relatorio.ts).
       apenasEmCombo: true, priceSalao: true, priceDelivery: true, priceTotem: true,

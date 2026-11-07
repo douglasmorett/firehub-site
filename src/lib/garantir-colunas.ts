@@ -132,7 +132,72 @@ const INSTRUCOES = [
   // 22/10/2026): quem pôs/tirou cada pedido, quando e por quê. Fica FORA do
   // schema.prisma — só SQL cru —, então a ordem coluna→campo nem se aplica.
   `ALTER TABLE "RouteSchedule" ADD COLUMN IF NOT EXISTS "historico" JSONB`,
+  // ESPELHO DE INTEGRAÇÃO com campo (lib/espelho-de-integracao.ts, 07/11/2026):
+  // de que canal o espelho veio, o id dele no parceiro, o produto real ao qual
+  // o lojista o vinculou, e o Código PDV do produto da loja (o número que ele
+  // digita no iFood). Nulos = produto da loja como sempre.
+  `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "origemIntegracao" TEXT`,
+  `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "codigoExterno" TEXT`,
+  `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "codigoPDV" INTEGER`,
+  `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "vinculadoA" TEXT`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "MenuProduct_franchiseeId_codigoPDV_key" ON "MenuProduct"("franchiseeId", "codigoPDV")`,
 ];
+
+/**
+ * Carimba os espelhos que JÁ existem (07/11/2026). Idempotente: só pega linha
+ * com `origemIntegracao` nula.
+ *
+ * Quem é espelho: id com prefixo de integração E (é do 99Food, que só o
+ * pedido cria; OU está em categoria de plataforma; OU é "pedido recuperado";
+ * OU está pausado sem foto, sem descrição e sem pergunta — a cara do espelho).
+ * Produto REAL importado com id `ifood-…` (Pastelaria da Paulista: ativo, com
+ * categoria própria, foto e perguntas) fica de fora, como no filtro antigo.
+ */
+const CARIMBO_DE_ESPELHO = `
+  UPDATE "MenuProduct" p SET "origemIntegracao" = CASE
+      WHEN p.id LIKE 'ifood-%' THEN 'IFOOD'
+      WHEN p.id LIKE '99food_%' THEN '99FOOD'
+      WHEN p.id LIKE 'keeta-%' THEN 'KEETA'
+      WHEN p.id LIKE 'aiqfome-%' THEN 'AIQFOME'
+      WHEN p.id LIKE 'anotaai-%' THEN 'ANOTAAI'
+      WHEN p.id LIKE 'cardapioweb-%' THEN 'CARDAPIOWEB'
+      WHEN p.id LIKE 'wabiz-%' THEN 'WABIZ'
+      WHEN p.id LIKE 'brendi-%' THEN 'BRENDI'
+      WHEN p.id LIKE 'jotaja-%' THEN 'JOTAJA'
+      ELSE 'RESTAURADO' END
+  WHERE p."origemIntegracao" IS NULL
+    AND (p.id LIKE 'ifood-%' OR p.id LIKE '99food_%' OR p.id LIKE 'keeta-%' OR p.id LIKE 'aiqfome-%'
+      OR p.id LIKE 'anotaai-%' OR p.id LIKE 'cardapioweb-%' OR p.id LIKE 'wabiz-%' OR p.id LIKE 'brendi-%'
+      OR p.id LIKE 'jotaja-%' OR p.id LIKE 'restored-prod-%')
+    AND (
+      p.id LIKE '99food_%'
+      OR UPPER(TRIM(COALESCE(p."category", ''))) IN ('IFOOD','JOTAJA','JOTAJÁ','ONLINE','99FOOD','KEETA','CARDÁPIOWEB','CARDAPIOWEB','AIQFOME','ANOTA AI','ANOTAAI','BRENDI','WABIZ','PRESENCIAL')
+      OR p.id LIKE '%-recovered-%' OR p.id LIKE 'jotaja-item-%' OR p.id LIKE 'brendi-manual-%'
+      OR (p."active" = false AND COALESCE(p."imageUrl", '') = '' AND TRIM(COALESCE(p."description", '')) = ''
+          AND NOT EXISTS (SELECT 1 FROM "ComboGroup" g WHERE g."menuProductId" = p.id))
+    )
+`;
+
+/** Espelho não fica ativo em canal nenhum (o 99Food nascia ligado). */
+const PAUSA_DO_ESPELHO = `
+  UPDATE "MenuProduct" SET "active" = false, "activePDV" = false, "activeDelivery" = false, "activeTotem" = false, "activeGarcom" = false
+  WHERE "origemIntegracao" IS NOT NULL
+    AND ("active" = true OR "activePDV" = true OR "activeDelivery" = true OR "activeTotem" = true OR "activeGarcom" = true)
+`;
+
+/**
+ * Código PDV inicial: 1, 2, 3… na ordem de cadastro, só para a loja que ainda
+ * não tem nenhum (quem já numerou segue com o `proximoCodigoPDV` da criação).
+ */
+const NUMERACAO_PDV = `
+  UPDATE "MenuProduct" m SET "codigoPDV" = s.n
+  FROM (
+    SELECT id, ROW_NUMBER() OVER (PARTITION BY "franchiseeId" ORDER BY "createdAt", id) AS n
+    FROM "MenuProduct" WHERE "origemIntegracao" IS NULL AND "franchiseeId" IS NOT NULL
+  ) s
+  WHERE m.id = s.id AND m."codigoPDV" IS NULL
+    AND NOT EXISTS (SELECT 1 FROM "MenuProduct" y WHERE y."franchiseeId" = m."franchiseeId" AND y."codigoPDV" IS NOT NULL)
+`;
 
 /** `tabela.coluna` — a conferência é por par, porque agora são duas tabelas. */
 const ESPERADAS = [
@@ -170,6 +235,10 @@ const ESPERADAS = [
   "Motoboy.naLojaDesde",
   "CustomerOrder.semRotaAutomaticaEm",
   "RouteSchedule.historico",
+  "MenuProduct.origemIntegracao",
+  "MenuProduct.codigoExterno",
+  "MenuProduct.codigoPDV",
+  "MenuProduct.vinculadoA",
 ];
 
 /**
@@ -237,6 +306,15 @@ export async function garantirColunasDePreco(): Promise<void> {
         console.log(`[Boot] ${carimbados} complemento(s) antigo(s) carimbados com apenasEmCombo.`);
       }
 
+      // Espelho de integração ganha campo, sai de todo canal e o produto da
+      // loja ganha Código PDV — nesta ordem, e só depois das colunas.
+      const espelhos = await prisma.$executeRawUnsafe(CARIMBO_DE_ESPELHO);
+      if (Number(espelhos) > 0) console.log(`[Boot] ${espelhos} espelho(s) de integração carimbados com origemIntegracao.`);
+      const pausados = await prisma.$executeRawUnsafe(PAUSA_DO_ESPELHO);
+      if (Number(pausados) > 0) console.log(`[Boot] ${pausados} espelho(s) de integração pausados.`);
+      const numerados = await prisma.$executeRawUnsafe(NUMERACAO_PDV);
+      if (Number(numerados) > 0) console.log(`[Boot] ${numerados} produto(s) receberam Código PDV.`);
+
       // A lista de tabelas/colunas daqui tem que acompanhar ESPERADAS. Quando
       // `CustomerOrder.trilhaPremio` entrou lá e não aqui, a consulta nunca
       // olhava para a tabela dela: o boot gritava "coluna ausente mesmo após o
@@ -256,7 +334,8 @@ export async function garantirColunasDePreco(): Promise<void> {
             'agendamentoConfig', 'agendado',
             'painelDeSenhas', 'numeracaoAleatoria',
             'origem', 'chamadaEm', 'chamadaMotoboyId', 'naLojaDesde', 'semRotaAutomaticaEm',
-            'historico'
+            'historico',
+            'origemIntegracao', 'codigoExterno', 'codigoPDV', 'vinculadoA'
           )
       `;
       const existentes = new Set(rows.map((r) => `${r.tabela}.${r.coluna}`));

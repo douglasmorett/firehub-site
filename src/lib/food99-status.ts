@@ -584,7 +584,7 @@ export async function aplicarPedidoAlterado99(
         // veio: um `undefined` aqui apagaria o código que já estava certo.
         ...(p.codigoDeColeta ? { openDeliveryPickupCode: p.codigoDeColeta } : {}),
         notes,
-        items: { create: itens99ParaPrisma(p.itens, pedido.franchiseeId) },
+        items: { create: await itens99ParaPrisma(p.itens, pedido.franchiseeId) },
         ...(corte?.novo
           ? {
               cancelamentoParcial: corte.registros,

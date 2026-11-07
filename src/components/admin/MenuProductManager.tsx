@@ -7,6 +7,7 @@ import { pizzasJaMontadas } from "@/lib/pizza-por-tamanho";
 import { precoMinimoDoProduto } from "@/lib/preco-combo";
 import CadastroDePizza, { EscolhaDoNovoItem, type PizzaJaMontada } from "@/components/admin/CadastroDePizza";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Plus, Trash2, Edit3, X, Image as ImageIcon, Pause, Play, Package, Monitor, Truck, Tablet, UtensilsCrossed, Search, ClipboardList, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, ChevronUp, ChevronsUp, ChevronsDown, Eye, Layers, Check, Sparkles, Copy } from "lucide-react";
 
 const CHANNELS = [
@@ -2057,6 +2058,9 @@ export default function MenuProductManager({
           >
             <Plus size={16} style={{ marginRight: "4px" }} /> Novo Combo
           </button>
+          {/* Código PDV (número do item para o iFood) e vínculo dos itens das integrações: lib/espelho-de-integracao.ts */}
+          <Link href="/store/cardapio/pdv" style={{ fontSize: "0.8rem", color: "#64748B", fontWeight: 600, textDecoration: "none" }}>🔢 Código PDV</Link>
+          <Link href="/store/cardapio/integracoes" style={{ fontSize: "0.8rem", color: "#64748B", fontWeight: 600, textDecoration: "none" }}>🔗 Itens das integrações</Link>
         </div>
       </div>
 

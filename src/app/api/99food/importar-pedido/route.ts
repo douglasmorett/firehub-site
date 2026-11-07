@@ -125,7 +125,7 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const items = itens99ParaPrisma(
+  const items = await itens99ParaPrisma(
     p.itens,
     lojaId,
     await categoriasPeloNome(lojaId, p.itens.map((i) => i.nome)).catch(() => undefined),

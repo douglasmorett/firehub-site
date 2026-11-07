@@ -136,7 +136,15 @@ const entrega: PedidoOD = {
     price: 25,
     category: "Keeta",
     isBeverage: false,
+    // Espelho com campo (lib/espelho-de-integracao.ts): origem, código do
+    // item no parceiro, pausado e fora dos quatro canais.
+    origemIntegracao: "KEETA",
+    codigoExterno: "it-burger",
     active: false,
+    activePDV: false,
+    activeDelivery: false,
+    activeTotem: false,
+    activeGarcom: false,
   });
   confere("refrigerante é bebida", t.items[1].menuProduct.connectOrCreate.create.isBeverage, true);
   confere("observação e código do telefone vão para as notas", d.notes.includes("📝 OBS: Interfone quebrado") && d.notes.includes("Código do telefone: 12345678"), true);

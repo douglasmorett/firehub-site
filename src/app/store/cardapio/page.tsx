@@ -3,6 +3,7 @@ import { orderByCardapio } from "@/lib/menu-order";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { SEM_ESPELHO } from "@/lib/espelho-de-integracao";
 import MenuProductManager from "@/components/admin/MenuProductManager";
 import CopiamosSeuCardapio from "@/components/customer/CopiamosSeuCardapio";
 import ConviteDoMultimarcas from "@/components/customer/ConviteDoMultimarcas";
@@ -49,7 +50,8 @@ export default async function StoreCardapioPage() {
   try {
     [products, availableItems, categories, nomeDaLoja] = await Promise.all([
       prisma.menuProduct.findMany({
-        where: franchiseeFilter,
+        // espelho de integração fica fora (lib/espelho-de-integracao.ts)
+        where: { ...franchiseeFilter, ...SEM_ESPELHO },
         orderBy: await orderByCardapio(),
         include: {
           comboGroups: {
@@ -66,7 +68,7 @@ export default async function StoreCardapioPage() {
         },
       }),
       prisma.menuProduct.findMany({
-        where: { ...franchiseeFilter, isCombo: false },
+        where: { ...franchiseeFilter, ...SEM_ESPELHO, isCombo: false },
         select: { id: true, name: true, active: true },
         orderBy: { name: "asc" },
       }),

@@ -111,7 +111,8 @@ export async function POST(req: NextRequest) {
 
   // Buscar produtos do cardápio e ordenar
   const allProducts = await (prisma as any).menuProduct.findMany({
-    where: { franchiseeId, active: true },
+    // espelho de integração fica fora (lib/espelho-de-integracao.ts)
+    where: { franchiseeId, active: true, origemIntegracao: null },
     select: { name: true, price: true, category: true, imageUrl: true },
   });
 

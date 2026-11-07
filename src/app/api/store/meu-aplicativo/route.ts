@@ -47,7 +47,8 @@ export async function GET(req: NextRequest) {
     prisma.user.findUnique({ where: { id: s.franchiseeId }, select: { storeName: true, name: true, slug: true, storeLogo: true } }),
     painelDoApp(app, periodo),
     prisma.menuProduct.findMany({
-      where: { franchiseeId: s.franchiseeId, active: true },
+      // espelho de integração fica fora (lib/espelho-de-integracao.ts)
+      where: { franchiseeId: s.franchiseeId, active: true, origemIntegracao: null },
       select: { id: true, name: true, price: true, imageUrl: true, category: true },
       orderBy: { name: "asc" },
       take: 400,

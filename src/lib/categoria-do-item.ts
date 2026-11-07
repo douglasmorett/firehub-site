@@ -170,11 +170,13 @@ export type MapaDeCategorias = {
  * prefixo denuncia esse.
  */
 export function montarMapa(
-  produtos: { id?: string | null; name?: string | null; category?: string | null; active?: boolean | null }[],
+  produtos: { id?: string | null; name?: string | null; category?: string | null; active?: boolean | null; origemIntegracao?: string | null }[],
 ): MapaDeCategorias {
   const porNome = new Map<string, string>();
   const categorias = new Set<string>();
   for (const p of produtos) {
+    // Espelho carimbado (lib/espelho-de-integracao.ts) fica fora sem adivinhar.
+    if (p.origemIntegracao) continue;
     const id = String(p.id ?? "");
     // O prefixo condena o espelho que NINGUÉM ADOTOU — `active` false. Produto
     // ativo com id de espelho não é espelho: é o cardápio da loja, importado
@@ -201,7 +203,7 @@ export type ItemComCategoria = {
   comboSelections?: unknown;
   // `active` é o que separa o espelho que ninguém adotou do cardápio que
   // nasceu de um espelho (ver ehItemDeEspelho).
-  menuProduct?: { id?: string | null; active?: boolean | null; name?: string | null; category?: string | null } | null;
+  menuProduct?: { id?: string | null; active?: boolean | null; name?: string | null; category?: string | null; origemIntegracao?: string | null } | null;
 };
 
 /**
@@ -221,6 +223,8 @@ function ehCategoriaDaLoja(categoria: string, mapa: MapaDeCategorias): boolean {
 }
 
 function ehItemDeEspelho(item: ItemComCategoria): boolean {
+  // Espelho carimbado (lib/espelho-de-integracao.ts) não precisa de prova.
+  if (item?.menuProduct?.origemIntegracao) return true;
   const id = String(item?.menuProduct?.id ?? "");
   // A MESMA ressalva de `montarMapa` e de lib/cardapio-interno.ts: o id diz
   // como o registro NASCEU, não o que ele é hoje, e o cardápio importado
@@ -693,7 +697,7 @@ async function mapaDaLoja(lojaId: string): Promise<MapaDeCategorias> {
   if (guardado && agora - guardado.em < VALIDADE_DO_MAPA_MS) return guardado.mapa;
   const produtos = await prisma.menuProduct.findMany({
     where: { franchiseeId: lojaId },
-    select: { id: true, name: true, category: true, active: true },
+    select: { id: true, name: true, category: true, active: true, origemIntegracao: true },
   });
   const mapa = montarMapa(produtos);
   mapasPorLoja.set(lojaId, { em: agora, mapa });

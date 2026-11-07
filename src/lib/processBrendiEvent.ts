@@ -19,6 +19,7 @@
  *      Foi esse modo que, no 99Food, pegou o parser lendo campo errado com
  *      total zero ANTES de entrar em produção.
  */
+import { camposDoEspelho, ORIGENS } from "@/lib/espelho-de-integracao";
 import { observacaoDoItem } from "@/lib/observacao-do-item";
 import { prisma } from "@/lib/prisma";
 import { lojaBloqueadaPorMensalidade } from "@/lib/loja-bloqueada";
@@ -845,7 +846,7 @@ export async function processBrendiEvent(
                 // bebida — marcado assim, o roteamento mandava o combo inteiro
                 // para a impressora de bebidas e o painel o tratava como refri.
                 isBeverage: isBeverageName(itemName),
-                active: false,
+                ...camposDoEspelho(ORIGENS.BRENDI, itemId),
               } as any,
             } as any,
           },
@@ -1375,7 +1376,7 @@ export async function processBrendiEvent(
                         description: "Pedido recuperado automaticamente",
                         price: total,
                         category: "Brendi",
-                        active: true,
+                        ...camposDoEspelho(ORIGENS.BRENDI, orderId),
                       } as any,
                     } as any,
                   },

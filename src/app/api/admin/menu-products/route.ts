@@ -17,6 +17,7 @@ import { refazerMeiasDaLoja } from "@/lib/meio-a-meio-no-banco";
 import { PREFIXO_DA_MEIA } from "@/lib/meio-a-meio";
 import { esquecerPausaPeloEstoque } from "@/lib/pausa-pelo-estoque-no-banco";
 import { avisarKeetaDaPausa, avisarKeetaDoCardapio } from "@/lib/keeta/cardapio";
+import { proximoCodigoPDV } from "@/lib/espelho-de-integracao";
 
 // ─── ESCOPO POR LOJA (isolamento multi-tenant) ──────────────────────────────
 // O que era explorável antes desta blindagem: POST/PUT/DELETE só exigiam
@@ -471,9 +472,11 @@ function saneiaHorario(dados: any): string | null {
  * `id` e `franchiseeId` também saem: quem decide a loja é a sessão.
  */
 const COLUNAS_DO_PRODUTO = new Set<string>(Object.values(Prisma.MenuProductScalarFieldEnum));
+// Carimbo e vínculo do espelho (lib/espelho-de-integracao.ts) nunca vêm do corpo.
+const SO_O_SERVIDOR_GRAVA = new Set(["id", "franchiseeId", "origemIntegracao", "codigoExterno", "vinculadoA"]);
 function soColunasDoProduto(dados: any) {
   for (const k of Object.keys(dados)) {
-    if (!COLUNAS_DO_PRODUTO.has(k) || k === "id" || k === "franchiseeId") delete dados[k];
+    if (!COLUNAS_DO_PRODUTO.has(k) || SO_O_SERVIDOR_GRAVA.has(k)) delete dados[k];
   }
 }
 
@@ -545,7 +548,13 @@ export async function POST(req: NextRequest) {
 
   const { recipeItems: fichaDoOriginal, fiscalBreakdown, comboConfig, ...copiaDoOriginal } = original || { recipeItems: [] };
 
-  const product = await prisma.menuProduct.create({
+  // Código PDV: o número que o lojista digita no marketplace para o pedido
+  // entrar ligado ao produto (lib/espelho-de-integracao.ts). Só quando o
+  // corpo não trouxe um; se dois cadastros ao mesmo tempo pegarem o mesmo
+  // número (P2002), tenta uma vez com o próximo.
+  const semCodigoPDV = rest.codigoPDV == null;
+  if (semCodigoPDV) rest.codigoPDV = await proximoCodigoPDV(franchiseeId);
+  const criarProduto = () => prisma.menuProduct.create({
     data: {
       ...copiaDoOriginal,
       // Json nulo não entra como `null` no Prisma; ausente = nulo no banco.
@@ -561,6 +570,14 @@ export async function POST(req: NextRequest) {
       } : undefined
     }
   });
+  let product: Awaited<ReturnType<typeof criarProduto>>;
+  try {
+    product = await criarProduto();
+  } catch (e: any) {
+    if (!semCodigoPDV || e?.code !== "P2002") throw e;
+    rest.codigoPDV = await proximoCodigoPDV(franchiseeId);
+    product = await criarProduto();
+  }
 
   // A cópia entra LOGO ABAIXO do original, como o lojista espera ver. Repetir
   // o sortOrder não basta: no empate vale o nome, e "Combo Família" cairia em

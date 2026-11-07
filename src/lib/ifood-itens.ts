@@ -47,6 +47,7 @@
 
 import { observacaoDoItem } from "@/lib/observacao-do-item";
 import { corrigirNomeDoEspelho } from "./espelho-do-parceiro";
+import { camposDoEspelho, ORIGENS, produtoRealDoItem } from "./espelho-de-integracao";
 
 /** Uma opção/complemento do item, como a comanda e o KDS leem. */
 type OpcaoDoItem = { name: string; quantity: number; price: number };
@@ -186,7 +187,15 @@ export async function montarItensDoPedidoIfood(
     const precoUnitario = getIfoodItemUnitPrice(i);
     const opcoes = opcoesDoItem(i);
 
-    await corrigirNomeDoEspelho(produtoId, nome, franchiseeId, "iFood");
+    // Produto REAL da loja primeiro: pelo Código PDV que o lojista digitou no
+    // iFood (`externalCode`) ou pelo vínculo manual do espelho. Achou, nada de
+    // espelho (lib/espelho-de-integracao.ts).
+    const produtoReal = await produtoRealDoItem({
+      franchiseeId,
+      codigoExterno: i?.externalCode ?? i?.code ?? null,
+      idDoEspelho: produtoId,
+    });
+    if (!produtoReal) await corrigirNomeDoEspelho(produtoId, nome, franchiseeId, "iFood");
 
     itens.push({
       price: precoUnitario,
@@ -210,7 +219,7 @@ export async function montarItensDoPedidoIfood(
       // não grava é pedido perdido. O que mudou é que o nome não depende mais
       // deste bloco: quando o produto já existe, quem cuida do nome é o
       // `corrigirNomeDoEspelho` acima.
-      menuProduct: {
+      menuProduct: produtoReal ? { connect: { id: produtoReal } } : {
         connectOrCreate: {
           where: { id: produtoId },
           // ⚠️ REGRA MÁXIMA: pedido de integração NÃO POLUI O CARDÁPIO.
@@ -233,11 +242,7 @@ export async function montarItensDoPedidoIfood(
             description: "",
             price: precoUnitario,
             category: "iFood",
-            active: false,
-            activePDV: false,
-            activeDelivery: false,
-            activeTotem: false,
-            activeGarcom: false,
+            ...camposDoEspelho(ORIGENS.IFOOD, idBruto),
           },
         },
       },

@@ -19,6 +19,7 @@
 
 /** Centavos (inteiro) → reais. É assim que todo valor do 99Food chega. */
 
+import { camposDoEspelho, ORIGENS, produtoRealDoItem } from "@/lib/espelho-de-integracao";
 import { repartirDesconto99 } from "@/lib/desconto-99food";
 export function centavosParaReais(v: unknown): number {
   const n = typeof v === "number" ? v : parseInt(String(v ?? 0), 10);
@@ -611,7 +612,7 @@ export function traduzirPedido99Food(order: any): PedidoTraduzido {
  * cardápio. Um id fixo casaria com um produto real de outra loja; este não sai
  * do par (loja, nome).
  */
-export function itens99ParaPrisma(
+export async function itens99ParaPrisma(
   itens: ItemTraduzido[],
   lojaId: string,
   /**
@@ -621,7 +622,12 @@ export function itens99ParaPrisma(
    */
   categorias?: Map<string, string>,
 ) {
-  return itens.map((i) => ({
+  // O 99Food não manda código do item, então o produto real só vem pelo
+  // vínculo manual gravado no espelho (lib/espelho-de-integracao.ts).
+  const reais = await Promise.all(
+    itens.map((i) => produtoRealDoItem({ franchiseeId: lojaId, idDoEspelho: `99food_${lojaId}_${i.nome}`.slice(0, 190) })),
+  );
+  return itens.map((i, idx) => ({
     price: i.precoUnitario,
     quantity: i.quantidade,
     // O nome como o 99Food mandou neste pedido. Sem ele, a comanda cai no nome
@@ -643,7 +649,7 @@ export function itens99ParaPrisma(
             ...(i.observacao ? [{ name: `Obs: ${i.observacao}`, quantity: 1, price: 0 }] : []),
           ])
         : null,
-    menuProduct: {
+    menuProduct: reais[idx] ? { connect: { id: reais[idx]! } } : {
       connectOrCreate: {
         where: { id: `99food_${lojaId}_${i.nome}`.slice(0, 190) },
         create: {
@@ -657,6 +663,9 @@ export function itens99ParaPrisma(
           // loja, ele nasce onde a cozinha espera.
           category: categorias?.get(i.nome) ?? "99Food",
           franchiseeId: lojaId,
+          // Espelho com campo, pausado e fora dos canais: nascia ATIVO e era
+          // o item sem foto que o cliente via no site (07/11/2026).
+          ...camposDoEspelho(ORIGENS.FOOD99, null),
         },
       },
     },

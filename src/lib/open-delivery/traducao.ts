@@ -34,6 +34,7 @@
  *   - Endereço no formato que os relatórios já leem
  *     (`rua, nº - Comp: x - Ref: y - Bairro - Cidade`, lib/relatorios/areas-de-entrega.ts).
  */
+import { camposDoEspelho, ORIGENS } from "@/lib/espelho-de-integracao";
 import { isBeverageName } from "@/lib/beverage";
 import { coordenadasDoParceiro } from "@/lib/coordenadas-do-parceiro";
 import { dataHoraDaLoja } from "@/lib/fuso";
@@ -135,7 +136,7 @@ export type ContextoOD = {
   agora?: Date;
 };
 
-export type EspelhoOD = { id: string; nome: string };
+export type EspelhoOD = { id: string; nome: string; codigoExterno?: string | null };
 
 export type TraducaoOD = {
   dados: Record<string, any>;
@@ -547,7 +548,10 @@ export function traduzirPedidoOpenDelivery(pedido: PedidoOD, ctx: ContextoOD): T
     const nomeCompleto = [rotuloDoPeso + nome, ...opcoes.map((o) => (o.quantidade > 1 ? `${o.quantidade}x ${o.nome}` : o.nome))].join(" | ");
     const codigo = texto(item.id) || texto(item.externalCode) || `nome-${slug(nome)}`;
     const idEspelho = `${canal.prefixo}-${lojaId}-${codigo}`.slice(0, 190);
-    espelhos.push({ id: idEspelho, nome });
+    // O código que a loja digitou no parceiro (o cardápio enviado à Keeta
+    // leva o id do nosso produto como externalCode) — é por ele que
+    // gravar.ts liga o item ao produto real, sem espelho.
+    espelhos.push({ id: idEspelho, nome, codigoExterno: texto(item.externalCode) || null });
 
     const observacoes = [texto(item.specialInstructions), ...opcoes.map((o) => (o.observacao ? `${o.nome}: ${o.observacao}` : ""))].filter(Boolean);
     if (observacoes.length > 0) notasDeItem.push(`${nome}: ${observacoes.join(" | ")}`);
@@ -576,7 +580,7 @@ export function traduzirPedidoOpenDelivery(pedido: PedidoOD, ctx: ContextoOD): T
             // categoria pôs pizza da Wabiz na tela das esfihas (22/09/2026).
             category: canal.nome,
             isBeverage: isBeverageName(nome),
-            active: false,
+            ...camposDoEspelho(ORIGENS[canal.prefixo.toUpperCase() as keyof typeof ORIGENS] ?? ORIGENS.KEETA, codigo),
           },
         },
       },

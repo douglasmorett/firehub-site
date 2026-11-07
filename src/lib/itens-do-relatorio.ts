@@ -133,8 +133,10 @@ type ProdutoDoCadastro = {
  * condena o produto INATIVO — o cardápio importado reaproveita ids `ifood-` —,
  * e a categoria de plataforma condena sempre.
  */
-export function ehProdutoEspelho(p: { id?: string | null; active?: boolean | null; category?: string | null }): boolean {
+export function ehProdutoEspelho(p: { id?: string | null; active?: boolean | null; category?: string | null; origemIntegracao?: string | null }): boolean {
   return (
+    // Espelho carimbado (lib/espelho-de-integracao.ts) não precisa de prova.
+    Boolean(p.origemIntegracao) ||
     (p.active !== true && PREFIXOS_DE_ESPELHO.some((pre) => String(p.id || "").startsWith(pre))) ||
     ehCategoriaDeIntegracao(p.category)
   );

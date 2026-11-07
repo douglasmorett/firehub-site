@@ -50,7 +50,8 @@ export async function GET() {
 
     const [products, loja] = await Promise.all([
       prisma.menuProduct.findMany({
-        where: { franchiseeId, active: true },
+        // espelho de integração fica fora (lib/espelho-de-integracao.ts)
+        where: { franchiseeId, active: true, origemIntegracao: null },
         orderBy: [{ category: "asc" }, { name: "asc" }],
       }),
       prisma.user.findUnique({ where: { id: franchiseeId }, select: { fiscalConfig: true } }),

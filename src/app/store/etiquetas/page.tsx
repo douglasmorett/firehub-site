@@ -54,7 +54,8 @@ export default async function LabelsPage() {
   if (!currentUserId) redirect("/store");
 
   const products = await prisma.menuProduct.findMany({
-    where: { franchiseeId: currentUserId },
+    // espelho de integração fica fora (lib/espelho-de-integracao.ts)
+    where: { franchiseeId: currentUserId, origemIntegracao: null },
     orderBy: { name: "asc" }
   });
 

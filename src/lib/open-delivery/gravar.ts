@@ -17,6 +17,7 @@
  * receber "created" ou "exists": evento confirmado sem pedido gravado é pedido
  * perdido para sempre quando o parceiro não tem listagem (JotaJá, 23/08/2026).
  */
+import { produtoRealDoItem } from "@/lib/espelho-de-integracao";
 import { prisma } from "@/lib/prisma";
 import { generateDailyOrderNumberTx } from "@/lib/order-number";
 import { pontoEDistanciaDoParceiro } from "@/lib/distancia-da-entrega";
@@ -55,7 +56,18 @@ export async function gravarPedidoOpenDelivery(traducao: TraducaoOD, rotulo: str
   const loja = await prisma.user.findUnique({ where: { id: lojaId }, select: { id: true, storeName: true } });
   if (!loja) return { action: "error", message: `loja ${lojaId} não encontrada` };
 
-  await Promise.all(traducao.espelhos.map((e) => corrigirNomeDoEspelho(e.id, e.nome, lojaId, rotulo)));
+  // Produto REAL da loja antes do espelho: pelo Código PDV que o parceiro
+  // devolve em `externalCode` (o cardápio enviado à Keeta leva o id do nosso
+  // produto) ou pelo vínculo manual do espelho. Achou, o item conecta direto
+  // (lib/espelho-de-integracao.ts). `espelhos` e `items` andam em par, um
+  // por item, na mesma ordem.
+  await Promise.all(
+    traducao.espelhos.map(async (e, idx) => {
+      const real = await produtoRealDoItem({ franchiseeId: lojaId, codigoExterno: e.codigoExterno, idDoEspelho: e.id });
+      if (real && traducao.items[idx]) traducao.items[idx].menuProduct = { connect: { id: real } };
+      else await corrigirNomeDoEspelho(e.id, e.nome, lojaId, rotulo);
+    }),
+  );
 
   const doParceiro = await pontoEDistanciaDoParceiro(lojaId, dados.customerLatLng).catch(() => ({ ponto: undefined, km: null }));
   if (doParceiro.ponto) dados.customerLatLng = doParceiro.ponto;

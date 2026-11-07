@@ -35,7 +35,8 @@ export default async function CustoEmMassaPage() {
   let products: any[] = [];
   try {
     products = await prisma.menuProduct.findMany({
-      where: franchiseeFilter,
+      // espelho de integração fica fora (lib/espelho-de-integracao.ts)
+      where: { ...franchiseeFilter, origemIntegracao: null },
       select: { id: true, name: true, price: true, cost: true, category: true, active: true },
       orderBy: [{ category: "asc" }, { name: "asc" }],
     });

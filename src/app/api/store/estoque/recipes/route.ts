@@ -58,6 +58,8 @@ export async function GET(req: Request) {
     const menuProducts = await prisma.menuProduct.findMany({
       where: {
         franchiseeId,
+        // espelho de integração fica fora (lib/espelho-de-integracao.ts)
+        origemIntegracao: null,
         OR: [{ active: true }, { id: { in: pausadosPeloEstoque } }],
         category: {
           notIn: junkCategories

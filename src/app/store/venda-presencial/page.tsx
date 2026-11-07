@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo, useRef, type CSSProperties } from "react";
 import { ShoppingCart, Plus, Minus, Trash2, Check, Bike, UtensilsCrossed, Users, Search, ChevronRight } from "lucide-react";
 import ComboModal from "@/components/customer/ComboModal";
-import { diaDaSemanaEmSaoPaulo, disponivelAgora, lerHorarioDoProduto } from "@/lib/cardapio-interno";
+import { diaDaSemanaEmSaoPaulo, disponivelAgora, lerHorarioDoProduto, PREFIXOS_DE_ESPELHO } from "@/lib/cardapio-interno";
 import {
   MOTIVOS_COMUNS, SEM_DESCONTO, notaDoDesconto, problemaDoDesconto, valorDoDesconto,
   type DescontoManual,
@@ -344,8 +344,9 @@ export default function VendaPresencialPage() {
   // escondia do balcão os mesmos 8 pastéis de carne que sumiam da mesa na
   // Pastelaria da Paulista. Prefixo só condena espelho não adotado: o inativo.
   const isIntegrationItem = (p: any) => {
-    const temPrefixoDeEspelho =
-      p.id?.startsWith("ifood-") || p.id?.startsWith("jotaja-") || p.id?.startsWith("99food-");
+    // Espelho carimbado (lib/espelho-de-integracao.ts) nunca entra.
+    if (p.origemIntegracao) return true;
+    const temPrefixoDeEspelho = PREFIXOS_DE_ESPELHO.some((prefixo) => p.id?.startsWith(prefixo));
     if (temPrefixoDeEspelho && p.active === false) return true;
     const cat = (p.category || "").toUpperCase().trim();
     return HIDDEN_CATEGORIES.has(cat);

@@ -39,7 +39,8 @@ export default async function ImpressorasPage() {
   // impressora para uma categoria que nenhum produto seu tem — a impressora
   // ficava muda e ninguem entendia por que.
   const products = await prisma.menuProduct.findMany({
-    where: { franchiseeId: ownerId, active: true },
+    // espelho de integração fica fora (lib/espelho-de-integracao.ts)
+    where: { franchiseeId: ownerId, active: true, origemIntegracao: null },
     select: {
       id: true,
       name: true,

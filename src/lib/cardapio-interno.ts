@@ -87,6 +87,11 @@ export const PREFIXOS_DE_ESPELHO = ["ifood-", "jotaja-", "brendi-", "wabiz-", "9
  * em silêncio, por tempo indeterminado.
  */
 export const SEM_PRODUTO_DE_INTEGRACAO = {
+  // Desde 07/11/2026 o espelho tem campo (lib/espelho-de-integracao.ts): quem
+  // nasce de pedido de parceiro carrega `origemIntegracao`, e isso basta. As
+  // regras de categoria e prefixo abaixo continuam para linha antiga que o
+  // boot não carimbou.
+  origemIntegracao: null,
   NOT: [
     { category: { in: CATEGORIAS_DE_INTEGRACAO, mode: "insensitive" as const } },
     ...PREFIXOS_DE_ESPELHO.map((prefixo) => ({
@@ -110,8 +115,11 @@ export const SEM_PRODUTO_DE_INTEGRACAO = {
 export function ehProdutoDeIntegracao(
   categoria: string | null | undefined,
   id?: string | null,
-  ativo?: boolean | null
+  ativo?: boolean | null,
+  /** `MenuProduct.origemIntegracao`: preenchido = espelho, sem mais conversa. */
+  origemIntegracao?: string | null
 ): boolean {
+  if (origemIntegracao) return true;
   if (id && ativo === false && PREFIXOS_DE_ESPELHO.some((prefixo) => id.startsWith(prefixo))) return true;
   if (!categoria) return false;
   return CATEGORIAS_DE_INTEGRACAO.includes(categoria.trim().toUpperCase());

@@ -1,3 +1,4 @@
+import { camposDoEspelho, ORIGENS } from "@/lib/espelho-de-integracao";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
@@ -162,6 +163,7 @@ export async function POST(req: NextRequest) {
                     description: `Pedido JotaJá #${refTag}`,
                     price: Number(totalAmount) || 0,
                     category: "JotaJá",
+                    ...camposDoEspelho(ORIGENS.JOTAJA, refTag),
                   }
                 }
               }

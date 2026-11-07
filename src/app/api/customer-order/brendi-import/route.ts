@@ -1,3 +1,4 @@
+import { camposDoEspelho, ORIGENS } from "@/lib/espelho-de-integracao";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
@@ -266,7 +267,7 @@ export async function POST(req: NextRequest) {
                     category: "Brendi",
                     // Produto fantasma: existe só para a comanda/relatório
                     // referenciar; nunca aparece no cardápio da loja.
-                    active: false,
+                    ...camposDoEspelho(ORIGENS.BRENDI, refTag),
                   },
                 },
               },

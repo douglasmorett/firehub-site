@@ -415,6 +415,8 @@ export async function POST(req: Request) {
         activeDelivery: true,
         franchiseeId: franchisee.id,
         NOT: { apenasEmCombo: true },
+        // espelho de integração fica fora (lib/espelho-de-integracao.ts)
+        origemIntegracao: null,
       },
       // Os grupos vêm junto porque o preço do item depende deles: sem isso o
       // servidor não tem como saber quanto custa a opção que o cliente marcou.

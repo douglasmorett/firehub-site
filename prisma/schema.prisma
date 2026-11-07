@@ -672,6 +672,22 @@ model MenuProduct {
   /// não ser vendável sozinho. Carimbado na criação por MenuProductManager
   /// (`criarOpcaoNaHora`); as telas de venda o escondem sempre.
   apenasEmCombo   Boolean             @default(false)  // Só aparece dentro do combo
+  /// ESPELHO DE INTEGRAÇÃO (lib/espelho-de-integracao.ts). Nulo = produto da
+  /// loja. Preenchido ("IFOOD", "99FOOD", "KEETA"…) = linha que um pedido de
+  /// parceiro criou só para o item gravar; nenhuma tela de cardápio a mostra,
+  /// nem para o dono da loja. `codigoExterno` é o id do item no parceiro;
+  /// `vinculadoA` é o produto real que o lojista apontou na tela "Itens das
+  /// integrações" — os pedidos seguintes entram direto nele.
+  ///
+  /// `codigoPDV` é o número do produto na loja (1, 2, 3…), o que o lojista
+  /// digita no "Código PDV" do iFood: o pedido volta com ele em `externalCode`
+  /// e o item liga ao produto sem adivinhar pelo nome.
+  ///
+  /// As colunas EXISTEM NO BANCO ANTES destes campos: src/lib/garantir-colunas.ts.
+  origemIntegracao String?
+  codigoExterno    String?
+  codigoPDV        Int?
+  vinculadoA       String?
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   franchisee      User?               @relation(fields: [franchiseeId], references: [id])
@@ -683,6 +699,7 @@ model MenuProduct {
 
   @@index([franchiseeId])
   @@index([franchiseeId, active])
+  @@unique([franchiseeId, codigoPDV])
 }
 
 

@@ -135,7 +135,8 @@ export default async function StoreRelatoriosPage() {
     const menuFilter = { franchiseeId: { in: lojaIds } };
 
     products = await prisma.menuProduct.findMany({
-      where: menuFilter,
+      // espelho de integração fica fora (lib/espelho-de-integracao.ts)
+      where: { ...menuFilter, origemIntegracao: null },
       select: {
         id: true,
         franchiseeId: true,

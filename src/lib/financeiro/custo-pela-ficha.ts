@@ -48,6 +48,8 @@ export type ProdutoParaCusto = {
   id: string;
   nome: string;
   ativo: boolean;
+  /** Carimbo do espelho de integração (lib/espelho-de-integracao.ts); nulo = produto da loja. */
+  origemIntegracao?: string | null;
   /** `MenuProduct.cost` digitado (nulo/zero = sem custo). */
   custo: number | null;
   combo: boolean;
@@ -88,7 +90,8 @@ export type ItemParaCusto = {
 };
 
 /** Produto-espelho de marketplace (lib/ifood-itens.ts, food99-pedido.ts, processBrendiEvent.ts, processJotajaEvent.ts, wabiz-traducao.ts). */
-export const ehEspelho = (id: string) => /^(ifood-|99food_|brendi-|jotaja-|wabiz-|keeta-)/i.test(id);
+export const ehEspelho = (p: { id: string; origemIntegracao?: string | null }) =>
+  Boolean(p.origemIntegracao) || /^(ifood-|99food_|brendi-|jotaja-|wabiz-|keeta-|aiqfome-|anotaai-|cardapioweb-)/i.test(p.id);
 
 const chave = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -110,7 +113,7 @@ export function montarCatalogo(produtos: ProdutoParaCusto[]): Catalogo {
   const porNome = new Map<string, ProdutoParaCusto | null>();
   const peso = (p: ProdutoParaCusto) => (p.ficha.length ? 2 : temCusto(p) || p.grupos.length ? 1 : 0);
   for (const p of produtos) {
-    if (!p.ativo || ehEspelho(p.id) || !p.nome.trim()) continue;
+    if (!p.ativo || ehEspelho(p) || !p.nome.trim()) continue;
     const k = chave(p.nome);
     if (!porNome.has(k)) { porNome.set(k, p); continue; }
     const atual = porNome.get(k);
@@ -272,7 +275,7 @@ export function custoDoItem(item: ItemParaCusto, cat: Catalogo, insumo: CustoDoI
     produto = cat.porNome.get(chave(nome)) ?? (proprio ? cat.porNome.get(chave(proprio.nome)) ?? null : null);
     if (produto && !temEstrutura(produto) && !temCusto(produto) && proprio) produto = proprio;
   }
-  if (!produto && proprio && !ehEspelho(proprio.id)) produto = proprio;
+  if (!produto && proprio && !ehEspelho(proprio)) produto = proprio;
 
   const escolhas = lerEscolhas(item.escolhas);
   const faltas: FaltaDoItem[] = [];

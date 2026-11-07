@@ -9,7 +9,7 @@
  * tablet e outro no celular, e "sumiu item da mesa" voltaria a ser impossível
  * de investigar.
  */
-import { idsSoDeOpcaoDeCombo, motivoForaDoCardapio, textoDoHorario, textoDosDias } from "@/lib/cardapio-interno";
+import { idsSoDeOpcaoDeCombo, motivoForaDoCardapio, PREFIXOS_DE_ESPELHO, textoDoHorario, textoDosDias } from "@/lib/cardapio-interno";
 
 export interface ItemDaMesa {
   id: string;
@@ -56,8 +56,9 @@ export function montarCardapioDaMesa(data: any[]): {
   // ocultos, porque espelho fica fora dele de propósito. Prefixo só
   // condena o espelho que ninguém adotou: o inativo.
   const isIntegration = (p: any) => {
-    const temPrefixoDeEspelho =
-      p.id?.startsWith("ifood-") || p.id?.startsWith("jotaja-") || p.id?.startsWith("99food-");
+    // Espelho carimbado (lib/espelho-de-integracao.ts) nunca entra.
+    if (p.origemIntegracao) return true;
+    const temPrefixoDeEspelho = PREFIXOS_DE_ESPELHO.some((prefixo) => p.id?.startsWith(prefixo));
     if (temPrefixoDeEspelho && p.active === false) return true;
     return HIDDEN_CATS.has((p.category || "").toUpperCase().trim());
   };

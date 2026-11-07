@@ -34,7 +34,8 @@ export async function GET() {
 
     const [produtos, loja] = await Promise.all([
       prisma.menuProduct.findMany({
-        where: { franchiseeId: lojaId, active: true },
+        // espelho de integração fica fora (lib/espelho-de-integracao.ts)
+        where: { franchiseeId: lojaId, active: true, origemIntegracao: null },
         orderBy: [{ category: "asc" }, { name: "asc" }],
         select: { id: true, name: true, category: true, price: true, isBeverage: true, apenasEmCombo: true, ncm: true, cest: true, cfop: true, csosn: true },
       }),

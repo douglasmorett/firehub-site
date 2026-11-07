@@ -19,7 +19,8 @@ export async function GET() {
   const [vitrine, produtos] = await Promise.all([
     lerVitrine(s.franchiseeId),
     prisma.menuProduct.findMany({
-      where: { franchiseeId: s.franchiseeId, active: true, activeGarcom: true, NOT: { apenasEmCombo: true } },
+      // espelho de integração fica fora (lib/espelho-de-integracao.ts)
+      where: { franchiseeId: s.franchiseeId, active: true, activeGarcom: true, NOT: { apenasEmCombo: true }, origemIntegracao: null },
       orderBy: [{ category: "asc" }, { sortOrder: "asc" }, { name: "asc" }],
       select: { id: true, name: true, imageUrl: true, category: true, price: true },
     }),

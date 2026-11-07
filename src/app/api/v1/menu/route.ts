@@ -17,7 +17,8 @@ export async function GET(req: NextRequest) {
       orderBy: { sortOrder: "asc" },
     }),
     prisma.menuProduct.findMany({
-      where: { franchiseeId: auth.franchiseeId },
+      // espelho de integração fica fora (lib/espelho-de-integracao.ts)
+      where: { franchiseeId: auth.franchiseeId, origemIntegracao: null },
       include: {
         comboGroups: {
           orderBy: { sortOrder: "asc" },

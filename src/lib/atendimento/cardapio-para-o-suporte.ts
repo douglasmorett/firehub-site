@@ -87,7 +87,8 @@ export async function cardapioParaOSuporte(userId: string, busca: string, agora 
   const fuso = loja.storeTimezone || "America/Sao_Paulo";
 
   const [todos, ordem] = await Promise.all([
-    prisma.menuProduct.findMany({ where: { franchiseeId: userId }, select: SELECT }) as Promise<Produto[]>,
+    // espelho de integração fica fora (lib/espelho-de-integracao.ts)
+    prisma.menuProduct.findMany({ where: { franchiseeId: userId, origemIntegracao: null }, select: SELECT }) as Promise<Produto[]>,
     ordemDasCategorias(userId),
   ]);
   const categorias = [...new Set(ordenarComoALoja(todos, ordem).map((p) => p.category))];
