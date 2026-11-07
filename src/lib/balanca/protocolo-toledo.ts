@@ -111,3 +111,11 @@ export function valorDoPeso(kg: number, precoDoQuilo: number): number {
 export function textoDoPeso(kg: number): string {
   return `${kg.toLocaleString("pt-BR", { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg`;
 }
+
+/**
+ * O prato pesado é uma linha de quantidade 1 com o preço do peso: "2x" na
+ * edição cobraria o mesmo prato duas vezes. Tirar o item continua valendo.
+ */
+export function recusaDoPratoPesado(nome: string | null | undefined, pesoKg: number): string {
+  return `"${nome || "Prato"}" foi pesado (${textoDoPeso(pesoKg)}) e não muda de quantidade: tire o item e pese o prato de novo.`;
+}

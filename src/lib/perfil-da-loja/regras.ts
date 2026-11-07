@@ -49,7 +49,7 @@ export type GrupoDoRecurso = "Canais de venda" | "Operação" | "Gestão" | "Cli
 
 export type ChaveDoRecurso =
   | "cardapio" | "robo" | "ifood" | "food99" | "outrosMarketplaces" | "balcao" | "mesas" | "totem" | "appDaLoja" | "pagamentoOnline"
-  | "kds" | "impressao" | "motoboys" | "appDoEntregador" | "contingencia"
+  | "kds" | "impressao" | "motoboys" | "appDoEntregador" | "contingencia" | "balanca"
   | "caixa" | "financeiro" | "estoque" | "fiscal" | "bill" | "firecheck"
   | "fidelidade" | "cupons" | "disparo" | "trafego" | "multimarcas" | "avaliacoes";
 
@@ -158,6 +158,7 @@ export type SinaisDaLoja = {
   totem: { licencasAtivas: number; valorMensal: number | null };
   trafego: { ativo: boolean; valorMensal: number | null; campanhasAtivas: number };
   multimarcas: { ativo: boolean; valorMensal: number | null };
+  balanca: { ativo: boolean; valorMensal: number | null };
   disparo: { conectado: boolean; campanhas30: number; saldo: number | null };
   pagamentoOnlineLigado: boolean;
   acompanhamentoIfood: boolean;
@@ -607,6 +608,12 @@ export function recursosDaLoja(s: SinaisDaLoja, agora: Date): RecursoDoPerfil[] 
     estado: estado(s.trafego.campanhasAtivas > 0, s.trafego.ativo),
     evidencia: s.trafego.ativo ? `Contratado · ${plural(s.trafego.campanhasAtivas, "campanha ativa", "campanhas ativas")}.` : "Não contratou.",
     pago: { contratado: s.trafego.ativo, valorMensal: s.trafego.valorMensal },
+  });
+  add({
+    chave: "balanca", nome: "Balança (self-service por quilo)", grupo: "Operação",
+    estado: s.balanca.ativo ? "LIGADO" : "NUNCA",
+    evidencia: s.balanca.ativo ? "Módulo Balança contratado." : "Não contratou.",
+    pago: { contratado: s.balanca.ativo, valorMensal: s.balanca.valorMensal },
   });
   add({
     chave: "multimarcas", nome: "Multimarcas", grupo: "Clientes e marketing",

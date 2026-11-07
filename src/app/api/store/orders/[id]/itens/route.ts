@@ -86,6 +86,7 @@ import { descontoDoCorpo, descreverDesconto, notaDoDesconto, type DescontoManual
 import { motivoDoCorpo, MENSAGEM_SEM_MOTIVO_DO_SERVIDOR, type ItemRetirado } from "@/lib/motivo-do-cancelamento";
 import { carregarRodadaDaMesa, editarRodadaDaMesa, cancelarRodadaDaMesa } from "@/lib/edicao-na-mesa";
 import { planoDaTroca, descricaoDaTroca, type PlanoDaTroca } from "@/lib/escolhas-na-edicao";
+import { recusaDoPratoPesado } from "@/lib/balanca/protocolo-toledo";
 
 /** Os campos do pedido que a decisão e o recálculo precisam. */
 const CAMPOS_DO_PEDIDO = {
@@ -124,7 +125,7 @@ const CAMPOS_DO_PEDIDO = {
   fiscalInfo: true,
   // `comboSelections`: a troca de escolhas escreve no histórico como estava
   // antes ("antes: Grande; agora: Grande / Bacon extra").
-  items: { select: { id: true, quantity: true, price: true, productName: true, menuProductId: true, comboSelections: true } },
+  items: { select: { id: true, quantity: true, price: true, productName: true, menuProductId: true, comboSelections: true, pesoKg: true } },
 } as const;
 
 async function contexto(params: Promise<{ id: string }>) {
@@ -388,6 +389,10 @@ async function editarPedidoProprio(entrada: {
     .filter((m) => m && idsDoPedido.has(String(m.itemId)) && !remover.includes(String(m.itemId)))
     .map((m) => ({ itemId: String(m.itemId), quantity: Math.floor(Number(m.quantity)) }))
     .filter((m) => Number.isFinite(m.quantity) && m.quantity >= 1 && m.quantity <= 99);
+  const pesado = order.items.find((i: any) =>
+    i.pesoKg && (mudar.some((m) => m.itemId === i.id && m.quantity !== i.quantity) || (entrada.trocar || []).some((t) => String(t?.itemId) === i.id))
+  );
+  if (pesado) return NextResponse.json({ error: recusaDoPratoPesado(pesado.productName, pesado.pesoKg) }, { status: 400 });
 
   let novosItens: ItemNovo[] = [];
   if (entrada.acrescentar.length > 0) {

@@ -202,11 +202,11 @@ export type CicloDaReceita = {
  * MARGEM das recargas pagas (o que fica com o FireHub); `disparoBruto`, o
  * valor cobrado da loja — só informativo.
  */
-export type ServicosDoMes = { bill: number; app: number; multimarcas: number; totem: number; trafego: number; disparo: number; disparoBruto: number };
-export const SERVICOS_VAZIOS: ServicosDoMes = { bill: 0, app: 0, multimarcas: 0, totem: 0, trafego: 0, disparo: 0, disparoBruto: 0 };
+export type ServicosDoMes = { bill: number; app: number; multimarcas: number; balanca: number; totem: number; trafego: number; disparo: number; disparoBruto: number };
+export const SERVICOS_VAZIOS: ServicosDoMes = { bill: 0, app: 0, multimarcas: 0, balanca: 0, totem: 0, trafego: 0, disparo: 0, disparoBruto: 0 };
 export type ChaveDoServico = Exclude<keyof ServicosDoMes, "disparoBruto"> | "outros";
 export const NOME_DO_SERVICO: Record<ChaveDoServico, string> = {
-  bill: "Bill", app: "App da loja", multimarcas: "Multimarcas", totem: "Totem", trafego: "Tráfego pago", disparo: "Disparo (margem)", outros: "Lojas extras / outros",
+  bill: "Bill", app: "App da loja", multimarcas: "Multimarcas", balanca: "Balança", totem: "Totem", trafego: "Tráfego pago", disparo: "Disparo (margem)", outros: "Lojas extras / outros",
 };
 
 export type ReceitaDoMes = {
@@ -228,12 +228,12 @@ export type ReceitaDoMes = {
 
 const c2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
 const CANCELADO = new Set(["DELETED", "REFUNDED"]);
-const semServicos = (): Record<ChaveDoServico, number> => ({ bill: 0, app: 0, multimarcas: 0, totem: 0, trafego: 0, disparo: 0, outros: 0 });
+const semServicos = (): Record<ChaveDoServico, number> => ({ bill: 0, app: 0, multimarcas: 0, balanca: 0, totem: 0, trafego: 0, disparo: 0, outros: 0 });
 
 /**
  * A receita do FireHub numa loja num mês.
  *  • Ciclo ABERTO: previsto = `amountDue` (zero em teste/isenta) + tráfego e
- *    totem do ciclo + Bill, App e Multimarcas ativos + margem do disparo.
+ *    totem do ciclo + Bill, App, Multimarcas e Balança ativos + margem do disparo.
  *  • Mês FECHADO com boleto (não cancelado): faturado = boleto (pago:
  *    `paidValue`; aberto: `amountPending`) + margem do disparo; recebido =
  *    boleto pago + margem; em aberto = CLOSED com pendente. O boleto é
@@ -253,10 +253,10 @@ export function receitaDoMes(ciclo: CicloDaReceita | null, servicos: ServicosDoM
     const mensalidade = c2(ciclo?.amountDue ?? 0);
     const s = {
       ...semServicos(),
-      bill: c2(servicos.bill), app: c2(servicos.app), multimarcas: c2(servicos.multimarcas),
+      bill: c2(servicos.bill), app: c2(servicos.app), multimarcas: c2(servicos.multimarcas), balanca: c2(servicos.balanca),
       totem: c2(ciclo ? ciclo.totemFee : servicos.totem), trafego: c2(ciclo ? ciclo.metaAdsFee : servicos.trafego), disparo,
     };
-    const boleto = c2(mensalidade + s.bill + s.app + s.multimarcas + s.totem + s.trafego);
+    const boleto = c2(mensalidade + s.bill + s.app + s.multimarcas + s.balanca + s.totem + s.trafego);
     return { previsto: c2(boleto + disparo), faturado: disparo, recebido: disparo, emAberto: 0, mensalidade, boleto, servicos: s, disparoBruto };
   }
 
@@ -270,7 +270,7 @@ export function receitaDoMes(ciclo: CicloDaReceita | null, servicos: ServicosDoM
   const tira = (v: number) => { const x = c2(Math.min(Math.max(0, v), resto)); resto = c2(resto - x); return x; };
   const s = {
     ...semServicos(),
-    app: tira(servicos.app), bill: tira(servicos.bill), multimarcas: tira(servicos.multimarcas),
+    app: tira(servicos.app), bill: tira(servicos.bill), multimarcas: tira(servicos.multimarcas), balanca: tira(servicos.balanca),
     totem: tira(ciclo.totemFee), trafego: tira(ciclo.metaAdsFee), disparo,
   };
   s.outros = resto;

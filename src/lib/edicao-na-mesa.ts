@@ -46,6 +46,7 @@ import { STATUS_CANCELADOS } from "@/lib/status-pedido";
 import { conferirEstoque } from "@/lib/estoque-restante";
 import { empilharEdicao, recalcularTotal, type RegistroDeEdicao } from "@/lib/edicao-de-pedido";
 import { motivoDoCorpo, MENSAGEM_SEM_MOTIVO_DO_SERVIDOR, type ItemRetirado } from "@/lib/motivo-do-cancelamento";
+import { recusaDoPratoPesado } from "@/lib/balanca/protocolo-toledo";
 
 /** O que as rotas devolvem: o status HTTP e o corpo, para `NextResponse.json`. */
 export type RespostaDaMesa = { status: number; corpo: Record<string, unknown> };
@@ -56,6 +57,8 @@ export type ItemDaRodada = {
   price: number;
   productName?: string | null;
   menuProductId?: string | null;
+  /** Prato da balança (lib/balanca): a quantidade não muda. */
+  pesoKg?: number | null;
 };
 
 export type RodadaDaMesa = {
@@ -132,6 +135,8 @@ export function planejarEdicaoNaMesa(
   if (remover.length === 0 && mudar.length === 0) {
     return { ok: false, status: 400, error: "Nenhum item válido para alterar" };
   }
+  const pesado = mudar.map((m) => porId.get(m.itemId)!).find((i) => i.pesoKg);
+  if (pesado) return { ok: false, status: 400, error: recusaDoPratoPesado(pesado.productName, pesado.pesoKg!) };
 
   // Garçom sem "pode remover item" (cadastro): só acrescenta. Remover item
   // ou diminuir quantidade é tirar dinheiro da conta — trabalho do caixa.
@@ -202,7 +207,7 @@ export async function carregarRodadaDaMesa(
       discountTotal: true,
       editHistory: true,
       tableSessionId: true,
-      items: { select: { id: true, quantity: true, price: true, productName: true, menuProductId: true } },
+      items: { select: { id: true, quantity: true, price: true, productName: true, menuProductId: true, pesoKg: true } },
     },
   });
   if (!order || !order.tableSessionId) {

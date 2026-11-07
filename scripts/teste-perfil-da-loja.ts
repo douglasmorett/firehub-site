@@ -45,6 +45,7 @@ function loja(extra: Partial<SinaisDaLoja> = {}): SinaisDaLoja {
     totem: { licencasAtivas: 0, valorMensal: null },
     trafego: { ativo: false, valorMensal: null, campanhasAtivas: 0 },
     multimarcas: { ativo: false, valorMensal: null },
+    balanca: { ativo: false, valorMensal: null },
     disparo: { conectado: false, campanhas30: 0, saldo: null },
     pagamentoOnlineLigado: false, acompanhamentoIfood: false,
     mensalidade: { mes: "2026-10", valorDoMes: 120, situacaoDoMes: "em andamento", emAberto: null },
@@ -94,7 +95,7 @@ confere("Assistente visto há 5 dias = PARADO", r(loja({ assistenteVistoEm: dias
 confere("Assistente nunca = NUNCA", r(loja({ assistenteVistoEm: null }), "impressao").estado, "NUNCA");
 confere("contingência preparada sem uso = LIGADO (não há o que medir)", r(loja({ contingenciaConfigurada: true }), "contingencia").estado, "LIGADO");
 confere("Bill pago traz o valor", r(loja({ bill: { ativo: true, valorMensal: 49.9, usos30: 12 } }), "bill").pago, { contratado: true, valorMensal: 49.9 });
-confere("27 recursos no perfil", recursosDaLoja(loja(), AGORA).length, 27);
+confere("28 recursos no perfil", recursosDaLoja(loja(), AGORA).length, 28);
 
 console.log("\n— Oportunidades —");
 const chaves = (s: SinaisDaLoja, status: "ATIVA" | "ESFRIANDO" | "PARADA" | "NOVA" = "ATIVA") =>

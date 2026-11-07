@@ -116,7 +116,7 @@ export default function ComoVoceGanha({ d, modo, tema = "areia", embutido = fals
       </div>}
 
       <ul className="cg-como">
-        <li><Info size={14} aria-hidden /><span><b>Sobre o quê:</b> o boleto do mês da loja — mensalidade (2% das vendas, mínimo R$ 100, máximo R$ 400) + os serviços cobrados nele (App, Bill, Multimarcas, totem, tráfego, lojas extras). O Asaas calcula sobre o valor líquido do boleto (depois da tarifa dele).</span></li>
+        <li><Info size={14} aria-hidden /><span><b>Sobre o quê:</b> o boleto do mês da loja — mensalidade (2% das vendas, mínimo R$ 100, máximo R$ 400) + os serviços cobrados nele (App, Bill, Multimarcas, Balança, totem, tráfego, lojas extras). O Asaas calcula sobre o valor líquido do boleto (depois da tarifa dele).</span></li>
         <li><Info size={14} aria-hidden /><span><b>Quando cai:</b> no dia em que a loja paga o boleto, direto {noAsaas} (split). Loja que não pagou não gera comissão; loja isenta ou em teste não tem boleto.</span></li>
         {ehVendedor && <li><MessageSquare size={14} aria-hidden /><span><b>Disparo oficial:</b> {vend
           ? <>{COMISSAO_COMBINADA.DISPARO}% em cada recarga de disparo das suas lojas, no Pix da recarga.{d.ganhoComDisparo ? <> Neste mês: <b>{dinheiro(d.ganhoComDisparo)}</b>.</> : null}</>

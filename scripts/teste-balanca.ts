@@ -18,6 +18,8 @@ import { CLAUSULAS_DO_TERMO_DA_BALANCA } from "../src/lib/balanca/termo";
 import { montarItensDaNota } from "../src/lib/fiscal-itens";
 import { nomeDaLinhaDaConta } from "../src/lib/conta-da-mesa";
 import { numeroDaMesa, nomeComMesa, camposDaMesaParaImpressao } from "../src/lib/mesa-na-comanda";
+import { planejarEdicaoNaMesa } from "../src/lib/edicao-na-mesa";
+import { receitaDoMes, SERVICOS_VAZIOS } from "../src/lib/performance-das-carteiras/regras";
 
 const STX = 0x02;
 const ETX = 0x03;
@@ -142,6 +144,22 @@ async function main() {
   assert.equal(nomeComMesa("Comanda 155", camposDaMesaParaImpressao(daComanda)), "Comanda 155");
   const daMesa = { deliveryType: "MESA", tableSessionId: "s2", tableSession: { table: { number: 4, tipo: null } } };
   assert.equal(numeroDaMesa(daMesa), "4");
+
+  // ── Edição na mesa: o prato pesado não vira "2x"; tirar continua valendo ──
+  const rodada = { deliveryFee: 0, discountTotal: 0, items: [
+    { id: "p", quantity: 1, price: 23.51, productName: "Refeição por kg", menuProductId: "m1", pesoKg: 0.452 },
+    { id: "s", quantity: 1, price: 7, productName: "Suco", menuProductId: "m2" },
+  ] };
+  const dobra = planejarEdicaoNaMesa(rodada, { itens: [{ itemId: "p", quantity: 2 }] }, true);
+  assert.equal(dobra.ok, false);
+  assert.match((dobra as any).error, /foi pesado \(0,452 kg\)/);
+  assert.equal(planejarEdicaoNaMesa(rodada, { removerItemIds: ["p"] }, true).ok, true, "tirar o prato pesado pode");
+  assert.equal(planejarEdicaoNaMesa(rodada, { itens: [{ itemId: "s", quantity: 2 }] }, true).ok, true, "o suco muda de quantidade");
+
+  // ── Carteira do vendedor: a Balança entra no boleto previsto ──────────
+  const previsto = receitaDoMes(null, { ...SERVICOS_VAZIOS, balanca: 197 }, false);
+  assert.equal(previsto.servicos.balanca, 197);
+  assert.equal(previsto.boleto, 197);
 
   console.log("teste-balanca: tudo certo");
 }
