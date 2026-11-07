@@ -136,8 +136,10 @@ export default {
         const termo = p.getByRole("dialog");
         await termo.waitFor({ state: "visible", timeout: 10_000 });
         await ctx.ate(0.5);
+        await palco.rolarAte(termo.getByRole("checkbox"), { bloco: "center" });
         await palco.clicar(termo.getByRole("checkbox"), { ms: 600 });
         await ctx.ate(0.8);
+        await palco.rolarAte(termo.getByRole("button", { name: "Concordo e ativar" }), { bloco: "center" });
         await palco.clicar(termo.getByRole("button", { name: "Concordo e ativar" }), { ms: 500 });
         await p.getByText("Balança ligada!").waitFor({ state: "visible", timeout: 30_000 });
       },
@@ -150,7 +152,9 @@ export default {
       acao: async (palco, ctx) => {
         const p = palco.pagina;
         const linha = p.locator("label").filter({ hasText: PRODUTO });
-        await palco.rolarAte(linha, { bloco: "center" });
+        await palco.rolarAte(p.getByRole("heading", { name: "Produtos vendidos por quilo" }), { bloco: "start" });
+        await palco.digitar(p.getByLabel("Buscar no cardápio"), "Refeição");
+        await linha.waitFor({ state: "visible", timeout: 5000 });
         await ctx.ate(0.25);
         await palco.clicar(linha.getByRole("checkbox"), { ms: 600 });
         await ctx.ate(0.6);
