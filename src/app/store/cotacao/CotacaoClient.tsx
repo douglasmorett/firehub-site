@@ -126,7 +126,7 @@ export default function CotacaoClient() {
         <>
           {dados.podeContratar && (
             <div className="cot-sem-impressao">
-              <InterruptorDoModulo nome="a Cotação automática" preco={dados.preco} estado={e} salvando={salvando}
+              <InterruptorDoModulo nome="o módulo Cotação automática" preco={dados.preco} estado={e} salvando={salvando}
                 onLigar={() => {}} onDesligar={() => ligar(false)} onContinuar={() => ligar(true)} />
             </div>
           )}
@@ -295,7 +295,7 @@ function ExemploDoComparativo() {
         <div key={nome} style={{ display: "grid", gridTemplateColumns: "1.4fr repeat(3, 1fr)", borderTop: "1px solid #F1F5F9" }}>
           <div style={{ padding: "9px 10px", fontWeight: 700, color: "#0F172A" }}>{nome}</div>
           {ps.map((p, i) => (
-            <div key={i} style={{ padding: "9px 10px", fontWeight: i === melhor ? 900 : 600, color: i === melhor ? VERDE : "#334155", background: i === melhor ? "#ECFDF5" : undefined }}>
+            <div key={i} style={{ padding: "9px 10px", whiteSpace: "nowrap", fontWeight: i === melhor ? 900 : 600, color: i === melhor ? VERDE : "#334155", background: i === melhor ? "#ECFDF5" : undefined }}>
               {reais(p)}{i === melhor ? " ✓" : ""}
             </div>
           ))}
@@ -316,7 +316,7 @@ function ComoFunciona() {
   return (
     <section style={{ ...S.cartao, marginTop: 16 }}>
       <h2 style={{ ...S.h2, marginBottom: 12 }}>Como funciona</h2>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))", gap: 12 }}>
         {passos.map(([icone, titulo, t], i) => (
           <div key={titulo} style={{ background: "#F8FAFC", borderRadius: 12, padding: 14 }}>
             <div style={{ fontSize: 26 }}>{icone}</div>

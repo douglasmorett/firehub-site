@@ -30,7 +30,7 @@ function primeiroNome(contato: string | null | undefined): string {
 }
 
 /**
- * O pedido de preços: "Bom dia, João! Aqui é da Pizzaria X. Pode me mandar a
+ * O pedido de preços: "Bom dia, João! Aqui é Pizzaria X 😊 Pode me mandar a
  * tabela de preços atualizada ou o encarte? Hoje a gente cota: tomate, cebola e
  * mais 8 itens. Obrigado!"
  */
@@ -42,7 +42,9 @@ export function textoDoPedidoDePrecos(o: { loja: string; contato: string | null;
   const lista = citados.length
     ? `\nItens que estamos cotando: ${citados.join(", ")}${resto > 0 ? ` e mais ${resto}` : ""}.`
     : "";
-  return `${saudacao(o.minutos)}${nome ? `, ${nome}` : ""}! Aqui é da ${o.loja.trim()} 😊\nPode me mandar a tabela de preços atualizada ou o encarte da semana?${lista}\nObrigado!`;
+  // "Aqui é <loja>", sem "da"/"do": o gênero do nome da loja não se adivinha
+  // ("da Sabor da Praça" soa errado; "do Hakim" e "da Hakim" também).
+  return `${saudacao(o.minutos)}${nome ? `, ${nome}` : ""}! Aqui é ${o.loja.trim()} 😊\nPode me mandar a tabela de preços atualizada ou o encarte da semana?${lista}\nObrigado!`;
 }
 
 /** O pedido de compra, pronto para o fornecedor ler e separar. */
@@ -51,7 +53,7 @@ export function textoDoPedidoDeCompra(o: { loja: string; grupo: GrupoDoPedido; m
   const nome = primeiroNome(g.fornecedor.contato);
   const linhas = g.itens.map((i) => `• ${qtd(i.quantidade)} ${i.unidade} ${i.nome}${i.preco !== null ? ` — ${reais(i.preco)}` : ""}`);
   const partes = [
-    `${saudacao(o.minutos)}${nome ? `, ${nome}` : ""}! Aqui é da ${o.loja.trim()}. Segue o nosso pedido:`,
+    `${saudacao(o.minutos)}${nome ? `, ${nome}` : ""}! Aqui é ${o.loja.trim()}. Segue o nosso pedido:`,
     "",
     ...linhas,
     "",
@@ -77,7 +79,7 @@ export type DadosDoResumo = {
 /** O resumo da rodada para o comprador (o próprio lojista), com o link sozinho na linha. */
 export function textoDoResumo(d: DadosDoResumo): string {
   const fmt = (v: { nome: string; de: number; para: number }) => `${v.nome} (${reais(v.de)} → ${reais(v.para)})`;
-  const linhas = [`📊 Cotação da ${d.loja.trim()}: ${d.responderam} de ${d.pedidos} fornecedor${d.pedidos === 1 ? "" : "es"} responderam.`];
+  const linhas = [`📊 Cotação — ${d.loja.trim()}: ${d.responderam} de ${d.pedidos} fornecedor${d.pedidos === 1 ? "" : "es"} responderam.`];
   if (d.quedas.length) linhas.push(`⬇️ Caíram: ${d.quedas.map(fmt).join("; ")}`);
   if (d.altas.length) linhas.push(`⬆️ Subiram: ${d.altas.map(fmt).join("; ")}`);
   if (d.paraConferir > 0) linhas.push(`${d.paraConferir} preço${d.paraConferir === 1 ? "" : "s"} para você conferir.`);

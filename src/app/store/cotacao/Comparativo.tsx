@@ -170,7 +170,7 @@ export default function Comparativo({ versao, onAviso, irPara, onMudou, lojaNome
           <table className="cot-tabela">
             <thead>
               <tr>
-                <th className="fixa" style={{ minWidth: 190 }}>Produto <span style={{ fontWeight: 600, color: "#94A3B8" }}>· {comPreco} de {dados.comparativo.linhas.length} com preço</span></th>
+                <th className="fixa">Produto <span style={{ fontWeight: 600, color: "#94A3B8" }}>· {comPreco} de {dados.comparativo.linhas.length} com preço</span></th>
                 {colunas.map((c) => (
                   <th key={c.id} style={{ minWidth: 118 }}>
                     <div style={{ fontWeight: 900, color: "#0F172A" }}>{c.nome}</div>
@@ -237,12 +237,18 @@ export default function Comparativo({ versao, onAviso, irPara, onMudou, lojaNome
                     })}
                     <td className="cot-sem-impressao">
                       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                        <input value={q} inputMode="decimal" placeholder={l.produto.quantidadePadrao ? numero(l.produto.quantidadePadrao) : "qtd"}
+                        <input value={q} inputMode="decimal" placeholder="qtd"
                           aria-label={`Quantidade de ${l.produto.nome}`}
                           onChange={(e) => setEscolhas((x) => ({ ...x, [l.produto.id]: { fornecedorId: x[l.produto.id]?.fornecedorId ?? l.menor?.fornecedorId ?? null, quantidade: e.target.value.replace(/[^\d,.]/g, "") } }))}
                           style={{ ...S.campo, width: 70, height: 36, padding: "0 8px", textAlign: "center", borderColor: marcado ? COR : "#CBD5E1" }} />
                         <span style={{ fontSize: 12, color: "#64748B" }}>{l.produto.unidade}</span>
                       </div>
+                      {!q && l.produto.quantidadePadrao ? (
+                        <button type="button" onClick={() => escolher(l, fornecedorDa(l) || "")} disabled={!fornecedorDa(l)}
+                          style={{ border: 0, background: "none", padding: 0, marginTop: 3, fontSize: 11.5, fontWeight: 800, color: fornecedorDa(l) ? COR : "#94A3B8", cursor: fornecedorDa(l) ? "pointer" : "default", fontFamily: "inherit" }}>
+                          + {numero(l.produto.quantidadePadrao)} {l.produto.unidade} (de costume)
+                        </button>
+                      ) : null}
                       {marcado && (
                         <div style={{ fontSize: 11.5, marginTop: 3, color: escolhido ? "#334155" : VERMELHO, fontWeight: 700 }}>
                           {escolhido ? `de ${nomeDoFornecedor.get(escolhido)}` : "toque num preço"}
@@ -517,7 +523,8 @@ const CSS_DA_TABELA = `
 .cot-tabela { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 14px; }
 .cot-tabela th { position: sticky; top: 0; z-index: 2; background: #F8FAFC; text-align: left; padding: 10px 10px; font-size: 12.5px; color: #475569; border-bottom: 1px solid #E2E8F0; vertical-align: bottom; }
 .cot-tabela td { padding: 6px 8px; border-bottom: 1px solid #F1F5F9; vertical-align: middle; background: #fff; }
-.cot-tabela .fixa { position: sticky; left: 0; z-index: 1; background: #fff; box-shadow: 1px 0 0 #E2E8F0; }
+.cot-tabela .fixa { position: sticky; left: 0; z-index: 1; background: #fff; box-shadow: 1px 0 0 #E2E8F0; min-width: 190px; }
+@media (max-width: 600px) { .cot-tabela .fixa { min-width: 128px; max-width: 150px; } }
 .cot-tabela th.fixa { z-index: 3; background: #F8FAFC; }
 .cot-tabela tr.marcada td, .cot-tabela tr.marcada td.fixa { background: #FAFAFF; }
 .cot-tabela tr:hover td { background: #FCFCFD; }

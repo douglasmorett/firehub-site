@@ -205,14 +205,14 @@ confere("bom dia / boa tarde / boa noite", [saudacao(8 * 60), saudacao(13 * 60),
 const pedidoDePreco = textoDoPedidoDePrecos({ loja: "Pizzaria do Zé", contato: "joão silva", itens: ["Tomate", "Cebola"], minutos: 8 * 60 });
 confere("pedido de preços curto, com a loja e o contato",
   pedidoDePreco,
-  "Bom dia, João! Aqui é da Pizzaria do Zé 😊\nPode me mandar a tabela de preços atualizada ou o encarte da semana?\nItens que estamos cotando: tomate, cebola.\nObrigado!");
+  "Bom dia, João! Aqui é Pizzaria do Zé 😊\nPode me mandar a tabela de preços atualizada ou o encarte da semana?\nItens que estamos cotando: tomate, cebola.\nObrigado!");
 confere("até 4 linhas", pedidoDePreco.split("\n").length <= 4, true);
 confere("pedido de preços sem robô nem IA", /rob[oô]|intelig|autom/i.test(pedidoDePreco) || /\bIA\b/.test(pedidoDePreco), false);
 const muitos = textoDoPedidoDePrecos({ loja: "X", contato: null, itens: Array.from({ length: 20 }, (_, i) => `Item ${i}`), minutos: 600 });
 assert.match(muitos, /e mais 8\./);
 passou++;
 const textoPedido = textoDoPedidoDeCompra({ loja: "Pizzaria do Zé", grupo: grupos[0], minutos: 14 * 60 });
-assert.match(textoPedido, /^Boa tarde, João! Aqui é da Pizzaria do Zé\. Segue o nosso pedido:/);
+assert.match(textoPedido, /^Boa tarde, João! Aqui é Pizzaria do Zé\. Segue o nosso pedido:/);
 assert.match(textoPedido, /• 12 kg Tomate — R\$\s7,50/);
 assert.match(textoPedido, /Total: R\$\s90,00/);
 assert.match(textoPedido, /Entrega: amanhã, 10\/11\./);
