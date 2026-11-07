@@ -1021,6 +1021,8 @@ export default function MenuProductManager({
   const [tags, setTags] = useState<string[]>([]);
   const [isCombo, setIsCombo] = useState(false);
   const [isBeverage, setIsBeverage] = useState(false);
+  // "Não vale cupom nem desconto neste item" (lib/cupons.ts).
+  const [semCupom, setSemCupom] = useState(false);
   const [activePDV, setActivePDV] = useState(true);
   const [activeDelivery, setActiveDelivery] = useState(true);
   const [activeTotem, setActiveTotem] = useState(true);
@@ -1154,7 +1156,7 @@ export default function MenuProductManager({
     setPrecoSalao(""); setPrecoDelivery(""); setPrecoTotem(""); setAbaPrecos(false);
     setPrecoPromocional("");
     setCategory(dynCategories[0]?.name || "");
-    setImageUrl(""); setActive(true); setIsCombo(false); setIsBeverage(false); setComboGroups([]);
+    setImageUrl(""); setActive(true); setIsCombo(false); setIsBeverage(false); setSemCupom(false); setComboGroups([]);
     setPrecosCanalNoCombo(false);
     setActivePDV(true); setActiveDelivery(true); setActiveTotem(true); setActiveGarcom(true);
     setAvailableDaysMode("all"); setSelectedDays([]);
@@ -1201,7 +1203,7 @@ export default function MenuProductManager({
     setHorarioAte(horario?.ate || "14:00");
 
     setCategory(p.category); setImageUrl(p.imageUrl || ""); setActive(p.active);
-    setIsCombo(p.isCombo); setIsBeverage(p.isBeverage ?? false);
+    setIsCombo(p.isCombo); setIsBeverage(p.isBeverage ?? false); setSemCupom(p.semCupom === true);
     setActivePDV(p.activePDV ?? true);
     setActiveDelivery(p.activeDelivery ?? true);
     setActiveTotem(p.activeTotem ?? true);
@@ -1324,7 +1326,7 @@ export default function MenuProductManager({
           availableDays: availableDaysPayload,
           availableHours: horarioPayload,
           category,
-          imageUrl: imageUrl || null, active, isCombo, isBeverage,
+          imageUrl: imageUrl || null, active, isCombo, isBeverage, semCupom,
           activePDV, activeDelivery, activeTotem, activeGarcom,
           // Pergunta não é exclusividade de combo: pastel com sabor e
           // refrigerante com tamanho têm pergunta e não são combo.
@@ -3082,6 +3084,27 @@ export default function MenuProductManager({
                   </p>
                   <p style={{ fontSize: "0.72rem", color: "#64748B", margin: "2px 0 0" }}>
                     Imprime o carimbo em destaque preto no papel térmico <strong style={{ color: "#1C1917" }}>[ ◄=== BEBIDA ]</strong> para garantir que o item não seja esquecido no pedido.
+                  </p>
+                </div>
+              </label>
+            </div>
+
+            {/* ITEM FORA DO CUPOM (lib/cupons.ts): o cupom do site e do robô e o
+                desconto de quem paga pelo site valem só nos outros itens. */}
+            <div style={{ marginTop: "0.75rem", padding: "0.875rem 1rem", background: semCupom ? "#FEF2F2" : "#F8FAFC", borderRadius: "14px", border: `1.5px solid ${semCupom ? "#DC2626" : "#E2E8F0"}`, transition: "all 0.2s" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "10px", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={semCupom}
+                  onChange={e => setSemCupom(e.target.checked)}
+                  style={{ width: "20px", height: "20px", accentColor: "#DC2626", cursor: "pointer" }}
+                />
+                <div>
+                  <p style={{ fontWeight: 800, fontSize: "0.88rem", color: semCupom ? "#B91C1C" : "#0F172A", margin: 0 }}>
+                    🏷️ Não vale cupom nem desconto neste item
+                  </p>
+                  <p style={{ fontSize: "0.72rem", color: "#64748B", margin: "2px 0 0" }}>
+                    O cupom é calculado só sobre os outros itens do pedido. Se o pedido tiver só itens assim, o cupom não entra.
                   </p>
                 </div>
               </label>

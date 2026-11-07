@@ -991,6 +991,9 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   // lojista arrumou — e as leituras, sem ORDER BY, devolviam a ordem física do
   // Postgres. Ver o backfill ORDEM_DAS_OPCOES logo abaixo.
   `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "sortOrder" INTEGER NOT NULL DEFAULT 0`,
+  // "Não vale cupom nem desconto neste item" (lib/cupons.ts). false = vale,
+  // que é como todo produto já cadastrado continua.
+  `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "semCupom" BOOLEAN NOT NULL DEFAULT false`,
 
   // ── Cliente da loja ──
   `ALTER TABLE "StoreCustomer" ADD COLUMN IF NOT EXISTS "birthDate" TEXT`,

@@ -1,5 +1,5 @@
 /**
- * GET /api/validate-coupon?code=X&franchiseeId=Y[&phone=Z&subtotal=N&fee=N]
+ * GET /api/validate-coupon?code=X&franchiseeId=Y[&phone=Z&subtotal=N&fee=N&subtotalComCupom=N]
  *
  * O veredito do servidor sobre um cupom, ANTES do checkout.
  *
@@ -45,9 +45,14 @@ export async function GET(req: NextRequest) {
 
   const subtotal = Math.max(0, Number(p.get("subtotal")) || 0);
   const taxa = Math.max(0, Number(p.get("fee")) || 0);
+  // A parte da sacola que vale cupom (itens sem "Não vale cupom nem desconto",
+  // lib/cupons.ts). É prévia, como o subtotal: o checkout refaz a conta com os
+  // produtos do banco.
+  const comCupom = p.get("subtotalComCupom");
+  const subtotalComCupom = comCupom && Number.isFinite(Number(comCupom)) ? Math.max(0, Number(comCupom)) : undefined;
   // `payment` (opcional): a forma já escolhida — sem ela a regra da forma fica para o checkout.
   const fatos = await fatosDoCupom(cupom, {
-    franchiseeId, telefone: p.get("phone"), timeZone: loja.storeTimezone, subtotal, taxa,
+    franchiseeId, telefone: p.get("phone"), timeZone: loja.storeTimezone, subtotal, taxa, subtotalComCupom,
     ...(p.get("payment") ? { formaDePagamento: p.get("payment"), paymentFees: loja.paymentFees } : {}),
   });
   const veredito = avaliarCupom(cupom, fatos);
