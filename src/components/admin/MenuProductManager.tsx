@@ -2295,7 +2295,7 @@ export default function MenuProductManager({
             <Package size={16} style={{ marginRight: "4px" }} /> Combos ({comboProducts.length})
           </button>
           <button onClick={() => setTab("complementos")} className={`btn ${tab === "complementos" ? "btn-primary" : "btn-outline"}`} style={{ fontSize: "0.88rem", fontWeight: 700 }} title="Só os produtos que têm perguntas, com as perguntas e opções abertas">
-            🧩 Complementos ({produtosComPerguntas.length})
+            🧩 Complementos ({produtosComPerguntas.reduce((s, p) => s + (p.comboGroups?.length || 0), 0)})
           </button>
           <Link href="/store/cardapio/pdv" className="btn btn-outline" style={{ fontSize: "0.88rem", fontWeight: 700, textDecoration: "none" }} title="O número de cada item, para digitar no Código PDV do iFood">
             🔢 PDV
