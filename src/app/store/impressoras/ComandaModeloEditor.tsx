@@ -25,11 +25,13 @@ import {
   AVISOS_DA_COMANDA,
   CORPOS_DO_BLOCO,
   corpoDoBloco,
+  corpoMaximo,
   BLOCOS_OBRIGATORIOS,
   CAMPOS_DISPONIVEIS,
   NOME_DO_BLOCO,
   ROTULOS_DO_BLOCO,
   TAMANHOS,
+  VERSAO_COM_CORPO_DO_ENDERECO,
   VERSAO_MINIMA_DOS_AVISOS,
   VERSAO_MINIMA_DOS_ROTULOS,
   negritoDoBloco,
@@ -628,10 +630,35 @@ export default function ComandaModeloEditor({
                             bloco, porque é a mesma pergunta: "que tamanho isto sai?"
                             — e não num menu separado que ninguém acha. */}
                         {(CORPOS_DO_BLOCO[bloco.tipo] || []).map((c) => (
-                          <span key={c.chave} title={c.ajuda} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                          <span key={c.chave} title={c.ajuda} style={{ display: "inline-flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
                             <span style={{ fontSize: "0.7rem", color: "#64748B", fontWeight: 700 }}>{c.rotulo}</span>
                             {stepper(corpoDoBloco(bloco, c.chave), (t) =>
                               mexerNoBloco(i, { corpos: { ...(bloco.corpos || {}), [c.chave]: t } }),
+                            corpoMaximo(bloco.tipo, c.chave))}
+                            {/* O "N" no card: o endereço separado sai "Rua: … /
+                                Numero: …", sem o "Endereco:" no papel, e sem
+                                palavra não há onde clicar para o negrito. */}
+                            {c.negrito && (
+                              <button
+                                type="button"
+                                onClick={() => alternarNegrito(i, c.chave)}
+                                title={negritoDoBloco(bloco, c.chave) ? "Tirar o negrito" : "Deixar em negrito"}
+                                style={{
+                                  fontFamily: "inherit", fontSize: "0.7rem", fontWeight: 900,
+                                  width: 22, height: 20, lineHeight: 1, padding: 0, borderRadius: 5, cursor: "pointer",
+                                  border: `1.5px solid ${negritoDoBloco(bloco, c.chave) ? VERMELHO : "#CBD5E1"}`,
+                                  background: negritoDoBloco(bloco, c.chave) ? VERMELHO : "#fff",
+                                  color: negritoDoBloco(bloco, c.chave) ? "#fff" : "#64748B",
+                                }}
+                              >
+                                N
+                              </button>
+                            )}
+                            {bloco.tipo === "entrega" && c.chave === "endereco" && corpoDoBloco(bloco, c.chave) > 1
+                              && ehMaisVelha(versaoInstalada, VERSAO_COM_CORPO_DO_ENDERECO) && (
+                              <span style={{ fontSize: "0.7rem", color: "#B45309", fontWeight: 700 }}>
+                                ⚠️ Sai maior a partir do Assistente {VERSAO_COM_CORPO_DO_ENDERECO} (esta máquina: {versaoInstalada}); até lá, sai no tamanho normal.
+                              </span>
                             )}
                           </span>
                         ))}
@@ -988,8 +1015,10 @@ function chip(ativo: boolean): React.CSSProperties {
  * de `Tamanho` em lib/comanda-modelo.ts). Deixar digitar 2,5 seria prometer o
  * que o papel não entrega.
  */
-function stepper(valor: number, aoMudar: (t: (typeof TAMANHOS)[number]) => void) {
-  const i = TAMANHOS.indexOf(valor as (typeof TAMANHOS)[number]);
+function stepper(valor: number, aoMudar: (t: (typeof TAMANHOS)[number]) => void, maximo?: number) {
+  // `maximo`: a linha que não pode passar de um degrau (o endereço para no 1,5x).
+  const degraus = maximo ? TAMANHOS.filter((t) => t <= maximo) : TAMANHOS;
+  const i = degraus.indexOf(valor as (typeof TAMANHOS)[number]);
   const passo: React.CSSProperties = {
     border: "none", background: "transparent", color: "#64748B",
     cursor: "pointer", padding: "0 3px", fontWeight: 800, fontSize: "0.8rem", lineHeight: 1, fontFamily: "inherit",
@@ -999,11 +1028,11 @@ function stepper(valor: number, aoMudar: (t: (typeof TAMANHOS)[number]) => void)
       title="Tamanho da letra. A impressora só consegue estes degraus: 1x, 1,5x, 2x e 3x. O 1,5x é a mesma letra, só mais alta; do 2x em diante cabem menos letras na linha."
       style={{ display: "inline-flex", alignItems: "center", gap: 4, border: BORDA, background: "#F8FAFC", borderRadius: 7, padding: "2px 6px" }}
     >
-      <button type="button" onClick={() => aoMudar(TAMANHOS[Math.max(0, i - 1)])} style={passo}>A−</button>
+      <button type="button" onClick={() => aoMudar(degraus[Math.max(0, i - 1)])} style={passo}>A−</button>
       <b style={{ fontSize: "0.72rem", fontFamily: "ui-monospace, Consolas, monospace", minWidth: "2.4em", textAlign: "center", color: "#0F172A" }}>
         {String(valor).replace(".", ",")}×
       </b>
-      <button type="button" onClick={() => aoMudar(TAMANHOS[Math.min(TAMANHOS.length - 1, i + 1)])} style={passo}>A+</button>
+      <button type="button" onClick={() => aoMudar(degraus[Math.min(degraus.length - 1, i + 1)])} style={passo}>A+</button>
     </span>
   );
 }

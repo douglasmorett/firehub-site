@@ -191,7 +191,8 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // na largura da bobina nao pode ser reformatada por fora (ver o comentario
   // de `Bloco.negritos` em src/lib/comanda-modelo.ts). So entra a linha que e
   // frase FIXA, sozinha na linha, e cuja largura e calculada por quem a amplia.
-  // Hoje: a faixa de bebida.
+  // Hoje: a faixa de bebida, a letra dos itens e a do endereco (esta com teto
+  // de 1,5x — ver "O CORPO DO ENDERECO", na secao de entrega).
   const TAMANHOS_OK = [1, 1.5, 2, 3];
   const corposPorTipo = {};
   for (const bl of (Array.isArray(order.blocos) ? order.blocos : [])) {
@@ -1088,10 +1089,21 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
         return valor ? (rotulo ? rotulo + ": " : "") + valor : "";
       })
       .filter(Boolean);
+    // ── O CORPO DO ENDERECO (Bloco.corpos.endereco, 1.2.47) ──────────────────
+    //
+    // Pedido da Charlie Brown Pizzas (07/11/2026): o motoboy le o endereco de
+    // longe, com o saco na mao. O teto e 1,5x DE PROPOSITO: o 1,5x e a mesma
+    // letra so mais alta (`larguraDoCorpo(1.5)` = 1), entao cabem as mesmas
+    // letras por linha e o `wrapLines` abaixo continua quebrando no lugar
+    // certo. Em 2x a linha teria metade das letras e quem quebraria seria a
+    // impressora — foi assim que "Rua Ma / cae" apareceu. Pedido de 2x ou 3x
+    // (modelo editado na mao) sai em 1,5x. Em 1x os bytes sao os de sempre.
+    const corpoDoEndereco = C("entrega", "endereco", 1) > 1 ? 1.5 : 1;
+    const noCorpoDoEndereco = (s) => (corpoDoEndereco > 1 ? comandoDoCorpo(corpoDoEndereco) + s + DOUBLE_OFF : s);
     if (linhasDoEndereco.length) {
-      for (const l of linhasDoEndereco) res += comNegrito(wrapLines(l, 2), "entrega", "endereco", false);
+      for (const l of linhasDoEndereco) res += noCorpoDoEndereco(comNegrito(wrapLines(l, 2), "entrega", "endereco", false));
     } else {
-      res += comNegrito(wrapLines(R("entrega", "endereco", "Endereco:") + " " + cleanAscii(order.customerAddress), 2), "entrega", "endereco", false);
+      res += noCorpoDoEndereco(comNegrito(wrapLines(R("entrega", "endereco", "Endereco:") + " " + cleanAscii(order.customerAddress), 2), "entrega", "endereco", false));
     }
   }
 
@@ -1839,7 +1851,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
 }
 
 export const VERSAO_DO_ASSISTENTE = "1.2.46";
-export const ASSINATURA_DO_CODIGO = "eed7172cd4c29171";
+export const ASSINATURA_DO_CODIGO = "57d7b48b65bd5d09";
 
 /** Os bytes ESC/POS da comanda, como o Assistente 1.2.46 manda para a impressora. */
 export function comandaDoAssistente(order, storeName, columns, profile = "safe") {

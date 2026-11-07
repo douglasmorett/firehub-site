@@ -260,6 +260,11 @@ export type Bloco = {
    *   3. quem calcula a largura dela é o mesmo código que a amplia.
    *
    * Hoje só o aviso de bebida atende. Chave ausente = o padrão de fábrica.
+   *
+   * A exceção é o ENDEREÇO (`entrega.endereco`), e com teto de 1,5x: o 1,5x é
+   * a mesma letra só mais alta (`larguraDaLetra(1.5)` = 1), então cabem as
+   * mesmas letras por linha e a quebra que o Assistente calculou continua
+   * certa. É o `maximo` do catálogo, e o Assistente aplica o mesmo teto.
    */
   corpos?: Record<string, Tamanho>;
   /**
@@ -834,10 +839,29 @@ export const DESTAQUE_DO_AVISO_DE_BEBIDA: Tamanho = 2;
 export const VERSAO_COM_CORPO_DO_AVISO = "1.2.21";
 
 /**
+ * Versão do Assistente que entende `corpos.endereco` no bloco de entrega.
+ *
+ * A 1.2.46 (a que está nas lojas em 07/11/2026) ignora a chave: o endereço
+ * sai em 1x, como sempre. O negrito do endereço não depende disto — ele vale
+ * desde a 1.2.31 (`comNegrito(..., "entrega", "endereco")` em server.js).
+ */
+export const VERSAO_COM_CORPO_DO_ENDERECO = "1.2.47";
+
+/**
  * Catálogo das linhas com corpo configurável. Leia `Bloco.corpos` antes de
  * acrescentar chave: a lista é curta de propósito.
  */
-export const CORPOS_DO_BLOCO: Partial<Record<TipoDeBloco, { chave: string; rotulo: string; ajuda: string; padrao: Tamanho }[]>> = {
+export const CORPOS_DO_BLOCO: Partial<Record<TipoDeBloco, {
+  chave: string; rotulo: string; ajuda: string; padrao: Tamanho;
+  /** O maior degrau que esta linha aceita. Ausente = a escada inteira. */
+  maximo?: Tamanho;
+  /**
+   * O card mostra também o "N" desta linha (mesma chave de ROTULOS_DO_BLOCO).
+   * Para linha que nem sempre tem palavra no papel onde clicar: o endereço
+   * separado sai "Rua: … / Numero: …", sem o "Endereco:".
+   */
+  negrito?: boolean;
+}[]>> = {
   itens: [
     {
       chave: "linhaDoItem",
@@ -852,7 +876,22 @@ export const CORPOS_DO_BLOCO: Partial<Record<TipoDeBloco, { chave: string; rotul
       padrao: DESTAQUE_DO_AVISO_DE_BEBIDA,
     },
   ],
+  entrega: [
+    {
+      chave: "endereco",
+      rotulo: "Letra do endereço",
+      ajuda: "Rua, número, bairro e cidade. Vai até 1,5x: a mesma letra, só mais alta, sem quebrar a linha. Precisa do Assistente 1.2.47.",
+      padrao: 1,
+      maximo: 1.5,
+      negrito: true,
+    },
+  ],
 };
+
+/** O maior degrau desta linha (o `maximo` do catálogo), ou o topo da escada. */
+export function corpoMaximo(tipo: TipoDeBloco, chave: string): Tamanho {
+  return (CORPOS_DO_BLOCO[tipo] || []).find((c) => c.chave === chave)?.maximo ?? TAMANHOS[TAMANHOS.length - 1];
+}
 
 export function corpoPadrao(tipo: TipoDeBloco, chave: string): Tamanho {
   return (CORPOS_DO_BLOCO[tipo] || []).find((c) => c.chave === chave)?.padrao ?? 1;
@@ -870,7 +909,7 @@ function saneiaCorpos(tipo: TipoDeBloco, bruto: unknown): Record<string, Tamanho
   const limpo: Record<string, Tamanho> = {};
   for (const [chave, valor] of Object.entries(bruto as Record<string, unknown>)) {
     if (conhecidas.has(chave) && TAMANHOS.includes(Number(valor) as Tamanho)) {
-      limpo[chave] = Number(valor) as Tamanho;
+      limpo[chave] = Math.min(Number(valor), corpoMaximo(tipo, chave)) as Tamanho;
     }
   }
   return Object.keys(limpo).length ? limpo : undefined;
