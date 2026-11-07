@@ -16,7 +16,7 @@ import {
 } from "@/lib/relatorios/base";
 import type { OpcoesDosFiltros } from "@/components/relatorios/useRelatorio";
 
-export type FiltrosVisiveis = Partial<Record<"horario" | "tipos" | "canais" | "marcas" | "lojas" | "categorias" | "produtos", boolean>>;
+export type FiltrosVisiveis = Partial<Record<"periodo" | "horario" | "tipos" | "canais" | "marcas" | "lojas" | "categorias" | "produtos", boolean>>;
 
 const rotulo: React.CSSProperties = { fontSize: "0.72rem", fontWeight: 800, color: PALETA.areiaTinta, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 };
 const campo: React.CSSProperties = { padding: "8px 10px", borderRadius: 10, border: `1.5px solid ${PALETA.areiaBorda}`, fontSize: "0.85rem", fontFamily: "inherit", background: "#fff", color: PALETA.carvao };
@@ -35,7 +35,7 @@ export default function BarraDeFiltros({
 }) {
   const hoje = hojeDaLoja || opcoes?.hoje || filtros.ate;
   const ativo = atalhoDoPeriodo(filtros.de, filtros.ate, hoje);
-  const v = { horario: true, tipos: true, canais: true, marcas: true, lojas: true, ...visiveis };
+  const v = { periodo: true, horario: true, tipos: true, canais: true, marcas: true, lojas: true, ...visiveis };
 
   const alternarTipo = (t: TipoDeVenda) => {
     const tem = filtros.tipos.includes(t);
@@ -44,8 +44,8 @@ export default function BarraDeFiltros({
 
   return (
     <section className="fh-sem-impressao" style={{ background: "#fff", border: `1px solid ${PALETA.areiaBorda}`, borderRadius: 16, padding: "1rem 1.1rem", marginBottom: "1.25rem", display: "flex", flexDirection: "column", gap: "0.9rem" }}>
-      {/* Período */}
-      <div>
+      {/* Período — o Faturamento mensal o esconde: lá o período é o ano. */}
+      {v.periodo && <div>
         <div style={rotulo}>Período</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
           {ATALHOS.map((a) => (
@@ -72,7 +72,7 @@ export default function BarraDeFiltros({
               onChange={(e) => e.target.value && mudar({ ate: e.target.value })} style={campo} />
           </span>
         </div>
-      </div>
+      </div>}
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.9rem 1.4rem", alignItems: "flex-end" }}>
         {v.horario && (
