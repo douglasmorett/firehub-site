@@ -58,6 +58,12 @@ confere("telefone diferente: confirma o nome", saiu.includes('É o pedido nº 4,
 const cozinha = pedidoAtivoParaOPrompt({ ...base, status: "PREPARANDO" });
 confere("em preparo: o item novo vai no mesmo pedido", cozinha.includes("ele vai NESTE pedido") && cozinha.includes("acrescentarAoPedido"), true);
 confere("telefone igual: sem a pergunta do nome", cozinha.includes("no nome de"), false);
+// Lapastine nº 14 (06/11/2026): o robô perguntava "Pix ou dinheiro?" e "é outro
+// pedido?" ao cliente que só repetia o pagamento do pedido já na cozinha.
+const comPagamento = pedidoAtivoParaOPrompt({ ...base, status: "ACEITO", pagamento: "Dinheiro", trocoPara: 100, endereco: "Travessa WE 72, nº 1221, Cidade Nova" });
+confere("o pedido na loja mostra pagamento e troco", comPagamento.includes("Pagamento: Dinheiro, troco para"), true);
+confere("e o endereço", comPagamento.includes("Endereço: Travessa WE 72, nº 1221, Cidade Nova"), true);
+confere("pagamento repetido não vira 'é outro pedido?'", comPagamento.includes('nunca pergunte "é outro pedido?"'), true);
 
 console.log(`\n${falhou === 0 ? "✅" : "❌"} pedido do cliente: ${ok} ok, ${falhou} falha(s)`);
 process.exit(falhou === 0 ? 0 : 1);

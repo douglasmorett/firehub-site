@@ -81,6 +81,16 @@ function confere(nome: string, cond: boolean) {
   confere("a lista guarda só as 10 últimas", linhas.get(`janela|${TEL}`)?.botSentHashes?.length === 10);
   confere("a mais antiga que sobrou é a 2", !(await handleOutgoingMessage("janela", TEL, "mensagem 2", t0)));
 
+  // Saudação automática do WhatsApp Business (06/11/2026): sai 2 s depois do
+  // primeiro "oi" do cliente. Não é o lojista assumindo — o robô segue.
+  const SAUDACAO_DO_BUSINESS = "Olá! Seja bem vindo ao *Construção do lanche* 🥳 Veja o nosso cardápio";
+  linhas.set(`business|${TEL}`, { botSentHashes: [], lastMessageAt: new Date(t0), recentIntervals: [] });
+  confere("saudação do Business 2 s depois do primeiro 'oi' não cala o robô", !(await handleOutgoingMessage("business", TEL, SAUDACAO_DO_BUSINESS, t0 + 2000)));
+  confere("saudação do Business: nada de atendente gravado", !linhas.get(`business|${TEL}`)?.humanTakeoverAt);
+  // No meio da conversa (o cliente tinha escrito 40 s antes), 2 s depois é o lojista.
+  linhas.set(`meio|${TEL}`, { botSentHashes: [], lastMessageAt: new Date(t0), recentIntervals: [40_000] });
+  confere("no meio da conversa, mensagem 2 s depois do cliente é o lojista", await handleOutgoingMessage("meio", TEL, "Já te mando o Pix", t0 + 2000));
+
   console.log(`${ok} ok, ${falhas} falha(s)`);
   process.exit(falhas ? 1 : 0);
 })().catch((e) => { console.error(e); process.exit(1); });

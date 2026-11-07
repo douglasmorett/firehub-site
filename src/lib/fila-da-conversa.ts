@@ -57,6 +57,19 @@ export type Rajadas<T> = {
    * frente mesmo assim.
    */
   vez(chave: string, tetoMs: number): Promise<() => void>;
+  /**
+   * Há mensagem desta conversa na rajada, ainda não tirada por ninguém? (Quem
+   * a mandou está esperando a janela ou a vez — e vai carregá-la.)
+   */
+  temPendente(chave: string): boolean;
+  /**
+   * Devolve um item para o COMEÇO da rajada, para quem está esperando levá-lo
+   * junto. É o caminho da resposta que nasceu velha: o cliente escreveu de novo
+   * enquanto a IA pensava, e a próxima resposta lê as duas mensagens. Só faz
+   * sentido com `temPendente` verdadeiro — sem ninguém esperando, o item ficaria
+   * parado ali.
+   */
+  devolver(chave: string, item: T): void;
   /** Conversas com algo guardado (rajada ou fila) — para teste de vazamento. */
   tamanho(): number;
 };
@@ -126,6 +139,19 @@ export function criarRajadas<T>(): Rajadas<T> {
         solto = true;
         soltar();
       });
+    },
+
+    temPendente(chave) {
+      return (rajadas.get(chave) || []).length > 0;
+    },
+
+    devolver(chave, item) {
+      const lista = rajadas.get(chave);
+      // Senha negativa: nunca é a "mais nova" (chegouOutraDepois) nem a de
+      // ninguém que vai tirar — só vai junto, na frente.
+      const devolvido = { senha: -(++contador), item };
+      if (lista) lista.unshift(devolvido);
+      else rajadas.set(chave, [devolvido]);
     },
 
     tamanho() {

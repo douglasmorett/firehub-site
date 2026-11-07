@@ -27,6 +27,7 @@
 
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
+import { pareceMensagemAutomaticaDoBusiness } from "@/lib/reacao-e-status";
 
 /**
  * Onde o estado por conversa é guardado.
@@ -637,6 +638,14 @@ export async function handleOutgoingMessage(
     await new Promise((r) => setTimeout(r, ESPERA_DO_ECO_MS));
     const depois = await readState(userId, remoteJid);
     if ((depois?.botSentHashes || []).includes(hash)) return false;
+
+    // A saudação automática do WhatsApp Business, segundos depois do primeiro
+    // "oi" do cliente, não é o lojista assumindo (lib/reacao-e-status.ts).
+    const paradas = depois?.recentIntervals || [];
+    if (pareceMensagemAutomaticaDoBusiness(now, depois?.lastMessageAt?.getTime(), paradas.length ? paradas[paradas.length - 1] : null)) {
+      console.log(`[LoopGuard] Mensagem automática do WhatsApp Business em ${remoteJid} (segundos depois do cliente abrir a conversa): o robô segue atendendo.`);
+      return false;
+    }
 
     await writeState(userId, remoteJid, { humanTakeoverAt: new Date(now) });
     return true;

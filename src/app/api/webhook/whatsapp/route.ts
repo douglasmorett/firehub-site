@@ -23,7 +23,8 @@ import { numeroEstaNaListaDeIgnorados, numeroDaEquipeDoFireHub } from '@/lib/num
 import { ehConversaDeCliente, conversaOriginalEhDeCliente, tipoDoJid } from '@/lib/jid-de-cliente';
 import { contaOficialDoWhatsApp } from '@/lib/contas-oficiais-whatsapp';
 import { desembrulharMensagem, localizacaoDoPayload, semLinhaDaLocalizacao, textoDaLocalizacao } from '@/lib/localizacao-do-whatsapp';
-import { ehSoReacao, respondeAStatus, AVISO_DE_RESPOSTA_A_STATUS } from '@/lib/reacao-e-status';
+import { ehSoReacao, respondeAStatus, respostaAStatusSemPergunta, emojiSemPerguntaDoRobo, AVISO_DE_RESPOSTA_A_STATUS } from '@/lib/reacao-e-status';
+import { enxugarResposta } from '@/lib/resposta-enxuta';
 import { esperarAVezDaRajada, rajadasDoRobo } from '@/lib/rajada-do-webhook';
 import { avisarDono, avisarAdminDoSistema, textoDeProblemaNoPedido } from '@/lib/alertas-do-dono';
 import { textoDoAvisoDaFicha, type FichaPreenchida } from '@/lib/respostas-prontas';
@@ -74,6 +75,13 @@ const TETO_DA_RESPOSTA_TARDIA_MS = 60_000;
  * rajada: conversa muda é pior que duas respostas.
  */
 const TETO_DA_VEZ_DA_CONVERSA_MS = 35_000;
+
+/**
+ * Respostas descartadas em seguida por conversa ("o cliente escreveu de novo
+ * enquanto a IA pensava"). Duas no máximo: quem escreve sem parar recebe a
+ * terceira mesmo assim, em vez de ficar sem resposta até parar de digitar.
+ */
+const descartesSeguidos = new Map<string, number>();
 
 // Estado dos alertas de "IA fora do ar". A CONTAGEM de falhas é memória do
 // processo de propósito: depois de um deploy o alerta pode repetir UMA vez, e no
@@ -874,6 +882,15 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
     registrarTrace({ instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace, estagio: "reacao-ignorada" });
     return;
   }
+  // Comentário num status ("que delícia", "top", "amei"), sem pergunta nem
+  // pedido: também não é conversa. O robô "entrava mandando mensagem" — a
+  // saudação com o link e o "bora pedir?" — para quem só curtiu o status
+  // (Douglas, 06/11/2026: "a gente só manda mensagem se o cliente manda
+  // mensagem para a gente").
+  if (!(isAudioMessage || audioObj) && respostaAStatusSemPergunta(conteudo, rawText)) {
+    registrarTrace({ instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace, estagio: "reacao-ignorada", detalhe: "comentário num status, sem pergunta" });
+    return;
+  }
 
   // Detecção de Ligação de Voz / Chamada Perdida
   const eventName = (body.event || body.type || "").toUpperCase();
@@ -1429,6 +1446,19 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
   }
   const aiHistory = history.map(msg => ({ sender: msg.sender, text: msg.text }));
 
+  // ── EMOJI SOLTO NÃO PEDE RESPOSTA ────────────────────────────────────────
+  // "😍", "😮", "👍" sem o robô ter perguntado nada: era o robô puxando
+  // assunto ("Kkkk, ficou surpreso com alguma coisa?", Pizzaria 17, 06/11) —
+  // quase sempre reação a um status que chegou sem a citação. Com uma pergunta
+  // do robô no ar ("Confirma?"), o 👍 é resposta e segue (lib/reacao-e-status.ts).
+  const ultimaDoRobo = [...history].reverse().find((m) => m.sender === "bot")?.text;
+  if (!audioData && !imagemData && !localizacao && emojiSemPerguntaDoRobo(textMessage, ultimaDoRobo)) {
+    void registrarMensagemDoCliente(user.id, remoteJid, textoDoClienteParaOPainel);
+    registrarTrace({ instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace, estagio: "reacao-ignorada", detalhe: "emoji solto, sem pergunta do robô no ar" });
+    liberarAVez();
+    return;
+  }
+
   console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] Processando IA para ${remoteJid} com ${aiHistory.length} mensagens no histórico...`);
   
   const customMenuUrl = ((user.chatbotConfig as any)?.externalMenuUrl || "").trim();
@@ -1444,6 +1474,8 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
   // Um caminho só, para a resposta que chegou no prazo e para a que chegou
   // DEPOIS dele (`tardia`). Enquanto foram dois, a tardia não tinha caminho
   // nenhum: era descartada — com o pedido já gravado e impresso na cozinha.
+  /** Quando a IA começou a pensar nesta mensagem (o que mudou depois, ela não viu). */
+  let iaComecouEm = now;
   const entregarRespostaDaIa = async (aiResponse: any, tardia: boolean): Promise<void> => {
     // ── ONDE O PEDIDO FOI PARAR ───────────────────────────────────────────────
     // Registrado no rastro para que "a IA confirmou mas a cozinha não recebeu"
@@ -1671,8 +1703,38 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
         }
       }
 
+      // ── A RESPOSTA ENXUTA (lib/resposta-enxuta.ts) ──────────────────────────
+      // O que o prompt pede e o Haiku nem sempre cumpre vira regra aqui: uma
+      // pergunta por mensagem, sem perguntar de novo o pagamento ou o troco que
+      // o cliente já deu, sem "é outro pedido?" sem ele ter pedido item (nem
+      // pela segunda vez) e sem "bora pedir?". Auditoria de 06/11/2026: a
+      // Lapastine perguntou "Pix ou dinheiro?" quatro vezes ao mesmo cliente.
+      const temAnexo = Boolean(aiResponse.chavePix) || enviarCardapio ||
+        (Array.isArray(aiResponse.respostasProntas) && aiResponse.respostasProntas.length > 0);
+      if (!falhaDaIa && !donoNaQueda && !callHuman && !ehODono) {
+        const enxuta = enxugarResposta(replyText, { historico: history, mensagemDoCliente: transcription || textMessage });
+        if (enxuta.cortes.length) {
+          console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] ✂️ Resposta enxugada para ${remoteJid}: ${[...new Set(enxuta.cortes)].join(", ")}.`);
+          const vazia = !enxuta.texto.trim();
+          // Sobrou nada depois de tirar a pergunta repetida: um "Anotado" curto
+          // para o cliente saber que foi lido. Sobrou nada depois de tirar só o
+          // "bora pedir?": silêncio. Com chave Pix/arquivo/foto para mandar, a
+          // resposta original fica (o anexo precisa do texto).
+          if (!vazia) replyText = enxuta.texto;
+          else if (!temAnexo) replyText = enxuta.cortes.some((c) => c.endsWith("já dito")) ? "Anotado 👍" : "";
+        }
+      }
+      if (!replyText.trim()) {
+        const historicoAtual = conversationCache.get(convKey) || [];
+        historicoAtual.push({ sender: 'user', text: transcription || textMessage, timestamp: now });
+        conversationCache.set(convKey, historicoAtual.slice(-15));
+        void registrarMensagemDoCliente(user.id, remoteJid, transcription || textoDoClienteParaOPainel);
+        console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] 🤫 Nada a dizer para ${remoteJid} depois de enxugar a resposta.`);
+        return;
+      }
+
       const recipientTarget = remoteJid || data.from || "";
-    
+
       // O cliente enviou áudio, a IA escuta e entende, mas a resposta é enviada SEMPRE em texto.
       // Enquanto a IA pensava (3–5 s de leitura + a chamada), OUTRA mensagem do
       // mesmo cliente pode ter entregado a conversa à equipe — "oi" e, dois
@@ -1696,6 +1758,56 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
         return;
       }
 
+      // ── A CONVERSA ANDOU ENQUANTO A IA PENSAVA ──────────────────────────────
+      // Lapastine, 06/11/2026, pedido nº 14: o dono fechou o rascunho pelo
+      // painel às 21:05:19 (o cliente recebeu "Pedido recebido") e, 24 s
+      // depois, o robô mandou "Confirma o pedido pra eu mandar pra cozinha?" —
+      // resposta pensada antes do fechamento. Pedido desta conversa que saiu do
+      // rascunho DEPOIS que a IA começou, sem ter sido por esta resposta: a
+      // resposta está velha e não sai.
+      if (!destinoDoPedido?.ok && cleanPhone.length >= 8) {
+        const fechadoPorOutro = await prisma.customerOrder.findFirst({
+          where: {
+            franchiseeId: user.id,
+            source: "WHATSAPP_IA",
+            status: { notIn: ["CRIANDO_IA", "CANCELADO"] },
+            createdAt: { gte: new Date(iaComecouEm) },
+            customerPhone: { endsWith: cleanPhone.slice(-8) },
+          },
+          select: { dailyOrderNumber: true },
+        }).catch(() => null);
+        if (fechadoPorOutro) {
+          void registrarMensagemDoCliente(user.id, remoteJid, transcription || textoDoClienteParaOPainel);
+          console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] Resposta da IA descartada: o pedido nº ${fechadoPorOutro.dailyOrderNumber ?? "—"} de ${remoteJid} foi fechado enquanto ela era gerada.`);
+          return;
+        }
+      }
+      // O cliente mandou OUTRA mensagem enquanto a IA pensava ("Pix" e, 15 s
+      // depois, "vai ser no dinheiro"): esta resposta já nasceu velha — era o
+      // "Pix anotado!" que chegava depois do "dinheiro". Ela não sai; o texto
+      // volta para a rajada e a próxima resposta lê as duas juntas, como uma
+      // pessoa leria. Só sem efeito colateral (pedido fechado, chave Pix,
+      // anexo, chamada da equipe) e sem áudio/foto/localização, cujos bytes só
+      // existem nesta chamada.
+      if (
+        !tardia && !callHuman && !temAnexo && !destinoDoPedido?.finalizado &&
+        !audioData && !imagemData && !localizacao
+      ) {
+        const rajadas = rajadasDoRobo();
+        const chaveDaRajada = `${user.id}_${remoteJid}`;
+        if (rajadas.temPendente(chaveDaRajada) && (descartesSeguidos.get(chaveDaRajada) || 0) < 2) {
+          descartesSeguidos.set(chaveDaRajada, (descartesSeguidos.get(chaveDaRajada) || 0) + 1);
+          rajadas.devolver(chaveDaRajada, { texto: textMessage, barreira: false, mensagemAnteriorEm: vezDaRajada.mensagemAnteriorEm ?? null });
+          void registrarMensagemDoCliente(user.id, remoteJid, textoDoClienteParaOPainel);
+          registrarTrace({
+            instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace, estagio: "juntada",
+            detalhe: "resposta descartada: o cliente escreveu de novo enquanto a IA pensava",
+          });
+          return;
+        }
+      }
+
+      descartesSeguidos.delete(`${user.id}_${remoteJid}`);
       const enviou = silenciarResposta ? true : await replyToCustomer(user.id, remoteJid, replyText, recipientTarget);
       if (!silenciarResposta) {
         registrarTrace({
@@ -1897,6 +2009,7 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
         .catch(() => {});
     };
 
+    iaComecouEm = Date.now();
     const espera = await comPrazo(
       // `mensagemAnteriorEm` é o que diz se este "oi" é o primeiro do dia
       // (lib/saudacao-do-dia.ts): depois desta mensagem o anti-loop já

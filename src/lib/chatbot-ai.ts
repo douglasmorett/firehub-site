@@ -901,6 +901,9 @@ export async function processChatbotAI(
             acrescimoPendente: ativo.pendente ? itensEmTexto(ativo.pendente.itens) : null,
             // Achado pelo nome, com o telefone do pedido um dígito diferente.
             outroTelefone: ativo.comoReconheceu === "parecido" ? { nome: p.customerName || "", telefone: p.customerPhone || "" } : null,
+            pagamento: p.paymentMethod || null,
+            trocoPara: Number(p.changeAmount) || null,
+            endereco: String(p.deliveryType || "").toUpperCase() === "DELIVERY" ? p.customerAddress || null : null,
           });
         }
       } catch (e: any) {

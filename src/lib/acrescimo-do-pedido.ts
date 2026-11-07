@@ -106,6 +106,10 @@ export type PedidoAtivo = {
    * no site. O robô confirma com o cliente antes de tratar o pedido como dele.
    */
   outroTelefone?: { nome: string; telefone: string } | null;
+  /** Como o pedido já está na loja — para o robô não perguntar de novo (Lapastine nº 14, 06/11/2026). */
+  pagamento?: string | null;
+  trocoPara?: number | null;
+  endereco?: string | null;
 };
 
 /**
@@ -121,6 +125,10 @@ export function pedidoAtivoParaOPrompt(p: PedidoAtivo): string {
   const cabecalho =
     `📦 ESTE CLIENTE JÁ TEM UM PEDIDO HOJE: nº ${n}, feito há ${p.minutos} min, ${statusParaOCliente(p.status)}.\n` +
     `Itens: ${p.itens}. Total: ${reais(p.total)}.` +
+    (p.pagamento ? ` Pagamento: ${p.pagamento}${Number(p.trocoPara) > 0 ? `, troco para ${reais(Number(p.trocoPara))}` : ""}.` : "") +
+    (p.endereco ? ` Endereço: ${p.endereco}.` : "") +
+    `\n→ Se o cliente só repetir ou mudar pagamento, troco ou endereço: se já está assim no pedido, confirme numa frase ("Já está no seu pedido nº ${n} ✅"); ` +
+    `se for diferente, diga que vai pedir para a loja ajustar e escreva [[CHAMAR_ATENDENTE]]. Isso NÃO é pedido novo: nunca pergunte "é outro pedido?" por causa disso.` +
     (p.outroTelefone
       ? `
 Este pedido está no nome de "${p.outroTelefone.nome}" com o telefone ${p.outroTelefone.telefone}, um dígito diferente deste WhatsApp ` +
