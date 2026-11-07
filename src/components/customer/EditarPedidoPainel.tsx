@@ -53,6 +53,7 @@ import { escolhasParaReabrir, escolhasEmTexto, opcaoQueCasa, normalizarBusca } f
 import ComboModal from "@/components/customer/ComboModal";
 import MotivoDoCancelamento from "@/components/MotivoDoCancelamento";
 import { motivoValido } from "@/lib/motivo-do-cancelamento";
+import { cortesiaNaEdicao, MOTIVOS_DE_CORTESIA } from "@/lib/cortesia";
 
 type ItemDoPedido = {
   id: string;
@@ -207,7 +208,7 @@ export default function EditarPedidoPainel({
   operador: { role?: string | null; permissions?: string | null };
   aoFechar: () => void;
   /** Chamada depois que o servidor confirmou. Recarrega a lista e reimprime. */
-  aoSalvar: (resultado: { cancelado?: boolean; acrescimo?: any; totalAmount?: number; soDesconto?: boolean; desconto?: number; reimprimir?: boolean }) => void;
+  aoSalvar: (resultado: { cancelado?: boolean; acrescimo?: any; totalAmount?: number; soDesconto?: boolean; desconto?: number; reimprimir?: boolean; cortesia?: number }) => void;
   /** Abre a janela de cancelamento de sempre (motivo, trava do finalizado).
    *  No celular o Cancelar do card ficava fora de alcance (Holy Top, 19/10/2026). */
   aoCancelarPedido?: () => void;
@@ -275,6 +276,36 @@ export default function EditarPedidoPainel({
   // Tirar item ou diminuir quantidade pede o motivo (lib/motivo-do-cancelamento.ts):
   // é o que o dono lê no fechamento do caixa.
   const [motivo, setMotivo] = useState("");
+
+  // ── CORTESIA (lib/cortesia.ts) ─────────────────────────────────────────
+  // Um item (ou parte das unidades) de graça, com motivo: fica a R$ 0,00 na
+  // comanda e na conta, sai da venda e entra no custo. Grava na hora, como o
+  // "Ajustar o desconto" — não espera o Salvar das outras mudanças.
+  const podeCortesia = useMemo(() => cortesiaNaEdicao(pedido, avaliacao), [pedido, avaliacao]);
+  const [cortesiaDe, setCortesiaDe] = useState<string | null>(null);
+  const [cortesiaQtd, setCortesiaQtd] = useState(1);
+  const [cortesiaMotivo, setCortesiaMotivo] = useState("");
+  const [dandoCortesia, setDandoCortesia] = useState(false);
+  const [erroDaCortesia, setErroDaCortesia] = useState("");
+  const darCortesia = async (itemId: string) => {
+    setDandoCortesia(true);
+    setErroDaCortesia("");
+    try {
+      const res = await fetch(`/api/store/orders/${encodeURIComponent(pedido.id)}/cortesia`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId, quantidade: cortesiaQtd, motivo: cortesiaMotivo.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setErroDaCortesia(data.error || "Não consegui registrar a cortesia."); return; }
+      setCortesiaDe(null);
+      aoSalvar({ cortesia: data.cortesia, totalAmount: data.totalAmount, reimprimir: false });
+    } catch {
+      setErroDaCortesia("Sem conexão. Tente de novo.");
+    } finally {
+      setDandoCortesia(false);
+    }
+  };
 
   // Desconto da edição. Fechado por padrão: a maioria das edições é só item.
   const [descontoAberto, setDescontoAberto] = useState(false);
@@ -670,6 +701,58 @@ export default function EditarPedidoPainel({
                     >
                       Desfazer
                     </button>
+                  </div>
+                )}
+                {podeCortesia.pode && !fora && !troca && qtd === item.quantity && Number(item.price) > 0 && cortesiaDe !== item.id && (
+                  <button
+                    type="button"
+                    onClick={() => { setCortesiaDe(item.id); setCortesiaQtd(item.quantity); setCortesiaMotivo(""); setErroDaCortesia(""); }}
+                    title="Dar este item de graça, com motivo: sai da venda e aparece no relatório de cortesias"
+                    style={{ marginTop: "4px", marginRight: "6px", padding: "4px 10px", borderRadius: "6px", border: "1px solid #FDE68A", background: "#FFFBEB", color: "#B45309", fontWeight: 700, fontSize: "0.76rem", cursor: "pointer", fontFamily: "inherit" }}
+                  >
+                    🎁 Dar como cortesia
+                  </button>
+                )}
+                {cortesiaDe === item.id && (
+                  <div style={{ marginTop: "6px", padding: "8px 10px", borderRadius: "8px", background: "#FFFBEB", border: "1px solid #FDE68A", color: "#78350F", fontSize: "0.78rem", lineHeight: 1.45 }}>
+                    <div style={{ fontWeight: 800, marginBottom: "4px" }}>🎁 Cortesia</div>
+                    {item.quantity > 1 && (
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
+                        <span>Quantas unidades:</span>
+                        <button type="button" onClick={() => setCortesiaQtd((n) => Math.max(1, n - 1))} disabled={cortesiaQtd <= 1} style={{ ...botaoQtd, opacity: cortesiaQtd <= 1 ? 0.4 : 1 }} aria-label="Menos unidades de cortesia">−</button>
+                        <strong style={{ minWidth: 18, textAlign: "center" }}>{cortesiaQtd}</strong>
+                        <button type="button" onClick={() => setCortesiaQtd((n) => Math.min(item.quantity, n + 1))} disabled={cortesiaQtd >= item.quantity} style={{ ...botaoQtd, opacity: cortesiaQtd >= item.quantity ? 0.4 : 1 }} aria-label="Mais unidades de cortesia">+</button>
+                        <span>de {item.quantity}</span>
+                      </div>
+                    )}
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", marginBottom: "6px" }}>
+                      {MOTIVOS_DE_CORTESIA.map((m) => (
+                        <button key={m} type="button" onClick={() => setCortesiaMotivo(m)}
+                          style={{ padding: "4px 10px", borderRadius: 999, cursor: "pointer", fontFamily: "inherit", fontSize: "0.74rem", fontWeight: 700, border: `1px solid ${cortesiaMotivo === m ? "#B45309" : "#FDE68A"}`, background: cortesiaMotivo === m ? "#FDE68A" : "#FFF", color: "#78350F" }}>
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      value={cortesiaMotivo}
+                      onChange={(e) => setCortesiaMotivo(e.target.value.slice(0, 120))}
+                      placeholder="Motivo (obrigatório — aparece no relatório de cortesias)"
+                      style={{ width: "100%", padding: "7px 9px", borderRadius: "6px", border: `1.5px solid ${motivoValido(cortesiaMotivo) ? "#0F766E" : "#FDE68A"}`, fontSize: "0.8rem", fontFamily: "inherit", boxSizing: "border-box", marginBottom: "6px" }}
+                    />
+                    <div style={{ marginBottom: "6px" }}>
+                      O cliente deixa de pagar <strong>{fmt(Number(item.price) * cortesiaQtd)}</strong>. O item continua na comanda{ehMesa ? " e na conta" : ""} a R$ 0,00: sai da venda e entra no custo (o estoque não volta).
+                    </div>
+                    {erroDaCortesia && <div role="alert" style={{ color: "#B71C1C", fontWeight: 700, marginBottom: "6px" }}>{erroDaCortesia}</div>}
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      <button type="button" onClick={() => darCortesia(item.id)} disabled={dandoCortesia || !motivoValido(cortesiaMotivo)}
+                        style={{ padding: "6px 12px", borderRadius: "6px", border: "none", background: dandoCortesia || !motivoValido(cortesiaMotivo) ? "#CBD5E1" : "#B45309", color: "#FFF", fontWeight: 800, fontSize: "0.78rem", cursor: dandoCortesia || !motivoValido(cortesiaMotivo) ? "default" : "pointer", fontFamily: "inherit" }}>
+                        {dandoCortesia ? "Salvando…" : "Confirmar cortesia"}
+                      </button>
+                      <button type="button" onClick={() => setCortesiaDe(null)}
+                        style={{ padding: "6px 12px", borderRadius: "6px", border: "1px solid #FDE68A", background: "#FFF", color: "#78350F", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit" }}>
+                        Desistir
+                      </button>
+                    </div>
                   </div>
                 )}
                 {podeRemontar && (

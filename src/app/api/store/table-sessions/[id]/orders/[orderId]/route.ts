@@ -36,7 +36,7 @@
  * devolve insumo — cancelar o pedido devolve tudo. Está documentado na tela.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { resolverOperadorDaMesa, rotuloDoOperador } from "@/lib/garcom-auth";
+import { resolverOperadorDaMesa, rotuloDoOperador, idDoOperadorDaMesa } from "@/lib/garcom-auth";
 import { carregarRodadaDaMesa, editarRodadaDaMesa, cancelarRodadaDaMesa } from "@/lib/edicao-na-mesa";
 import { motivoDoCorpo } from "@/lib/motivo-do-cancelamento";
 
@@ -72,6 +72,7 @@ export async function PATCH(
       rodada: ctx.rodada,
       pedido: { itens: body?.itens, removerItemIds: body?.removerItemIds, motivo: motivoDoCorpo(body) },
       quem: rotuloDoOperador(ctx.operador),
+      quemId: idDoOperadorDaMesa(ctx.operador),
       podeRemoverItem: ctx.podeRemoverItem,
     });
     return NextResponse.json(r.corpo, { status: r.status });
@@ -96,7 +97,7 @@ export async function DELETE(
     // corpo em DELETE, em ?motivo=.
     const body = await req.json().catch(() => ({} as any));
     const motivo = motivoDoCorpo(body) || motivoDoCorpo({ motivo: req.nextUrl.searchParams.get("motivo") });
-    const r = await cancelarRodadaDaMesa({ rodada: ctx.rodada, quem: rotuloDoOperador(ctx.operador), motivo });
+    const r = await cancelarRodadaDaMesa({ rodada: ctx.rodada, quem: rotuloDoOperador(ctx.operador), quemId: idDoOperadorDaMesa(ctx.operador), motivo });
     return NextResponse.json(r.corpo, { status: r.status });
   } catch (error: any) {
     console.error("[Table Session Order DELETE]", error);

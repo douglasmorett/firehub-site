@@ -78,7 +78,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const registro: RegistroDeEdicao = {
       quando: new Date().toISOString(),
       quem,
+      quemId: operador.id,
       acao: "DESCONTO",
+      ...(motivo ? { motivo } : {}),
       descricao,
       totalAntes: order.totalAmount || 0,
       totalDepois: conta.total,

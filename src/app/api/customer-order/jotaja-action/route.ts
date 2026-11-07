@@ -10,6 +10,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { lojasDaVisao, cookieDaVisao } from "@/lib/loja-ativa";
 import { prisma } from "@/lib/prisma";
+import { empilharEdicao } from "@/lib/edicao-de-pedido";
 
 type Action = "accept_cancellation" | "deny_cancellation" | "deny";
 
@@ -38,7 +39,7 @@ export async function POST(req: NextRequest) {
   // Verifica que o pedido pertence ao franqueado logado
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true, ownerId: true, role: true },
+    select: { id: true, ownerId: true, role: true, name: true },
   });
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
@@ -53,7 +54,7 @@ export async function POST(req: NextRequest) {
 
   const order = await prisma.customerOrder.findFirst({
     where: { openDeliveryOrderId: orderId, franchiseeId: { in: lojaIds } } as any,
-    select: { id: true, openDeliveryOrderId: true, cancelDispute: true, franchiseeId: true } as any,
+    select: { id: true, openDeliveryOrderId: true, cancelDispute: true, franchiseeId: true, editHistory: true, totalAmount: true } as any,
   });
   if (!order) {
     return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
@@ -107,6 +108,23 @@ export async function POST(req: NextRequest) {
       dbUpdate.status = "CANCELADO";
       dbUpdate.cancelledBy = "LOJA";
       dbUpdate.cancelReason = reason || "Pedido recusado pelo restaurante.";
+    }
+
+    // Quem recusou/aceitou, no rastro do pedido (relatório Cancelamentos e
+    // cortesias, lib/relatorios/cancelamentos.ts): o painel grava o CANCELOU
+    // com nome e id em api/customer-order/status; aqui não gravava nada.
+    if (dbUpdate.status === "CANCELADO") {
+      const papel = String(user.role || "").toUpperCase() === "STAFF" ? "funcionário" : String(user.role || "").toUpperCase() === "ADMIN" ? "admin" : "dono";
+      dbUpdate.editHistory = empilharEdicao((order as any).editHistory, {
+        quando: new Date().toISOString(),
+        quem: `${(user.name || "").trim() || "Loja"} (${papel})`,
+        quemId: user.id,
+        acao: "CANCELOU",
+        descricao: `Pedido cancelado pelo painel ($JotaJá)`,
+        totalAntes: Number((order as any).totalAmount) || 0,
+        totalDepois: 0,
+        motivo: dbUpdate.cancelReason,
+      }) as any;
     }
 
     if (Object.keys(dbUpdate).length > 0) {

@@ -20,7 +20,7 @@ export async function POST(req: Request) {
 
   const data = await req.json();
 
-  const dbUser = await prisma.user.findUnique({ where: { email: session.user.email! }, select: { id: true, ownerId: true } });
+  const dbUser = await prisma.user.findUnique({ where: { email: session.user.email! }, select: { id: true, ownerId: true, name: true, email: true, role: true } });
   if (!dbUser) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
   const r = await registrarVendaPresencial({
@@ -30,6 +30,11 @@ export async function POST(req: Request) {
     data,
     // Venda no fiado com a senha do gerente ligada (lib/senha-do-gerente.ts).
     senhaDoGerente: req.headers.get(CABECALHO_DA_SENHA),
+    // Quem deu o desconto (se houver), para o relatório de descontos por operador.
+    operador: {
+      quem: `${(dbUser.name || dbUser.email || "Loja").trim()} (${String(dbUser.role || "").toUpperCase() === "STAFF" ? "funcionário" : "dono"})`,
+      quemId: dbUser.id,
+    },
   });
   return NextResponse.json(r.corpo, { status: r.status });
 }

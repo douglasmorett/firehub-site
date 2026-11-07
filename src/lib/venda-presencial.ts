@@ -74,6 +74,12 @@ export async function registrarVendaPresencial(opcoes: {
   data: any;
   /** O cabeçalho da senha do gerente (venda no fiado com a senha ligada). */
   senhaDoGerente?: string | null;
+  /**
+   * Quem está no caixa (nome com o papel e o User.id). Vai para o rastro do
+   * pedido quando a venda sai com desconto: é dele que o Cupons e descontos
+   * diz quem deu (lib/relatorios/descontos.ts, `descontosManuaisPorOperador`).
+   */
+  operador?: { quem: string; quemId: string } | null;
 }): Promise<ResultadoDaVendaPresencial> {
   const data = opcoes.data || {};
   const { customerName, customerPhone, customerAddress, deliveryType, notes, totalAmount, deliveryFee, items, employeeId, employeeName, changeAmount, change, discountTotal, discountMerchant } = data;
@@ -373,6 +379,20 @@ export async function registrarVendaPresencial(opcoes: {
         ? {
             discountTotal: Math.round(Number(discountTotal) * 100) / 100,
             discountMerchant: Math.round(Number(discountMerchant ?? discountTotal) * 100) / 100,
+            // Quem deu, no rastro (desde 07/11/2026): o motivo já vai na observação.
+            ...(opcoes.operador
+              ? {
+                  editHistory: [{
+                    quando: new Date().toISOString(),
+                    quem: opcoes.operador.quem,
+                    quemId: opcoes.operador.quemId,
+                    acao: "DESCONTO",
+                    descricao: `desconto no lançamento: R$ ${(Math.round(Number(discountTotal) * 100) / 100).toFixed(2).replace(".", ",")}`,
+                    totalAntes: Math.round(((Number(totalAmount) || 0) + Number(discountTotal)) * 100) / 100,
+                    totalDepois: Number(totalAmount) || 0,
+                  }] as any,
+                }
+              : {}),
           }
         : {}),
       // A taxa vem do PDV, que a cota em /api/delivery-fee (mesma regra do

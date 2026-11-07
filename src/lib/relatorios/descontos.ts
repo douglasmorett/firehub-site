@@ -206,6 +206,7 @@ import {
   type TipoDeVenda,
 } from "@/lib/relatorios/base";
 import { cent, descontoNoFechamento, entraNaVenda, reais } from "@/lib/relatorios/regua-da-venda";
+import { OPERADOR_NAO_REGISTRADO, chaveDoOperador, mapaDeNomesParaId } from "@/lib/relatorios/cancelamentos";
 
 // ── O QUE ENTRA ─────────────────────────────────────────────────────────────
 
@@ -1144,4 +1145,158 @@ export function paginar<T>(lista: T[], pagina: number, porPagina = 50): { itens:
 /** Os cupons do cadastro de uma loja (storeCoupons + o da campanha da comanda), já lidos. */
 export function cuponsDoCadastro(lojaId: string, lista: unknown): CupomCadastrado[] {
   return lerCupons(lista).map((c) => ({ ...c, lojaId }));
+}
+
+// ── QUEM DEU O DESCONTO MANUAL, E POR QUÊ ───────────────────────────────────
+//
+// O SWFast mostra o desconto por OPERADOR e MOTIVO, e é com ele que o Alex
+// (Hambúrgueria Avenida, 11/2026) confere o caixa. Aqui o motivo já existia (a
+// observação "[Desconto: 10% (R$ 2,83) — Cliente fiel]", lib/desconto-manual.ts);
+// QUEM deu sai do rastro do pedido (`editHistory`):
+//
+//   • edição do pedido (Dar desconto / Ajustar o desconto): o registro
+//     DESCONTO, ou o de item que leva "desconto" na descrição — sempre gravou
+//     o nome; o id desde 07/11/2026;
+//   • PDV/balcão (lib/venda-presencial.ts): o registro DESCONTO "desconto no
+//     lançamento", desde 07/11/2026. O lançamento antigo sai "Operador não
+//     registrado";
+//   • conta da mesa: o registro DESCONTO "desconto na conta da mesa" na
+//     primeira rodada (com o motivo), desde 07/11/2026; antes, quem FECHOU a
+//     mesa (`TableSession.closedByName`) — é quem deu o desconto, que só existe
+//     no fechamento —, sem o motivo, que a mesa não guardava.
+//
+// Só o desconto MANUAL (a fatia "manual", a "Sem detalhe" de pedido que a loja
+// ajustou à mão e o da conta da mesa): cupom, campanha, cashback e % do Pix têm
+// dono no sistema, não numa pessoa. Havendo mais de um registro de desconto no
+// pedido, vale o ÚLTIMO (quem deixou o desconto como está).
+
+export type RastroDoDesconto = { quem: string; quemId?: string | null; motivo?: string | null };
+
+/**
+ * O último registro de desconto dado à mão no rastro do pedido, ou null.
+ * `daConta`: só o do fechamento da mesa ("desconto na conta da mesa", gravado
+ * na primeira rodada pela rota close).
+ */
+export function rastroDoDesconto(editHistory: unknown, daConta = false): RastroDoDesconto | null {
+  if (!Array.isArray(editHistory)) return null;
+  const ITENS = new Set(["REMOVEU", "MUDOU_QTD", "ACRESCENTOU", "ESCOLHAS"]);
+  for (let i = editHistory.length - 1; i >= 0; i--) {
+    const r = editHistory[i] as { acao?: string; descricao?: string; quem?: string; quemId?: string; motivo?: string } | null;
+    if (!r || typeof r !== "object") continue;
+    const ehDaConta = r.acao === "DESCONTO" && String(r.descricao || "").startsWith("desconto na conta da mesa");
+    if (daConta ? ehDaConta : !ehDaConta && (r.acao === "DESCONTO" || (ITENS.has(String(r.acao)) && /desconto/i.test(String(r.descricao || ""))))) {
+      return { quem: String(r.quem || ""), quemId: r.quemId || null, motivo: typeof r.motivo === "string" && r.motivo.trim() ? r.motivo.trim() : null };
+    }
+  }
+  return null;
+}
+
+export type DescontoManualDaLista = {
+  id: string;
+  tipoDeLinha: "pedido" | "mesa";
+  instante: string;
+  dia: string;
+  hora: string;
+  numero: string;
+  /** A chave do operador (chaveDoOperador, lib/relatorios/cancelamentos.ts). */
+  operador: string;
+  quem: string;
+  registrado: boolean;
+  motivo: string;
+  valor: number;
+};
+
+export type LinhaDoOperadorDoDesconto = {
+  chave: string;
+  nome: string;
+  registrado: boolean;
+  vezes: number;
+  valor: number;
+  /** % do desconto manual do período. */
+  pct: number;
+  motivos: { motivo: string; vezes: number; valor: number }[];
+};
+
+export type DescontosPorOperador = {
+  total: number;
+  vezes: number;
+  semOperador: number;
+  porOperador: LinhaDoOperadorDoDesconto[];
+  porMotivo: { motivo: string; vezes: number; valor: number; pct: number }[];
+  lista: DescontoManualDaLista[];
+};
+
+/**
+ * O desconto manual do período por quem deu e por motivo. `pedidos` e `mesas`
+ * são os mesmos do `descontosDoPeriodo` (o pedido com `editHistory`; a mesa
+ * com quem fechou e o rastro do desconto da conta, se houver).
+ */
+export function descontosManuaisPorOperador(
+  pedidos: (PedidoParaDescontos & { editHistory?: unknown })[],
+  mesas: (ContaDeMesa & { fechadaPor?: string | null; rastro?: RastroDoDesconto | null })[],
+  tz: string,
+): DescontosPorOperador {
+  const nomeParaId = mapaDeNomesParaId(pedidos.map((p) => p.editHistory));
+  const lista: DescontoManualDaLista[] = [];
+  const quando = (d: Date | string) => {
+    const l = naLoja(d, tz);
+    return { instante: new Date(d).toISOString(), dia: l.dia, hora: hhmm(l.minutos) };
+  };
+  const semOperador = { chave: "sem-operador", nome: OPERADOR_NAO_REGISTRADO, registrado: false };
+
+  for (const p of pedidos) {
+    if (!entraNaVenda(p as any)) continue;
+    const d = descontoDoPedido(p);
+    if (d.total <= 0) continue;
+    const rastro = rastroDoDesconto(p.editHistory);
+    const manuais = d.fatias.filter((f) => f.tipo === "manual" || (f.tipo === "outro" && rastro));
+    const valor = c2(manuais.reduce((s, f) => s + f.valor, 0));
+    if (valor <= 0.004) continue;
+    const op = rastro ? chaveDoOperador(rastro.quem, rastro.quemId, nomeParaId) : semOperador;
+    const manual = manuais.find((f) => f.tipo === "manual");
+    const motivo = (manual && manual.nome !== "Sem motivo informado" ? manual.nome : null) || rastro?.motivo || "Sem motivo informado";
+    lista.push({
+      id: p.id, tipoDeLinha: "pedido", ...quando(p.createdAt),
+      numero: p.dailyOrderNumber != null ? `#${p.dailyOrderNumber}` : "",
+      operador: op.chave, quem: op.nome, registrado: op.registrado, motivo, valor,
+    });
+  }
+
+  for (const m of mesas) {
+    const valor = descontoDaMesa(m);
+    if (valor <= 0) continue;
+    const op = m.rastro
+      ? chaveDoOperador(m.rastro.quem, m.rastro.quemId, nomeParaId)
+      : m.fechadaPor ? chaveDoOperador(m.fechadaPor, null, nomeParaId) : semOperador;
+    lista.push({
+      id: m.id, tipoDeLinha: "mesa", ...quando(m.fechadaEm), numero: rotuloDaMesa(m),
+      operador: op.chave, quem: op.nome, registrado: op.registrado,
+      motivo: m.rastro?.motivo || (m.rastro ? "Sem motivo informado" : "Sem motivo registrado (mesa antiga)"), valor,
+    });
+  }
+  lista.sort((a, b) => b.instante.localeCompare(a.instante));
+
+  const total = c2(lista.reduce((s, l) => s + l.valor, 0));
+  const ops = new Map<string, LinhaDoOperadorDoDesconto & { _m: Map<string, { motivo: string; vezes: number; valor: number }> }>();
+  const mot = new Map<string, { motivo: string; vezes: number; valor: number; pct: number }>();
+  for (const l of lista) {
+    let o = ops.get(l.operador);
+    if (!o) { o = { chave: l.operador, nome: l.quem, registrado: l.registrado, vezes: 0, valor: 0, pct: 0, motivos: [], _m: new Map() }; ops.set(l.operador, o); }
+    o.vezes++; o.valor = c2(o.valor + l.valor);
+    const k = l.motivo.toLowerCase();
+    const om = o._m.get(k) || { motivo: l.motivo, vezes: 0, valor: 0 };
+    om.vezes++; om.valor = c2(om.valor + l.valor); o._m.set(k, om);
+    const gm = mot.get(k) || { motivo: l.motivo, vezes: 0, valor: 0, pct: 0 };
+    gm.vezes++; gm.valor = c2(gm.valor + l.valor); mot.set(k, gm);
+  }
+  return {
+    total,
+    vezes: lista.length,
+    semOperador: lista.filter((l) => !l.registrado).length,
+    porOperador: [...ops.values()]
+      .map(({ _m, ...o }) => ({ ...o, pct: pct(o.valor, total), motivos: [..._m.values()].sort((a, b) => b.valor - a.valor) }))
+      .sort((a, b) => b.valor - a.valor),
+    porMotivo: [...mot.values()].map((m) => ({ ...m, pct: pct(m.valor, total) })).sort((a, b) => b.valor - a.valor),
+    lista,
+  };
 }

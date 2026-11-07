@@ -271,6 +271,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         rodada: carregado.rodada,
         pedido: { itens, removerItemIds, motivo },
         quem: nomeDoOperador(operador),
+        quemId: operador.id,
         // A caixinha do garçom vale no link do garçom; no painel, quem passou
         // por `podeEditarPedidos` tira item como no delivery.
         podeRemoverItem: true,
@@ -357,7 +358,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     if (ctx.avaliacao.modo === "MESA") {
       const carregado = await carregarRodadaDaMesa(ctx.lojaId, ctx.order.id);
       if ("erro" in carregado) return NextResponse.json(carregado.erro.corpo, { status: carregado.erro.status });
-      const r = await cancelarRodadaDaMesa({ rodada: carregado.rodada, quem: nomeDoOperador(ctx.operador), motivo });
+      const r = await cancelarRodadaDaMesa({ rodada: carregado.rodada, quem: nomeDoOperador(ctx.operador), quemId: ctx.operador.id, motivo });
       return NextResponse.json(r.corpo, { status: r.status });
     }
     return await cancelarPedido(ctx.order, ctx.operador, motivo);
@@ -536,6 +537,7 @@ async function editarPedidoProprio(entrada: {
   const registro: RegistroDeEdicao = {
     quando: new Date().toISOString(),
     quem: nomeDoOperador(operador),
+    quemId: operador.id,
     acao:
       remover.length > 0
         ? "REMOVEU"
@@ -783,6 +785,7 @@ async function editarItensDoMarketplace(entrada: {
   const registro: RegistroDeEdicao = {
     quando: new Date().toISOString(),
     quem: nomeDoOperador(operador),
+    quemId: operador.id,
     acao: remover.length > 0 ? "REMOVEU" : mudar.length > 0 ? "MUDOU_QTD" : "DESCONTO",
     descricao,
     totalAntes: order.totalAmount || 0,
@@ -1107,6 +1110,7 @@ async function cancelarPedido(order: any, operador: any, motivo: string) {
   const registro: RegistroDeEdicao = {
     quando: new Date().toISOString(),
     quem: nomeDoOperador(operador),
+    quemId: operador.id,
     acao: "CANCELOU",
     descricao: "Pedido cancelado pela edição (ficou sem itens ou foi cancelado na mão)",
     totalAntes: order.totalAmount || 0,
