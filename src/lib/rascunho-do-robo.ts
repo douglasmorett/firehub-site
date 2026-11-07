@@ -30,12 +30,27 @@
  *   pedido reescrito em silêncio ninguém vê.
  * - Tag final IDÊNTICA ao pedido enviado (o modelo repetiu a tag no "obrigado")
  *   não regrava nem reimprime.
+ * - Desde 06/11/2026: item pedido DEPOIS ("e uma coca"), sem a lista inteira,
+ *   vira ACRÉSCIMO do mesmo pedido (pop-up da loja), não pedido separado; e a
+ *   tag que só repete o que já está na loja não abre rascunho. Pedido separado
+ *   de verdade vem com "pedidoSeparado": true (`depoisDoPedidoNaLoja`).
  *
  * Arquivo puro, sem imports: tem teste que o carrega sozinho
  * (scripts/teste-rascunho-do-robo.mjs).
  */
 
 export const JANELA_DO_PEDIDO_ENVIADO_MS = 20 * 60 * 1000;
+
+/**
+ * Por quanto tempo um pedido do robô que já está na loja (aceito, saindo ou até
+ * entregue) ainda é comparado com a tag, para ela não abrir um gêmeo.
+ *
+ * 20 min era curto: a tag repetida chegava depois (Pizzaria Cardoso nº 52/53,
+ * 31/10: 20,1 min; Deeds nº 6/9, 03/11: 16,8 min, com o pedido já saindo), e o
+ * status SAIU_ENTREGA/ENTREGUE não era comparado (Saboroso nº 1/2, 04/11: a tag
+ * veio 2 s depois de o pedido sair). A loja cancelava o gêmeo à mão.
+ */
+export const JANELA_DE_COMPARACAO_MS = 45 * 60 * 1000;
 
 export type ItemNoBanco = {
   menuProductId?: string | null;
@@ -84,7 +99,13 @@ export type DestinoDaTag =
   /** Pedido já enviado + tag ainda não confirmada: o banco fica como está. */
   | { acao: "nao_mexer"; pedido: PedidoCandidato; motivo: string }
   /** A tag final repete um pedido que já está na loja: nada a gravar, nada a imprimir. */
-  | { acao: "identico"; pedido: PedidoCandidato; motivo: string };
+  | { acao: "identico"; pedido: PedidoCandidato; motivo: string }
+  /**
+   * O cliente pediu mais coisa depois do pedido aceito ("e uma coca"): os itens
+   * NOVOS vão como acréscimo ao MESMO pedido (lib/acrescimo-no-banco.ts, a loja
+   * aceita no pop-up), em vez de abrir um segundo pedido na cozinha.
+   */
+  | { acao: "acrescentar"; pedido: PedidoCandidato; itens: ItemNovo[]; motivo: string };
 
 const chave = (texto: unknown): string =>
   String(texto ?? "")
@@ -183,6 +204,55 @@ export function candidatosSoDeComparacao(candidatos: PedidoCandidato[], agora: n
     .sort((x, y) => quando(y.createdAt) - quando(x.createdAt));
 }
 
+const NA_COZINHA = ["NOVO", "ACEITO", "PREPARANDO", "PRONTO"];
+
+/**
+ * Pedidos do robô que já estão NA LOJA (aceitos, saindo ou entregues há pouco)
+ * e com os quais a tag é comparada para não nascer pedido nem rascunho gêmeo.
+ * Mais largo que `candidatosSoDeComparacao` (que continua sendo o do prompt):
+ * janela de 45 min e status até ENTREGUE. O NOVO da janela de 20 min fica de
+ * fora: esse ainda é alterável e tem caminho próprio em `destinoDaTag`.
+ */
+export function pedidosParaNaoDuplicar(candidatos: PedidoCandidato[], agora: number): PedidoCandidato[] {
+  const NA_LOJA = [...NA_COZINHA, "SAIU_ENTREGA", "ENTREGUE"];
+  return (Array.isArray(candidatos) ? candidatos : [])
+    .filter((p) => {
+      if (String(p.source || "").toUpperCase() !== "WHATSAPP_IA") return false;
+      const status = String(p?.status || "").toUpperCase();
+      if (!NA_LOJA.includes(status)) return false;
+      const idade = agora - quando(p.createdAt);
+      if (status === "NOVO" && idade <= JANELA_DO_PEDIDO_ENVIADO_MS) return false;
+      return idade >= 0 && idade <= JANELA_DE_COMPARACAO_MS;
+    })
+    .sort((x, y) => quando(y.createdAt) - quando(x.createdAt));
+}
+
+const linhaSemQuantidade = (i: ItemNoBanco | ItemNovo): string =>
+  `${produtoDoItem(i)}|${chave(i.notes)}|${estavel(i.comboSelections)}`;
+
+/**
+ * O que a tag traz ALÉM do pedido, quando ela repete o pedido inteiro e soma o
+ * que é novo (o modelo manda a lista completa: "2 yakisobas + guaraná" depois
+ * do pedido dos 2 yakisobas). null quando a tag não contém o pedido item a item.
+ */
+export function itensAlemDoPedido(pedido: ItemNoBanco[], tag: ItemNovo[]): ItemNovo[] | null {
+  const sobra = new Map<string, number>();
+  for (const i of pedido) {
+    const q = Math.max(0, Math.round(Number(i.quantity) || 0));
+    if (q > 0) sobra.set(linhaSemQuantidade(i), (sobra.get(linhaSemQuantidade(i)) || 0) + q);
+  }
+  const novos: ItemNovo[] = [];
+  for (const i of tag) {
+    const q = Math.max(0, Math.round(Number(i.quantity) || 0));
+    const k = linhaSemQuantidade(i);
+    const usa = Math.min(sobra.get(k) || 0, q);
+    if (usa > 0) sobra.set(k, (sobra.get(k) || 0) - usa);
+    if (q - usa > 0) novos.push({ ...i, quantity: q - usa });
+  }
+  for (const resto of sobra.values()) if (resto > 0) return null;
+  return novos;
+}
+
 /** ENTREGA/DELIVERY é a mesma coisa; RETIRADA/PICKUP/TAKEOUT/BALCAO também. */
 function tipoCanonico(v: unknown): string {
   const t = chave(v);
@@ -198,6 +268,60 @@ const dinheiro = (v: unknown): number => {
   return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : 0;
 };
 
+/**
+ * Sem rascunho nem pedido alterável, mas com um pedido do robô JÁ NA LOJA:
+ *
+ * - Tag NÃO-final só com itens desse pedido (o modelo repetiu a marca no
+ *   "obrigado"): não abre rascunho. Era o gêmeo mais comum — 12 rascunhos assim
+ *   de 31/10 a 06/11 (Garagem, Pizzaria 17, Divinos, Quiosque...), que a loja
+ *   cancelava à mão ou a faxina cancelava 20 min depois, poluindo o painel.
+ * - Pedido ainda na cozinha (não saiu) e o cliente pede mais ("e uma coca"):
+ *   o que é novo vai como ACRÉSCIMO ao mesmo pedido, não como pedido separado.
+ *   Tag com o pedido inteiro + o novo (Yakisoba nº 35/36, 02/11: saíram 4
+ *   yakisobas em vez de 2) leva só a diferença; tag só com o novo leva tudo.
+ *   Tag não-final nesse caso também não abre rascunho: ela vira acréscimo
+ *   quando o cliente confirmar. Mesmo endereço e mesmo tipo; o que mistura
+ *   item do pedido com troca de item segue o caminho antigo (pedido separado).
+ *
+ * undefined = nada a fazer aqui (o chamador cria).
+ */
+function depoisDoPedidoNaLoja(
+  o: { isFinal: boolean; itensNovos: ItemNovo[]; endereco?: string | null; tipo?: string | null },
+  naLoja: PedidoCandidato[],
+): DestinoDaTag | undefined {
+  const itensDe = (p: PedidoCandidato) => (Array.isArray(p.items) ? p.items : []);
+  if (!o.isFinal) {
+    const repetido = naLoja.find((p) => contemTudo(o.itensNovos, itensDe(p)));
+    if (repetido) {
+      return {
+        acao: "nao_mexer",
+        pedido: repetido,
+        motivo: `a tag só repete itens do pedido nº ${repetido.dailyOrderNumber ?? "—"}, que já está na loja — não abre rascunho gêmeo`,
+      };
+    }
+  }
+  const mesmoLugar = (p: PedidoCandidato) => {
+    if (o.tipo && tipoCanonico(o.tipo) !== tipoCanonico(p.deliveryType)) return false;
+    const a = chave(o.endereco), b = chave(p.customerAddress);
+    return !a || !b || a.includes(b) || b.includes(a);
+  };
+  const naCozinha = naLoja.find((p) => NA_COZINHA.includes(String(p.status).toUpperCase()) && mesmoLugar(p));
+  if (!naCozinha) return undefined;
+  const doPedido = itensDe(naCozinha);
+  const produtosDoPedido = new Set(doPedido.map(produtoDoItem));
+  const alem = itensAlemDoPedido(doPedido, o.itensNovos);
+  const itens = alem && alem.length > 0
+    ? alem
+    : !o.itensNovos.some((i) => produtosDoPedido.has(produtoDoItem(i))) || contemTudo(o.itensNovos, doPedido)
+      ? o.itensNovos
+      : null;
+  if (!itens || itens.length === 0) return undefined;
+  const n = naCozinha.dailyOrderNumber ?? "—";
+  return o.isFinal
+    ? { acao: "acrescentar", pedido: naCozinha, itens, motivo: `pedido nº ${n} já está na loja: o que o cliente pediu depois vai como acréscimo dele` }
+    : { acao: "nao_mexer", pedido: naCozinha, motivo: `pedido nº ${n} já está na loja: os itens novos viram acréscimo quando o cliente confirmar` };
+}
+
 export function destinoDaTag(o: {
   /** Pedidos DESTE telefone, já filtrados por `mesmoTelefone`. */
   candidatos: PedidoCandidato[];
@@ -212,9 +336,12 @@ export function destinoDaTag(o: {
   /** Troco e observação DO PEDIDO já normalizados (lib/item-do-robo.ts). */
   troco?: number | null;
   observacao?: string | null;
+  /** `"pedidoSeparado": true` da tag: o cliente disse que quer OUTRO pedido. */
+  pedidoSeparado?: boolean;
   agora: number;
 }): DestinoDaTag {
   const validos = candidatosValidos(o.candidatos, o.agora);
+  const naLoja = o.pedidoSeparado ? [] : pedidosParaNaoDuplicar(o.candidatos, o.agora);
 
   /** A tag aponta este pedido em `alteraPedido`? */
   const apontado = (p: PedidoCandidato): boolean => {
@@ -243,7 +370,7 @@ export function destinoDaTag(o: {
   // tag final o repete (o "obrigado!" depois do aceite automático), não há o
   // que fazer.
   if (o.isFinal) {
-    const aceitos = candidatosSoDeComparacao(o.candidatos, o.agora);
+    const aceitos = naLoja;
     const jaNaLoja = aceitos.find(igualA);
     if (jaNaLoja) {
       return {
@@ -278,7 +405,7 @@ export function destinoDaTag(o: {
   // gravada no rascunho e virava um SEGUNDO pedido na cozinha.
   const apontadoPelaTag = validos.find((p) => String(p.status).toUpperCase() === "NOVO" && apontado(p));
   const alvo = apontadoPelaTag || validos[0];
-  if (!alvo) return { acao: "criar", motivo: "nenhum rascunho nem pedido recente do robô para este telefone" };
+  if (!alvo) return depoisDoPedidoNaLoja(o, naLoja) ?? { acao: "criar", motivo: "nenhum rascunho nem pedido recente do robô para este telefone" };
 
   if (String(alvo.status).toUpperCase() === "CRIANDO_IA") {
     return { acao: "reescrever", pedido: alvo, motivo: "rascunho em andamento" };
@@ -296,11 +423,15 @@ export function destinoDaTag(o: {
     (!!o.tipo && tipoCanonico(o.tipo) !== tipoCanonico(alvo.deliveryType));
   const ehAlteracao = pediuParaAlterar || (contemTudo(antigos, o.itensNovos) && !mudouParaOndeVai);
   const rotulo = `pedido nº ${numero ?? "—"} já enviado à loja`;
+  // O "e uma coca" sem a lista inteira e sem "alteraPedido": vira acréscimo
+  // deste pedido (06/11), não um pedido separado na cozinha.
+  const semNumero = o.alteraPedido === undefined || o.alteraPedido === null || o.alteraPedido === "";
+  const comoAcrescimo = !ehAlteracao && !o.pedidoSeparado && semNumero ? depoisDoPedidoNaLoja(o, [alvo]) : undefined;
 
   if (!o.isFinal) {
-    return ehAlteracao
+    return ehAlteracao || contemTudo(o.itensNovos, antigos)
       ? { acao: "nao_mexer", pedido: alvo, motivo: `${rotulo}: a alteração só é gravada quando o cliente confirmar (pedido enviado não vira rascunho)` }
-      : { acao: "criar", motivo: `${rotulo} fica como está; a tag é de outro pedido` };
+      : comoAcrescimo ?? { acao: "criar", motivo: `${rotulo} fica como está; a tag é de outro pedido` };
   }
 
   if (igualA(alvo)) {
@@ -308,7 +439,7 @@ export function destinoDaTag(o: {
   }
 
   if (!ehAlteracao) {
-    return { acao: "criar", motivo: `${rotulo} fica como está; a tag final é de um pedido separado` };
+    return comoAcrescimo ?? { acao: "criar", motivo: `${rotulo} fica como está; a tag final é de um pedido separado` };
   }
 
   // Rascunho aberto em paralelo enquanto a alteração era combinada: ele não
@@ -450,7 +581,7 @@ export function memoriaDoPedidoParaOPrompt(
       (aceito.items || []).map(linhaDoItem).join("\n") +
       `\n→ NÃO emita a tag deste pedido de novo, em hipótese nenhuma: sairia um pedido gêmeo na cozinha.` +
       `\n→ Alteração ou cancelamento deste pedido não é com você: escreva [[CHAMAR_ATENDENTE]] para uma pessoa da loja resolver.` +
-      `\n→ Se o cliente quiser um pedido NOVO, aí sim monte do zero, normalmente.`,
+      `\n→ Se o cliente quiser um pedido NOVO, aí sim monte do zero, com "pedidoSeparado": true em toda marca dele.`,
     );
   }
 

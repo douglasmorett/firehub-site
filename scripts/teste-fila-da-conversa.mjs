@@ -204,6 +204,30 @@ console.log("\n8b) Texto NUNCA leva o marcador de um áudio: o áudio se perderi
   conferir("sem vazamento", s.r.tamanho() === 0, s.r.tamanho());
 }
 
+console.log("\n8b) Resposta que nasceu velha volta para a rajada (Lapastine, 06/11)");
+{
+  // "Pix" sendo respondido; "vai ser no dinheiro" chega no meio: a resposta ao
+  // "Pix" não sai, o texto volta e a próxima carrega os dois, na ordem.
+  const r = criarRajadas();
+  const s1 = r.entrar("k", { texto: "Pix", barreira: false });
+  const solta1 = await r.vez("k", 1000);
+  const levados1 = r.tirar("k", s1, (i) => i.barreira);
+  conferir("primeira leva só 'Pix'", levados1.map((i) => i.texto).join("|") === "Pix", levados1);
+  conferir("nada pendente antes da segunda", !r.temPendente("k"));
+  const s2 = r.entrar("k", { texto: "vai ser no dinheiro", barreira: false });
+  const vez2 = r.vez("k", 1000); // espera a primeira
+  conferir("segunda está pendente enquanto a IA pensa na primeira", r.temPendente("k"));
+  r.devolver("k", levados1[0]);
+  conferir("devolver não vira 'chegou outra depois' da segunda", !r.chegouOutraDepois("k", s2));
+  solta1();
+  const solta2 = await vez2;
+  const levados2 = r.tirar("k", s2, (i) => i.barreira);
+  conferir("segunda leva as duas, 'Pix' primeiro", levados2.map((i) => i.texto).join("|") === "Pix|vai ser no dinheiro", levados2);
+  solta2();
+  await espera(10);
+  conferir("sem vazamento", r.tamanho() === 0, r.tamanho());
+}
+
 console.log("\n9) juntarTextos");
 conferir("junta com quebra de linha", juntarTextos(["oi", "quero pizza"]) === "oi\nquero pizza");
 conferir("ignora vazio e nulo", juntarTextos(["", null, "  ", "a", undefined]) === "a");

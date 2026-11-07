@@ -27,6 +27,7 @@
 
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
+import { pareceMensagemAutomaticaDoBusiness } from "@/lib/reacao-e-status";
 
 /**
  * Onde o estado por conversa é guardado.
@@ -348,6 +349,28 @@ async function atendenteFalouEm(
   return em;
 }
 
+/**
+ * O lojista digitou nesta conversa DEPOIS de `desde`? É a conferência de
+ * antes de enviar: a mensagem do cliente passou pela porteira, mas enquanto a
+ * IA pensava (rajada de 3–5 s + a chamada) o dono respondeu pelo celular. Na
+ * Bella Ragazza (06/11/2026) o robô anotou "Pizza de 60 reais" 11 s depois de
+ * o dono escrever "65 total" e disse que não entregava no bairro que o dono
+ * acabava de cobrar a entrega — o cliente: "o robot tá pirado?". Nunca lança.
+ */
+export async function lojistaFalouDesde(
+  userId: string,
+  remoteJid: string,
+  desde: number,
+  outrosEnderecos?: string[],
+): Promise<boolean> {
+  try {
+    const state = await readState(userId, remoteJid);
+    return (await atendenteFalouEm(userId, remoteJid, state, outrosEnderecos)) > desde;
+  } catch {
+    return false;
+  }
+}
+
 async function evaluate(input: LoopGuardInput): Promise<LoopDecision> {
   const { userId, remoteJid, text, verifiedBizName, isAudio, now } = input;
 
@@ -615,6 +638,14 @@ export async function handleOutgoingMessage(
     await new Promise((r) => setTimeout(r, ESPERA_DO_ECO_MS));
     const depois = await readState(userId, remoteJid);
     if ((depois?.botSentHashes || []).includes(hash)) return false;
+
+    // A saudação automática do WhatsApp Business, segundos depois do primeiro
+    // "oi" do cliente, não é o lojista assumindo (lib/reacao-e-status.ts).
+    const paradas = depois?.recentIntervals || [];
+    if (pareceMensagemAutomaticaDoBusiness(now, depois?.lastMessageAt?.getTime(), paradas.length ? paradas[paradas.length - 1] : null)) {
+      console.log(`[LoopGuard] Mensagem automática do WhatsApp Business em ${remoteJid} (segundos depois do cliente abrir a conversa): o robô segue atendendo.`);
+      return false;
+    }
 
     await writeState(userId, remoteJid, { humanTakeoverAt: new Date(now) });
     return true;
