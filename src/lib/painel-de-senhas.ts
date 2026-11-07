@@ -208,14 +208,13 @@ const ENTREGADOR_JA_LEVOU = new Set(["COLLECTED", "DISPATCHED", "ARRIVED_AT_DEST
  * quadro e da comanda — mais o vínculo do iFood Sob Demanda, que não marca
  * nada no pedido da loja.
  *
- * O código é o que o entregador daquele canal fala no balcão:
+ * O código é o NÚMERO DO PEDIDO NA PLATAFORMA, nunca o nosso (Douglas, 07/11:
+ * "tem que aparecer o número do pedido da plataforma e não o da loja"):
  *   - iFood: o número de exibição (o "N. no iFood: 3704" da comanda);
- *   - 99Food: o "Código de verificação" do painel do 99 (handover_code, gravado
- *     em `openDeliveryPickupCode`) — é ele que o motoboy do 99 fala (Delícia de
- *     Casa, 22/10/2026); sem ele, o número do pedido no 99;
- *   - os outros apps (Keeta, Jotajá…): o número de exibição; sem ele, o código de coleta;
+ *   - 99Food, Keeta, Jotajá…: o número do pedido no app; sem ele, o código de coleta.
+ *     O "Código de verificação" do 99 não vai na TV: é o que o balcão confere;
  *   - pedido da loja com entregador chamado no iFood: o número do iFood Sob
- *     Demanda; sem ele, o código de coleta; sem nada, o nosso número.
+ *     Demanda; sem ele, o código de coleta. Sem nenhum dos dois, não entra na TV.
  */
 export function entregadorDePlataforma(
   p: PedidoDoPainel,
@@ -228,8 +227,10 @@ export function entregadorDePlataforma(
   const canal = canalDoPedido(p);
   const chave: ChaveDeCanal = sobDemanda || info.parceiro === "IFOOD" ? "IFOOD" : info.parceiro === "99FOOD" ? "99FOOD" : canal.chave;
   const coleta = String(info.codigoDeColeta || "").trim();
-  let codigo = sobDemanda || (chave === "99FOOD" ? coleta || canal.referencia || "" : canal.referencia || coleta);
-  if (!codigo && p.dailyOrderNumber != null) codigo = String(p.dailyOrderNumber);
+  let codigo = sobDemanda || canal.referencia || coleta;
+  // Pedido do NOSSO site com entregador chamado no iFood não tem número de app:
+  // o entregador recebe o pedido com o número da loja.
+  if (!codigo && !canal.ehMarketplace && p.dailyOrderNumber != null) codigo = String(p.dailyOrderNumber);
   if (!codigo) return null;
 
   const nome = chave === "IFOOD" ? "iFood" : chave === "99FOOD" ? "99Food" : canal.ehMarketplace ? canal.nome : info.parceiro || canal.nome;

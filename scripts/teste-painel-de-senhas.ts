@@ -105,15 +105,15 @@ const doMotoboy: PedidoDoPainel[] = [
 ];
 const mot = separarSenhas(doMotoboy, cfg, agora, "motoboy");
 const cod = (l: { codigo?: string }[]) => l.map((s) => s.codigo);
-confere("motoboy · Preparando: iFood, 99 e Keeta pelo código do app, e o Sob Demanda", cod(mot.preparando).sort(), ["1187", "2922", "8814", "9380"].sort());
-confere("motoboy · Pronto: KDS finalizado / PRONTO; o que o motoboy do iFood já coletou saiu", cod(mot.prontos), ["63", "3517", "7580"]);
+confere("motoboy · Preparando: iFood, 99 e Keeta pelo código do app, e o Sob Demanda", cod(mot.preparando).sort(), ["1187", "2922", "8814", "569048"].sort());
+confere("motoboy · Pronto: KDS finalizado / PRONTO; o que o motoboy do iFood já coletou saiu", cod(mot.prontos), ["63", "3517", "569046"]);
 confere("motoboy · iFood mostra o número do iFood com o nome e o vermelho", (({ codigo, plataforma, corDaPlataforma }) => [codigo, plataforma, corDaPlataforma])(mot.preparando.find((s) => s.id === "m1")!), ["2922", "iFood", "#EA1D2C"]);
-confere("motoboy · 99 mostra o código de verificação, em amarelo", (({ codigo, plataforma, corDaPlataforma }) => [codigo, plataforma, corDaPlataforma])(mot.preparando.find((s) => s.id === "m4")!), ["9380", "99Food", "#FFDD00"]);
+confere("motoboy · 99 mostra o número do pedido no 99 (não o código de verificação), em amarelo", (({ codigo, plataforma, corDaPlataforma }) => [codigo, plataforma, corDaPlataforma])(mot.preparando.find((s) => s.id === "m4")!), ["569048", "99Food", "#FFDD00"]);
 confere("motoboy · Keeta pelo número de exibição", mot.preparando.find((s) => s.id === "m6")?.plataforma, "Keeta");
 confere("motoboy · site com entregador do iFood chamado entra (sem código do iFood, vai o nosso)", mot.prontos.find((s) => s.id === "m9")?.plataforma, "iFood");
 const fora = ["m7", "m8", "m11", "m12", "m13", "m3"];
 confere("motoboy · entrega própria, retirada, balcão, saiu para entrega e coletado ficam de fora", [...mot.preparando, ...mot.prontos].filter((s) => fora.includes(s.id)).length, 0);
-confere("motoboy · 99 sem código de verificação cai no número do pedido no 99", entregadorDePlataforma(app("x", 1, "ACEITO", { source: "99FOOD", openDeliveryReference: "569048", deliveryBy: "99FOOD" }))?.codigo, "569048");
+confere("motoboy · 99 sem número do pedido cai no código de coleta", entregadorDePlataforma(app("x", 1, "ACEITO", { source: "99FOOD", openDeliveryPickupCode: "9380", deliveryBy: "99FOOD" }))?.codigo, "9380");
 confere("motoboy · aparece mesmo com a caixinha Delivery desligada", cfg.delivery, false);
 // O balcão não muda: os mesmos pedidos na tela de sempre.
 confere("balcão inalterado com os campos novos no pedido", separarSenhas([...pedidos, ...doMotoboy], cfg, agora).preparando.map((s) => s.numero), [66, 812, 347]); // o 66 é o balcão da lista dos motoboys
