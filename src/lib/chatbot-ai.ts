@@ -84,6 +84,7 @@ import {
 import { carimbosDoClienteParaOPrompt, cashbackDoClienteParaOPrompt, comandaDoRobo } from "./comanda-do-robo";
 import { itensEmTexto, mensagemDoAcrescimoEnviado, pedidoAtivoParaOPrompt } from "./acrescimo-do-pedido";
 import { pedidoAtivoDoTelefone, registrarAcrescimo } from "./acrescimo-no-banco";
+import { acrescimoNoCredito, etiquetaDoAcrescimo, percentualDoAcrescimoNoCredito } from "./acrescimo-no-credito";
 import { enderecoDoMapaComBairroDosCorreios } from "./bairro-dos-correios";
 import { lerPixDaLoja, pagaNoPix, textoDoPixNoPedido, regraDoPixNoPrompt, MARCA_ENVIAR_PIX, FORMA_PIX_DA_CHAVE } from "./pix-da-loja";
 import { formaPropriaPeloNome, nomeDaFormaPropria, problemaDaFormaPropria, rotuloDaForma, textosNoCanal } from "./formas-proprias";
@@ -1470,7 +1471,8 @@ DADOS DA LOJA:
 - Telefone: ${user.storePhone || "Não informado"}
 - Link do Cardápio: ${storeLink}
 - Tempo Médio de Entrega da Loja: ${prazoDaLoja.linhaDosDados}
-- Aceita Retirada no Balcão: ${aceitaRetirada ? "SIM" : "NÃO"}${linhaDasFormasProprias(textosNoCanal((user as any).paymentFees, "robo"))}
+- Aceita Retirada no Balcão: ${aceitaRetirada ? "SIM" : "NÃO"}${linhaDasFormasProprias(textosNoCanal((user as any).paymentFees, "robo"))}${percentualDoAcrescimoNoCredito((user as any).paymentFees) > 0 ? `
+- Cartão de crédito tem acréscimo de ${String(percentualDoAcrescimoNoCredito((user as any).paymentFees)).replace(".", ",")}% sobre o total (com a entrega). Se o cliente escolher crédito, informe o total já com o acréscimo.` : ""}
 ${linhasDoMinimoNosDados(fatosDoMinimo)}
 - Horário de Funcionamento Cadastrado: ${linhaDoHorarioDeHoje({ fraseDeHoje: nowStatusText, temQuadro: hoursText !== HORARIO_NAO_CADASTRADO })}
 ${linhaDoFeriado}- Quadro Geral de Horários:
@@ -4021,6 +4023,10 @@ async function syncAiOrderToDatabase({
   }
 
   totalOrderAmount = centavos(Math.max(0, totalItemsSum - descontoDosItens - cashbackUsado + deliveryFee));
+  // Acréscimo no crédito (Minha Loja › Formas de Pagamento): o site já cobrava,
+  // o robô não (Pizzaria do Baiano, 08/11). Mesma conta do api/customer-order.
+  const acrescimoCredito = acrescimoNoCredito({ paymentFees: formasProprias, paymentMethod: payload.paymentMethod, base: totalOrderAmount });
+  if (acrescimoCredito) totalOrderAmount = centavos(totalOrderAmount + acrescimoCredito.valor);
   /**
    * Cupom e cashback ficam REGISTRADOS como no checkout do site: o desconto da
    * loja soma os dois, e as colunas do cashback são o que o saldo lê depois.
@@ -4204,7 +4210,9 @@ async function syncAiOrderToDatabase({
     (doPedido.observacao ? ` · Obs: ${doPedido.observacao}` : "") +
     (cupomAplicado ? ` · [Cupom: ${cupomAplicado.code}]` : "") +
     (resgateDosCarimbos ? ` · ${etiquetaDoPremioDosCarimbos(resgateDosCarimbos)}` : "") +
-    (cashbackUsado > 0 ? ` · [Cashback usado: ${reais(cashbackUsado)}]` : "");
+    (cashbackUsado > 0 ? ` · [Cashback usado: ${reais(cashbackUsado)}]` : "") +
+    // A mesma etiqueta do site: é dela que a comanda, a edição e o caixa leem o valor.
+    (acrescimoCredito ? ` · ${etiquetaDoAcrescimo(acrescimoCredito)}` : "");
 
   // Troco só existe em dinheiro. Se esta tag não trouxe o valor mas o rascunho
   // já tinha, ele fica — o modelo nem sempre repete o campo; se o cliente mudou
