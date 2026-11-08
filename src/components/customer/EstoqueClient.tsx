@@ -593,7 +593,9 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
   function isHiddenIntegrationItem(p: MenuProduct) {
     const catUpper = (p.category || "").toUpperCase().trim();
     const nameUpper = (p.name || "").toUpperCase().trim();
-    if (["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE", "COMPLEMENTO", "COMPLEMENTOS", "OPCIONAL", "OPCIONAIS", "ADICIONAL", "ADICIONAIS", "INSUMO", "INSUMOS", "OCULTO"].some(h => catUpper.includes(h))) {
+    // Palavra inteira: com includes(), "Esfihas TRADICIONAIS" batia em "ADICIONAIS" e sumia da lista (NIK, 08/11).
+    const palavras = catUpper.split(/[^A-ZÀ-Ý0-9]+/);
+    if (["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE", "COMPLEMENTO", "COMPLEMENTOS", "OPCIONAL", "OPCIONAIS", "ADICIONAL", "ADICIONAIS", "INSUMO", "INSUMOS", "OCULTO"].some(h => palavras.includes(h))) {
       return true;
     }
     if (["IFOOD |", "JOTAJÁ |", "JOTAJA |", "COMBOS |", "PRODUTO (R$"].some(prefix => nameUpper.startsWith(prefix))) {
