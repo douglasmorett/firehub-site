@@ -430,6 +430,9 @@ export async function POST(req: Request) {
 
     // Calcular total dos produtos
     let totalAmount = 0;
+    // A parte do total que vale cupom e desconto: os itens sem a marca "Não
+    // vale cupom nem desconto neste item" (MenuProduct.semCupom, lib/cupons.ts).
+    let totalComCupom = 0;
     const orderItems = items.map((item: any) => {
       const product = menuProducts.find(p => p.id === item.menuProductId);
       // Antes isto era um throw solto, que caia no catch generico e virava 500
@@ -545,6 +548,7 @@ export async function POST(req: Request) {
       item.quantity = qtd;
 
       totalAmount += precoUnitario * item.quantity;
+      if (!product.semCupom) totalComCupom += precoUnitario * item.quantity;
       // `notes` e a observacao POR ITEM ("sem cebola"). O carrinho ja mandava
       // (CustomerStorePage envia notes em cada item) e a impressao/KDS ja liam
       // i.notes — mas aqui ela era descartada, entao nunca chegava na cozinha.
@@ -700,6 +704,7 @@ export async function POST(req: Request) {
           telefone: customerPhone,
           timeZone: (franchisee as any).storeTimezone,
           subtotal: totalAmount,
+          subtotalComCupom: totalComCupom,
           taxa: fee,
           // Em quais formas o cupom vale (lib/cupom-por-forma.ts): Pix pelo site conta como Pix.
           formaDePagamento: paymentMethod ?? null,
@@ -906,7 +911,8 @@ export async function POST(req: Request) {
         pix: conectadaAoAsaas && franchisee.pixOnlineAtivo === true,
         cartao: conectadaAoAsaas && franchisee.cartaoOnlineAtivo === true,
       },
-      base: totalAmount - (discount - descontoNaTaxa),
+      // Item marcado "Não vale cupom nem desconto" fica fora da base.
+      base: totalAmount - (discount - descontoNaTaxa) - (totalAmount - totalComCupom),
     });
     if (descontoOnline) discount += descontoOnline.valor;
 

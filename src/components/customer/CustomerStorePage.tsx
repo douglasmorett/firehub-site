@@ -73,7 +73,7 @@ import { esquecerCliente, lembrarCliente, lerClienteLembrado } from "@/lib/clien
 import { mesmoEndereco, primeiroNome, type ClienteReconhecido, type EnderecoReconhecido } from "@/lib/cliente-reconhecido";
 import { bandeirasDeValeLigadas, ehFormaPeloSite, entregaSoOnlineMarcada, formaLigada, TEXTO_ENTREGA_SO_ONLINE } from "@/lib/formas-do-cardapio";
 import { rotuloDaForma, textosNoCanal } from "@/lib/formas-proprias";
-import { acharCupom } from "@/lib/cupons";
+import { acharCupom, descontoDoCupomNosItens, MOTIVO_SEM_ITEM_COM_CUPOM } from "@/lib/cupons";
 import { formaRecusadaPeloCupom, textoDasFormasDoCupom } from "@/lib/cupom-por-forma";
 import { useAvisoDoCardapio } from "./AvisoDoCardapio";
 import QuandoReceber, { type Quando } from "./QuandoReceber";
@@ -142,6 +142,8 @@ type MenuProduct = {
   isCombo?: boolean;
   comboConfig?: any;
   comboGroups?: any[];
+  /** "Não vale cupom nem desconto neste item" (lib/cupons.ts). */
+  semCupom?: boolean;
 };
 
 type CartItem = MenuProduct & {
@@ -990,6 +992,13 @@ export default function CustomerStorePage({
 
   const delivConfig = (franchisee as any)?.deliveryConfig || {};
   const cartTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+  // A parte da sacola que vale cupom e desconto: sem os itens marcados "Não
+  // vale cupom nem desconto" (lib/cupons.ts). A marca vem do cardápio atual —
+  // a sacola guardada no aparelho pode ser de antes de a loja marcar.
+  const cartTotalComCupom = cart.reduce((s, i) => {
+    const doCardapio = menuProducts.find((p) => p.id === idDoProduto(i));
+    return (doCardapio ? doCardapio.semCupom : i.semCupom) ? s : s + i.price * i.quantity;
+  }, 0);
 
   // Pedido Mínimo da Loja — separado por tipo de recebimento.
   //
@@ -1200,7 +1209,10 @@ export default function CustomerStorePage({
   const cupomForaDaForma = cupomCadastrado && isCheckout && !mesa
     ? formaRecusadaPeloCupom(cupomCadastrado, paymentMethod, franchisee.paymentFees)
     : null;
-  const cupomNaConta = cupomForaDaForma ? null : couponApplied;
+  // Nenhum item da sacola vale cupom: o desconto sai da conta e o cupom não
+  // vai ao servidor, que recusaria pela mesma regra (lib/cupons.ts).
+  const cupomForaDosItens = Boolean(couponApplied && !couponApplied.isFreeShipping && cartTotal > 0 && cartTotalComCupom <= 0);
+  const cupomNaConta = cupomForaDaForma || cupomForaDosItens ? null : couponApplied;
   const cupomPrimeiroPedidoCadastrado = cupomPrimeiroPedido ? acharCupom((franchisee as any).storeCoupons, cupomPrimeiroPedido.code) : null;
   const formasDoCupomPrimeiroPedido = cupomPrimeiroPedidoCadastrado ? textoDasFormasDoCupom(cupomPrimeiroPedidoCadastrado) : null;
 
@@ -1210,12 +1222,14 @@ export default function CustomerStorePage({
     : 0;
   // Cupom percentual recalcula sobre o carrinho ATUAL — o valor gravado no
   // "Aplicar" congelava e divergia do total quando o cliente mexia na sacola.
+  // A conta é a do servidor (lib/cupons.ts): só sobre os itens que valem cupom.
+  const baseDoCupom = { subtotal: cartTotal, subtotalComCupom: cartTotalComCupom, taxa: effectiveDeliveryFee };
   const discount = cupomNaConta
     ? (cupomNaConta.isFreeShipping
         ? 0
         : (cupomNaConta as any).pct != null
-          ? cartTotal * (Number((cupomNaConta as any).pct) / 100)
-          : cupomNaConta.discount)
+          ? descontoDoCupomNosItens("percent", Number((cupomNaConta as any).pct), baseDoCupom)
+          : descontoDoCupomNosItens("fixed", cupomNaConta.discount, baseDoCupom))
     : 0;
   // ── PRÊMIO DO CARTÃO DE CARIMBOS NA CONTA ──────────────────────────────
   //
@@ -1267,7 +1281,8 @@ export default function CustomerStorePage({
         paymentFees: franchisee.paymentFees,
         paymentMethod,
         ligada: { pix: franchisee.pixOnlineAtivo === true, cartao: cartaoPeloAsaas },
-        base: cartTotal - discount - descontoDaTrilha - descontoDosCarimbos - descontoDaIndicacao - descontoDoClube,
+        // Item marcado "Não vale cupom nem desconto" fica fora da base, como no servidor.
+        base: cartTotal - discount - descontoDaTrilha - descontoDosCarimbos - descontoDaIndicacao - descontoDoClube - (cartTotal - cartTotalComCupom),
       });
   const descontoDoPagamento = descontoOnline?.valor || 0;
 
@@ -1690,6 +1705,7 @@ export default function CustomerStorePage({
         code: cleanCode,
         franchiseeId: franchisee.id,
         subtotal: String(cartTotal || 0),
+        subtotalComCupom: String(cartTotalComCupom || 0),
         fee: String(deliveryFee || 0),
         ...(telefone.length >= 8 ? { phone: telefone } : {}),
       });
@@ -3804,6 +3820,9 @@ export default function CustomerStorePage({
                           {formasDoCupomAplicado && (
                             <div style={{ fontSize: "0.7rem", color: "#166534", marginTop: 1 }}>💳 Válido para {formasDoCupomAplicado}</div>
                           )}
+                          {cupomForaDosItens && (
+                            <div style={{ fontSize: "0.7rem", color: "#92400E", marginTop: 1, fontWeight: 600 }}>⚠️ {MOTIVO_SEM_ITEM_COM_CUPOM}</div>
+                          )}
                         </div>
                         <button onClick={() => setCouponApplied(null)} style={{ background: "none", border: "none", color: "#DC2626", fontWeight: 700, fontSize: "0.75rem", cursor: "pointer" }}>Remover</button>
                       </div>
@@ -4595,6 +4614,12 @@ export default function CustomerStorePage({
               {cupomForaDaForma && (
                 <p style={{ margin: "8px 0 0", padding: "8px 10px", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "10px", fontSize: "0.78rem", color: "#92400E", fontWeight: 600, lineHeight: 1.4 }}>
                   ⚠️ {cupomForaDaForma} O desconto saiu da conta — escolha uma dessas formas para usar o cupom.
+                </p>
+              )}
+              {/* Nenhum item da sacola vale cupom (lib/cupons.ts): o desconto saiu da conta. */}
+              {cupomForaDosItens && !cupomForaDaForma && (
+                <p style={{ margin: "8px 0 0", padding: "8px 10px", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "10px", fontSize: "0.78rem", color: "#92400E", fontWeight: 600, lineHeight: 1.4 }}>
+                  ⚠️ {MOTIVO_SEM_ITEM_COM_CUPOM} O desconto saiu da conta.
                 </p>
               )}
               {/* Pix/cartão pelo site: o Asaas só gera a cobrança com o CPF de quem paga. */}

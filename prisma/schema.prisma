@@ -688,6 +688,12 @@ model MenuProduct {
   codigoExterno    String?
   codigoPDV        Int?
   vinculadoA       String?
+  /// "Não vale cupom nem desconto neste item." O cupom do site e do robô é
+  /// calculado só sobre os itens SEM esta marca, e o desconto de quem paga
+  /// pelo site também (lib/cupons.ts, `descontoDoCupomNosItens`). Pedido do
+  /// Douglas, 07/11/2026: o Maxuel quer o cupom de 1º pedido valendo só no
+  /// combo. Coluna garantida no boot (src/lib/garantir-colunas.ts).
+  semCupom        Boolean             @default(false)
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   franchisee      User?               @relation(fields: [franchiseeId], references: [id])

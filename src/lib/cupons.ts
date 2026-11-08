@@ -130,9 +130,49 @@ export function descreverBeneficio(cupom: Cupom): string {
   return `${cupom.discount}% de desconto`;
 }
 
+/**
+ * ── ITEM QUE NÃO VALE CUPOM (MenuProduct.semCupom) ─────────────────────────
+ *
+ * Em 07/11/2026 o produto ganhou a marca "Não vale cupom nem desconto neste
+ * item": o Maxuel queria o cupom de 1º pedido em % valendo só no combo, e o
+ * cupom valia sobre o pedido inteiro. O desconto passa a ser calculado só
+ * sobre os itens sem a marca:
+ *
+ *   percentual   o % sobre a soma dos itens que valem;
+ *   fixo (R$)    no máximo a soma dos itens que valem;
+ *   frete grátis não muda (é a taxa, não item).
+ *
+ * Sem nenhum item marcado é a conta de sempre — inclusive o teto antigo do
+ * fixo (itens + taxa). Esta é a conta que o servidor (`avaliarCupom`) e o
+ * cardápio (CustomerStorePage) fazem: os dois chamam esta função.
+ */
+export function descontoDoCupomNosItens(
+  tipo: "percent" | "fixed",
+  valor: number,
+  base: { subtotal: number; subtotalComCupom?: number; taxa: number }
+): number {
+  const subtotal = Math.max(0, Number(base.subtotal) || 0);
+  const comCupom =
+    base.subtotalComCupom === undefined ? subtotal : Math.min(subtotal, Math.max(0, Number(base.subtotalComCupom) || 0));
+  const bruto = tipo === "fixed" ? valor : comCupom * (valor / 100);
+  // Meio centavo de folga: as duas somas saem do mesmo laço, mas são somas
+  // de ponto flutuante.
+  const temItemFora = comCupom < subtotal - 0.005;
+  const teto = temItemFora ? comCupom : subtotal + Math.max(0, Number(base.taxa) || 0);
+  return Math.round(Math.max(0, Math.min(bruto, teto)) * 100) / 100;
+}
+
+/** A recusa de quando nenhum item do pedido vale cupom. */
+export const MOTIVO_SEM_ITEM_COM_CUPOM = "Este cupom não vale para os itens do seu pedido.";
+
 export type FatosDoCupom = {
   /** Soma dos itens da sacola, antes de taxa. */
   subtotal: number;
+  /**
+   * A parte de `subtotal` que vale cupom: os itens SEM a marca "Não vale
+   * cupom nem desconto" (MenuProduct.semCupom). Ausente = todos valem.
+   */
+  subtotalComCupom?: number;
   /** Taxa de entrega em vigor (para o frete grátis saber quanto zera). */
   taxa: number;
   /** "YYYY-MM-DD" no fuso da loja. */
@@ -225,8 +265,12 @@ export function avaliarCupom(cupom: Cupom | null, fatos: FatosDoCupom): Veredito
   if (cupom.type === "free_shipping") {
     return { ok: true, desconto: 0, zeraTaxa: true, dependeDoTelefone };
   }
-  const bruto = cupom.type === "fixed" ? cupom.discount : fatos.subtotal * (cupom.discount / 100);
-  const desconto = Math.round(Math.min(bruto, fatos.subtotal + fatos.taxa) * 100) / 100;
+  // Sacola com itens e nenhum deles vale cupom: recusa dizendo por quê, em
+  // vez de aceitar um cupom de R$ 0,00.
+  if (fatos.subtotalComCupom !== undefined && fatos.subtotal > 0 && fatos.subtotalComCupom <= 0) {
+    return { ok: false, motivo: MOTIVO_SEM_ITEM_COM_CUPOM, ...nada };
+  }
+  const desconto = descontoDoCupomNosItens(cupom.type, cupom.discount, fatos);
   return { ok: true, desconto, zeraTaxa: false, dependeDoTelefone };
 }
 

@@ -429,6 +429,9 @@ export async function processChatbotAI(
       select: {
         id: true, name: true, description: true, price: true, priceDelivery: true, promoPrice: true, category: true,
         isCombo: true, isBeverage: true, availableDays: true, availableHours: true, tags: true,
+        // "Não vale cupom nem desconto neste item": o cupom do pedido do robô
+        // fica só sobre os outros itens (lib/cupons.ts).
+        semCupom: true,
         // Sem os grupos, o robô não sabe que o "Nugget" custa R$ 0,00 de base e
         // tem o valor todo nas opções — e acabava lançando o pedido por zero.
         comboGroups: {
@@ -3175,6 +3178,12 @@ async function syncAiOrderToDatabase({
   const totalItemsSum = centavos(
     orderItemsData.reduce((sum: number, i: any) => sum + (i.price * i.quantity), 0)
   );
+  // A parte que vale cupom: sem os itens marcados "Não vale cupom nem
+  // desconto" (MenuProduct.semCupom), a mesma régua do site (lib/cupons.ts).
+  const semCupom = new Set(storeProducts.filter((p: any) => p?.semCupom === true).map((p: any) => p.id));
+  const itensComCupomSum = centavos(
+    orderItemsData.reduce((sum: number, i: any) => (semCupom.has(i.menuProductId) ? sum : sum + i.price * i.quantity), 0)
+  );
 
   // O frete aqui vem do payload que a IA monta. Mesmo piso e teto do cardápio:
   // valor negativo abateria o total do pedido, e o modelo pode alucinar número.
@@ -3843,6 +3852,7 @@ async function syncAiOrderToDatabase({
             telefone: phoneClean,
             timeZone: cupons.timeZone,
             subtotal: totalItemsSum,
+            subtotalComCupom: itensComCupomSum,
             taxa: deliveryFee,
             excetoPedidoId: existingDraft?.id,
             // Em quais formas o cupom vale (lib/cupom-por-forma.ts). Sem forma
