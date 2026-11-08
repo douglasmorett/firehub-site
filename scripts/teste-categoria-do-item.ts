@@ -338,5 +338,69 @@ confere("item sem menuProduct não explode", categoriaResolvida({ productName: "
   confere("nome sem nada do cardápio continua curinga", categoriaResolvida(doIfood("Oferta Especial do Dia"), ragnar), "");
 }
 
+// ── 07/11/2026: o molho escolhido não leva o combo para "Complementos" (Showrrascão) ──
+//
+// iFood 3704, pedido #8: "Trio classico" (Molho - Especial / Batata P /
+// Coca-Cola 350ml) + "Classico". O nome do trio não existe no cardápio; a
+// única opção que casava era o molho, cadastrado em "Complementos", e o trio
+// inteiro virou "Complementos" — fora da COZINHA (Hambúrguer, Porções...).
+// A cozinha imprimiu só o "Classico". Mesmo caso no iFood 2860 (06/11).
+{
+  const show = montarMapa([
+    { id: "s1", name: "Classico", category: "Hambúrguer", active: true },
+    { id: "s2", name: "Trio Burguer Duplo", category: "Hambúrguer", active: true },
+    { id: "s3", name: "Burguer Duplo", category: "Complementos", active: true },
+    { id: "s4", name: "Molho -Especial", category: "Complementos", active: true },
+    { id: "s5", name: "Molho - Barbecue", category: "Complementos", active: true },
+    { id: "s6", name: "Coca-Cola", category: "Complementos", active: true },
+    { id: "s7", name: "Calabresa", category: "Complementos", active: true },
+    { id: "s8", name: "Guaravita", category: "Bebidas", active: true },
+  ]);
+  const doIfood = (nome: string, opcoes: string[]) => ({
+    productName: nome,
+    comboSelections: JSON.stringify(opcoes.map((name) => ({ name, quantity: 1, price: 0 }))),
+    menuProduct: { id: "ifood-bb5721e5", active: false, name: nome, category: "iFood" },
+  });
+  confere(
+    "iFood 3704: Trio classico com Molho - Especial → Hambúrguer, não Complementos",
+    categoriaResolvida(doIfood("Trio classico", ["Molho - Especial", "Batata P", "Coca-Cola 350ml"]), show),
+    "Hambúrguer",
+  );
+  confere(
+    "iFood 2860: Trio Duplo Artesanal com Molho - Barbecue → Hambúrguer",
+    categoriaResolvida(doIfood("Trio Duplo Artesanal", ["Molho - Barbecue", "Batata P", "Coca Cola Zero 350 Ml", "Não Quero Turbinar meu Burguer"]), show),
+    "Hambúrguer",
+  );
+  // Só sabor em "Complementos" e nome que não diz o tipo: curinga (sai em
+  // toda impressora), nunca a categoria do complemento.
+  confere(
+    "Pizza G-35cm-8fatias com sabor em Complementos → curinga",
+    categoriaResolvida(doIfood("Pizza G-35cm-8fatias", ["Calabresa", "Sem Borda"]), show),
+    "",
+  );
+}
+
+// NIK, Wabiz 5410 (07/11/2026): "Pizza Banana com Chocolate" no grupo "Pizzas
+// Grande". A pizza real se chama só "Banana com Chocolate" e existe em DUAS
+// categorias; a primeira do mapa é "QUARTA COM BORDA GRÁTIS", que não diz
+// "pizza". O item ficava curinga e aparecia na tela Produção Esfiha.
+{
+  const nik = montarMapa([
+    { id: "q1", name: "Banana com Chocolate", category: "QUARTA COM BORDA GRÁTIS", active: true },
+    { id: "d1", name: "Banana com Chocolate", category: "Pizzas Doces", active: true },
+    { id: "e1", name: "Esfiha Banana Nevada", category: "Esfihas Doces", active: true },
+    { id: "e2", name: "Esfiha Carne", category: "Esfihas Tradicionais", active: true },
+    { id: "e3", name: "Esfiha Calabresa", category: "Esfihas Tradicionais", active: true },
+    { id: "p1", name: "Pizza Calabresa", category: "Pizzas Tradicionais", active: true },
+    { id: "p2", name: "Pizza Portuguesa", category: "Pizzas Tradicionais", active: true },
+    { id: "p3", name: "Pizza Muçarela", category: "Pizzas Tradicionais", active: true },
+    { id: "x1", name: "Moda do Chefe", category: "Esfihas Especiais", active: true },
+  ]);
+  const wabiz = (nome: string) => ({ productName: nome, menuProduct: { id: "wabiz-loja-banana", active: false, origemIntegracao: "WABIZ", name: nome, category: "Pizzas Grande" } });
+  confere("Wabiz 5410: Pizza Banana com Chocolate → Pizzas Doces, não curinga", categoriaResolvida(wabiz("Pizza Banana com Chocolate"), nik), "Pizzas Doces");
+  // "Moda do Chefe" só existe como esfiha: essa metade não vota, a banana decide.
+  confere("Wabiz: meia com Banana com Chocolate fica na pizza", categoriaResolvida(wabiz("Pizza 1/2 Banana com Chocolate + 1/2 Moda do Chefe"), nik), "Pizzas Doces");
+}
+
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);

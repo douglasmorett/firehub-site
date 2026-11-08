@@ -161,6 +161,13 @@ function porPrefixo(chave: string, mapa: MapaDeCategorias): string | null {
 export type MapaDeCategorias = {
   porNome: Map<string, string>;
   categorias: Set<string>;
+  /**
+   * Nome normalizado → TODAS as categorias com esse nome, na ordem do
+   * cardápio. Só para `categoriaDoSaborNoTipo`: na NIK o sabor "Banana com
+   * Chocolate" existe em "QUARTA COM BORDA GRÁTIS" e em "Pizzas Doces", e o
+   * `porNome` só conhece a primeira.
+   */
+  todasPorNome: Map<string, string[]>;
 };
 
 /**
@@ -174,6 +181,7 @@ export function montarMapa(
 ): MapaDeCategorias {
   const porNome = new Map<string, string>();
   const categorias = new Set<string>();
+  const todasPorNome = new Map<string, string[]>();
   for (const p of produtos) {
     // Espelho carimbado (lib/espelho-de-integracao.ts) fica fora sem adivinhar.
     if (p.origemIntegracao) continue;
@@ -192,8 +200,22 @@ export function montarMapa(
     categorias.add(categoria.toLowerCase());
     const chave = chaveDoNome(p.name);
     if (chave && !porNome.has(chave)) porNome.set(chave, categoria);
+    if (chave) {
+      const lista = todasPorNome.get(chave) ?? [];
+      if (!lista.includes(categoria)) todasPorNome.set(chave, [...lista, categoria]);
+    }
   }
-  return { porNome, categorias };
+  return { porNome, categorias, todasPorNome };
+}
+
+/**
+ * A categoria do SABOR cadastrado sem o tipo ("Calabacon Cremoso", "Banana
+ * com Chocolate"), só quando a categoria diz o tipo ("Pizzas Especiais",
+ * "Pizzas Doces"). "Moda do Chefe" em "Esfihas Especiais" não serve para pizza.
+ * Olha todas as categorias do nome, não só a primeira.
+ */
+function categoriaDoSaborNoTipo(sabor: string, tipo: string, mapa: MapaDeCategorias): string | undefined {
+  return (mapa.todasPorNome.get(sabor) ?? []).find((c) => chaveDoNome(c).split(" ").some((w) => w.startsWith(tipo)));
 }
 
 export type ItemComCategoria = {
@@ -285,7 +307,12 @@ function porTipoDoGrupo(item: ItemComCategoria, mapa: MapaDeCategorias): string 
     // O pedaço que já traz o tipo ("Pizza Calabresa") não ganha outro na frente.
     const doPedaco = chaveDoNome(pedaco);
     const chave = doPedaco.startsWith(`${tipo} `) ? doPedaco : chaveDoNome(`${tipo} ${pedaco}`);
-    const categoria = chave ? mapa.porNome.get(chave) : undefined;
+    // O sabor também vale sem o tipo, se a categoria disser o tipo: na NIK
+    // (Wabiz 5410, 07/11/2026) "Pizza Banana com Chocolate" é cadastrada como
+    // "Banana com Chocolate" em "Pizzas Doces" — sem isto ficava curinga e
+    // aparecia na tela Produção Esfiha.
+    const categoria = (chave ? mapa.porNome.get(chave) : undefined)
+      ?? categoriaDoSaborNoTipo(chave.startsWith(`${tipo} `) ? chave.slice(tipo.length + 1) : chave, tipo, mapa);
     if (!categoria) continue;
     if (!votos.has(categoria)) ordem.push(categoria);
     votos.set(categoria, (votos.get(categoria) ?? 0) + 1);
@@ -346,6 +373,10 @@ function porOpcaoDoCombo(item: ItemComCategoria, mapa: MapaDeCategorias): string
     // nas opções; o guaraná era o único que casava, a pizza virou "Bebidas" —
     // que a loja deixa só na finalização — e não apareceu em produção nenhuma.
     if (isBeverageCategory(categoria)) continue;
+    // Nem o molho/complemento escolhido. Na Showrrascão (iFood 3704,
+    // 07/11/2026) o "Trio classico" só casava pelo "Molho - Especial", de
+    // "Complementos", e o trio sumiu da comanda da cozinha (Hambúrguer).
+    if (CATEGORIA_DE_OPCAO.test(categoria)) continue;
     if (!votos.has(categoria)) ordem.push(categoria);
     votos.set(categoria, (votos.get(categoria) ?? 0) + 1);
   }
@@ -462,11 +493,7 @@ function porMetadesDoNome(nome: unknown, mapa: MapaDeCategorias): string | null 
   // continua sem casar.
   for (const pedaco of pedacos) {
     const semTipo = pedaco.startsWith(`${tipo} `) ? pedaco.slice(tipo.length + 1) : pedaco;
-    let categoria = mapa.porNome.get(`${tipo} ${semTipo}`);
-    if (!categoria) {
-      const pelaSemTipo = mapa.porNome.get(semTipo);
-      if (pelaSemTipo && chaveDoNome(pelaSemTipo).split(" ").some((w) => w.startsWith(tipo))) categoria = pelaSemTipo;
-    }
+    const categoria = mapa.porNome.get(`${tipo} ${semTipo}`) ?? categoriaDoSaborNoTipo(semTipo, tipo, mapa);
     if (!categoria || isBeverageCategory(categoria)) continue;
     if (!votos.has(categoria)) ordem.push(categoria);
     votos.set(categoria, (votos.get(categoria) ?? 0) + 1);
@@ -591,8 +618,12 @@ function palavrasDoNome(nome: unknown): string[] {
   return chaveDoNome(nome).split(" ").filter((w) => w && !PALAVRAS_VAZIAS.has(w));
 }
 
-/** Categoria só de opção (complemento, borda, molho): não é onde o prato é feito. */
-const CATEGORIA_DE_OPCAO = /complement|adiciona|acrescimo|acréscimo|finalizar|borda|molho|sache|sachê/i;
+/**
+ * Categoria só de opção (complemento, borda, molho): não é onde o prato é feito.
+ * Com `\b` na frente: sem ele "adiciona" casava dentro de "TrADICIONAis", e
+ * "Pizzas Tradicionais" passava por categoria de opção (07/11/2026).
+ */
+const CATEGORIA_DE_OPCAO = /\b(complement|adiciona|acrescimo|acréscimo|finalizar|borda|molho|sache|sachê)/i;
 
 /**
  * O produto real cujas palavras estão TODAS no nome do item — o de nome mais
