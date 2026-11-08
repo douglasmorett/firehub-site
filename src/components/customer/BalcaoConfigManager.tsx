@@ -2,12 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { Check, Loader2, Info, BellRing } from "lucide-react";
-import { BALCAO_CONFIG_PADRAO, type BalcaoConfig } from "@/lib/balcao-config";
+import { BALCAO_CONFIG_PADRAO, lerBalcaoConfig, type BalcaoConfig, type CaixaParaPedidosOnline } from "@/lib/balcao-config";
 
 /**
  * Minha Loja › Balcão & Pager.
  *
- * Duas chaves, e nada além disso: o pager é obrigatório no balcão? e na mesa?
+ * Duas chaves do pager — é obrigatório no balcão? e na mesa? — e a escolha do
+ * que fazer com pedido do site e do robô quando o caixa está fechado.
  * A tela precisa responder sozinha o que acontece ao ligar cada uma — o
  * lojista não tem manual, e "obrigatório" sem dizer ONDE trava deixaria ele
  * descobrir na hora da fila.
@@ -17,7 +18,27 @@ import { BALCAO_CONFIG_PADRAO, type BalcaoConfig } from "@/lib/balcao-config";
  * continuar do mesmo jeito.
  */
 
-type Chave = keyof BalcaoConfig;
+type Chave = "pagerObrigatorioBalcao" | "pagerObrigatorioMesa";
+
+// Pedido do site e do robô com o caixa fechado (lib/balcao-config.ts). Três
+// escolhas, e a primeira é a de sempre — quem nunca abriu a tela fica nela.
+const OPCOES_DO_CAIXA: { valor: CaixaParaPedidosOnline; titulo: string; ajuda: string }[] = [
+  {
+    valor: null,
+    titulo: "Aceitar normalmente (como hoje)",
+    ajuda: "O pedido entra mesmo com o caixa fechado. Você recebe um aviso no WhatsApp quando a loja começa a vender sem caixa.",
+  },
+  {
+    valor: "travar",
+    titulo: "Só aceitar pedidos do site e do robô com o caixa aberto",
+    ajuda: "Com o caixa fechado, o site avisa que a loja ainda não abriu o caixa e o robô não fecha o pedido. iFood e outras plataformas continuam entrando.",
+  },
+  {
+    valor: "abrir_sozinho",
+    titulo: "Vender mesmo com o caixa fechado (abrir o caixa sozinho)",
+    ajuda: "O primeiro pedido do site ou do robô abre o caixa com o troco do último fechamento, e você recebe um aviso no WhatsApp.",
+  },
+];
 
 const CHAVES: { chave: Chave; titulo: string; ligado: string; desligado: string; ajuda: string }[] = [
   {
@@ -39,20 +60,21 @@ const CHAVES: { chave: Chave; titulo: string; ligado: string; desligado: string;
 export default function BalcaoConfigManager() {
   const [config, setConfig] = useState<BalcaoConfig>({ ...BALCAO_CONFIG_PADRAO });
   const [carregando, setCarregando] = useState(true);
-  const [salvando, setSalvando] = useState<Chave | null>(null);
+  const [salvando, setSalvando] = useState<Chave | "caixa" | null>(null);
   const [erro, setErro] = useState("");
   const [salvo, setSalvo] = useState(false);
 
   useEffect(() => {
     fetch("/api/store-settings/balcao")
       .then(r => (r.ok ? r.json() : null))
-      .then(d => { if (d) setConfig({ pagerObrigatorioBalcao: d.pagerObrigatorioBalcao === true, pagerObrigatorioMesa: d.pagerObrigatorioMesa === true }); })
+      .then(d => { if (d) setConfig(lerBalcaoConfig(d)); })
       .catch(() => { /* fica no padrão: nada obrigatório */ })
       .finally(() => setCarregando(false));
   }, []);
 
-  const alternar = async (chave: Chave) => {
-    const novo: BalcaoConfig = { ...config, [chave]: !config[chave] };
+  const alternar = (chave: Chave) => salvar({ ...config, [chave]: !config[chave] }, chave);
+
+  const salvar = async (novo: BalcaoConfig, chave: Chave | "caixa") => {
     // A tela vira ANTES da resposta e volta atrás se o servidor recusar: são
     // dois interruptores, e esperar a rede em cada clique faz a chave parecer
     // travada.
@@ -135,6 +157,39 @@ export default function BalcaoConfigManager() {
         <div style={{ fontSize: "0.8rem", color: "#475569", lineHeight: 1.55 }}>
           Desligado, o campo do pager continua existindo na venda presencial e é opcional — que é como está hoje. A regra vale no lançamento do PDV (<b>Venda Presencial</b>), abas Balcão e Mesa. A mesa aberta pelo garçom no app de Mesas não pede pager.
         </div>
+      </div>
+
+      <div style={{ background: "#FFFFFF", borderRadius: 18, padding: "1.25rem 1.5rem", border: "1px solid #E2E8F0", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
+        <h3 style={{ margin: "0 0 4px", fontSize: "1rem", fontWeight: 800, color: "#0F172A" }}>Pedidos do site e do robô com o caixa fechado</h3>
+        <p style={{ margin: "0 0 12px", fontSize: "0.82rem", color: "#64748B", lineHeight: 1.5 }}>
+          O balcão já não vende sem caixa. Aqui você decide o que acontece com o pedido que chega pelo site ou pelo robô do WhatsApp antes de alguém abrir o caixa.
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {OPCOES_DO_CAIXA.map(({ valor, titulo, ajuda }) => {
+            const marcado = config.caixaParaPedidosOnline === valor;
+            return (
+              <label key={String(valor)} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "0.75rem 1rem", borderRadius: 12, border: `1px solid ${marcado ? "#FDE68A" : "#E2E8F0"}`, background: marcado ? "#FFFBEB" : "#FFFFFF", cursor: salvando !== null ? "wait" : "pointer" }}>
+                <input
+                  type="radio"
+                  name="caixaParaPedidosOnline"
+                  checked={marcado}
+                  disabled={salvando !== null}
+                  onChange={() => salvar({ ...config, caixaParaPedidosOnline: valor }, "caixa")}
+                  style={{ marginTop: 3 }}
+                />
+                <span>
+                  <b style={{ fontSize: "0.9rem", color: "#0F172A" }}>{titulo}</b>
+                  <span style={{ display: "block", fontSize: "0.8rem", color: "#64748B", lineHeight: 1.5 }}>{ajuda}</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+        {salvando === "caixa" && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, color: "#64748B", fontSize: "0.8rem" }}>
+            <Loader2 className="animate-spin" size={14} /> Salvando…
+          </div>
+        )}
       </div>
 
       {erro && (

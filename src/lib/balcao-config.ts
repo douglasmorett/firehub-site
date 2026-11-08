@@ -32,7 +32,24 @@
  * na aba Mesa e fica com o aparelhinho é chamado por ele, e exigir os dois
  * números fazia o atendente inventar uma mesa. Pedido da NIK (Danilo) em
  * 26/09/2026. Digitado, o número da mesa continua indo para o pedido.
+ *
+ * ── Pedido do site e do robô com o caixa fechado ────────────────────────────
+ *
+ * O PDV não vende sem caixa (lib/caixa-aberto.ts); o site e o robô, sim — de
+ * propósito, para não perder venda. Na Divinos, 08/11/2026, entraram ~R$ 2.500
+ * pelo site e pelo robô antes de alguém abrir o caixa, e o fechamento do dia
+ * não tinha onde pôr esse dinheiro. Nem toda loja quer a mesma saída, então é
+ * escolha dela (`caixaParaPedidosOnline`):
+ *   • null (padrão)   — como sempre foi: entra, e o dono recebe um aviso;
+ *   • "travar"        — sem caixa aberto, o site e o robô não fecham pedido;
+ *   • "abrir_sozinho" — o primeiro pedido abre o caixa com o troco do último
+ *                       fechamento, e o dono é avisado.
+ * iFood, 99 e as outras integrações ficam de fora: lá a loja não escolhe a
+ * hora e recusar seria perder pedido que já foi pago na plataforma.
  */
+
+/** O que fazer com pedido do site/robô quando o caixa está fechado. null = como hoje. */
+export type CaixaParaPedidosOnline = "travar" | "abrir_sozinho" | null;
 
 /** Onde o pedido está sendo lançado. Delivery não tem pager. */
 export type TipoDeLancamento = "BALCAO" | "MESA" | "DELIVERY";
@@ -42,6 +59,8 @@ export type BalcaoConfig = {
   pagerObrigatorioBalcao: boolean;
   /** Idem para o pedido lançado na aba Mesa do PDV. */
   pagerObrigatorioMesa: boolean;
+  /** Pedido do site e do robô com o caixa fechado (ver o topo do arquivo). */
+  caixaParaPedidosOnline: CaixaParaPedidosOnline;
 };
 
 /**
@@ -57,6 +76,7 @@ export const FORMAS_DE_PAGAMENTO_DO_BALCAO: readonly string[] = ["Dinheiro", "PI
 export const BALCAO_CONFIG_PADRAO: BalcaoConfig = {
   pagerObrigatorioBalcao: false,
   pagerObrigatorioMesa: false,
+  caixaParaPedidosOnline: null,
 };
 
 /**
@@ -73,6 +93,10 @@ export function lerBalcaoConfig(bruto: unknown): BalcaoConfig {
   return {
     pagerObrigatorioBalcao: o.pagerObrigatorioBalcao === true,
     pagerObrigatorioMesa: o.pagerObrigatorioMesa === true,
+    // Só os dois valores conhecidos; qualquer outra coisa é "como hoje" —
+    // ilegível não pode virar trava, pelo mesmo motivo do pager.
+    caixaParaPedidosOnline:
+      o.caixaParaPedidosOnline === "travar" || o.caixaParaPedidosOnline === "abrir_sozinho" ? o.caixaParaPedidosOnline : null,
   };
 }
 

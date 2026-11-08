@@ -12,7 +12,7 @@ import {
 } from "@/lib/documento-do-cliente";
 import { DOCUMENTO_NAO_PEDIDO, documentoObrigatorioNoPedido, type DocumentoNoPedido } from "@/lib/fiscal-modo";
 import {
-  BALCAO_CONFIG_PADRAO, FORMAS_DE_PAGAMENTO_DO_BALCAO, numeroDaMesaEhObrigatorio, pagerEhObrigatorio, problemaDoPagerObrigatorio, type BalcaoConfig,
+  BALCAO_CONFIG_PADRAO, FORMAS_DE_PAGAMENTO_DO_BALCAO, lerBalcaoConfig, numeroDaMesaEhObrigatorio, pagerEhObrigatorio, problemaDoPagerObrigatorio, type BalcaoConfig,
 } from "@/lib/balcao-config";
 import { MENSAGEM_CAIXA_FECHADO, EVENTO_CAIXA_MUDOU, pedirAberturaDoCaixa } from "@/lib/caixa-aberto";
 import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
@@ -232,7 +232,7 @@ export default function VendaPresencialPage() {
     fetch("/api/store-settings/balcao").then(r => r.ok ? r.json() : null)
       .then(d => {
         if (!d) return;
-        setBalcaoConfig({ pagerObrigatorioBalcao: d.pagerObrigatorioBalcao === true, pagerObrigatorioMesa: d.pagerObrigatorioMesa === true });
+        setBalcaoConfig(lerBalcaoConfig(d));
         if (Array.isArray(d.bairros)) {
           setBairrosDaLoja(
             d.bairros

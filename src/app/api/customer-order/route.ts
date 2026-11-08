@@ -46,6 +46,7 @@ import { normalizarConfigFiscal } from "@/lib/fiscal-config";
 import { documentoNoPedido, documentoObrigatorioNoPedido } from "@/lib/fiscal-modo";
 import { normalizarDocumento } from "@/lib/documento-do-cliente";
 import { PAGAMENTO_ONLINE_ATIVO } from "@/lib/pagamento-online";
+import { caixaParaPedidoOnline } from "@/lib/caixa-aberto-servidor";
 
 /**
  * Este telefone já fez pedido PELO SITE nesta loja? É a regra do "só no
@@ -280,6 +281,15 @@ export async function POST(req: Request) {
         const [a, m, d] = String(pause.to).split("-");
         return NextResponse.json({ error: `Loja em pausa até ${d}/${m}/${a}.` }, { status: 400 });
       }
+    }
+
+    // ── CAIXA FECHADO (lib/caixa-aberto-servidor.ts) ────────────────────────
+    // A loja escolhe em Minha Loja › Balcão & Pager: travar, abrir o caixa
+    // sozinho, ou seguir como sempre (com aviso ao dono). Agendado não passa
+    // por aqui: é para quando a loja estiver operando.
+    if (!ehAgendado) {
+      const caixa = await caixaParaPedidoOnline(franchisee.id);
+      if (!caixa.ok) return NextResponse.json({ error: caixa.mensagem }, { status: 400 });
     }
 
     // ── A LOJA ENTREGA NESTE ENDEREÇO? ──────────────────────────────────────

@@ -105,3 +105,30 @@ export function avisarQueOCaixaMudou(aberto: boolean): void {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new CustomEvent<{ aberto: boolean }>(EVENTO_CAIXA_MUDOU, { detail: { aberto } }));
 }
+
+// ─── PEDIDO DO SITE E DO ROBÔ COM O CAIXA FECHADO ───────────────────────────
+//
+// A trava acima é só do PDV. Para o site e o robô a loja escolhe
+// (lib/balcao-config.ts, `caixaParaPedidosOnline`); a decisão é pura e mora
+// aqui para o teste não precisar de banco. Quem consulta o caixa e age é
+// lib/caixa-aberto-servidor.ts (`caixaParaPedidoOnline`).
+
+/** O que o cliente do site e do robô lê quando a loja trava sem caixa. */
+export const MENSAGEM_CAIXA_FECHADO_ONLINE =
+  "A loja ainda não abriu o caixa. Tente de novo em alguns minutos.";
+
+export type DecisaoDoCaixaOnline =
+  | "seguir"         // caixa aberto: nada a fazer
+  | "seguir_avisando" // fechado, loja no "como hoje": entra e o dono é avisado
+  | "recusar"        // fechado, loja escolheu travar
+  | "abrir";         // fechado, loja escolheu abrir sozinho
+
+export function decidirCaixaDoPedidoOnline(
+  modo: "travar" | "abrir_sozinho" | null,
+  caixaAberto: boolean,
+): DecisaoDoCaixaOnline {
+  if (caixaAberto) return "seguir";
+  if (modo === "travar") return "recusar";
+  if (modo === "abrir_sozinho") return "abrir";
+  return "seguir_avisando";
+}

@@ -1666,6 +1666,13 @@ export default function ChatbotHubClient() {
                 titulo: "Caixa aberto e caixa fechado",
                 detalhe: "Na hora em que alguém abre ou fecha o caixa: a abertura vem com o troco; o fechamento, com a conferência (faltou, sobrou ou conferiu) e as vendas do turno.",
               },
+              // Sai do primeiro pedido do site/robô com o caixa fechado
+              // (lib/caixa-aberto-servidor.ts).
+              {
+                id: "vendendo_com_caixa_fechado",
+                titulo: "Vendendo com o caixa fechado",
+                detalhe: "Entrou pedido do site ou do robô antes de alguém abrir o caixa — ou o caixa foi aberto sozinho, se a loja escolheu assim em Minha Loja › Balcão & Pager. Um aviso por turno.",
+              },
               {
                 id: "ifood_fechado",
                 titulo: "Loja fechada no iFood dentro do horário",

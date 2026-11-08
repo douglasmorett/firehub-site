@@ -27,7 +27,11 @@
 const c2 = (n: number) => Math.round((Number(n) || 0) * 100) / 100;
 
 /** De que lado da loja veio quem abriu o caixa. */
-export type PapelDeQuemAbriu = "DONO" | "FUNCIONARIO" | "SUPORTE";
+//
+// SISTEMA = ninguém: o FireHub abriu sozinho no primeiro pedido do site ou do
+// robô, na loja que escolheu "Vender mesmo com o caixa fechado"
+// (lib/balcao-config.ts, `caixaParaPedidosOnline`).
+export type PapelDeQuemAbriu = "DONO" | "FUNCIONARIO" | "SUPORTE" | "SISTEMA";
 
 /**
  * Quem abriu o caixa, como fica gravado em `CashSession.abertoPor`.
@@ -82,7 +86,7 @@ export function lerQuemAbriu(bruto: unknown): QuemAbriu | null {
   if (!v || typeof v !== "object") return null;
   const nome = String(v.nome || "").trim();
   if (!nome) return null;
-  const papel: PapelDeQuemAbriu = v.papel === "FUNCIONARIO" || v.papel === "SUPORTE" ? v.papel : "DONO";
+  const papel: PapelDeQuemAbriu = v.papel === "FUNCIONARIO" || v.papel === "SUPORTE" || v.papel === "SISTEMA" ? v.papel : "DONO";
   return { nome, email: String(v.email || "").trim() || null, papel };
 }
 
@@ -90,6 +94,7 @@ export function lerQuemAbriu(bruto: unknown): QuemAbriu | null {
 export function rotuloDoPapel(papel: PapelDeQuemAbriu): string {
   if (papel === "FUNCIONARIO") return "equipe";
   if (papel === "SUPORTE") return "suporte";
+  if (papel === "SISTEMA") return "automático";
   return "dono";
 }
 

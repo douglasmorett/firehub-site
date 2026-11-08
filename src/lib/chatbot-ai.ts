@@ -1,4 +1,5 @@
 import { montarResumoGerencial, resumoEmTexto } from "@/lib/painel-do-dono";
+import { caixaParaPedidoOnline } from "@/lib/caixa-aberto-servidor";
 import { estadoDaLoja, instrucaoDeHorario } from "@/lib/loja-aberta";
 import { lojaFechadaPelaQueda } from "@/lib/loja-sem-conexao-no-banco";
 import { avaliarEntrega, bairroCadastrado, bairrosAtendidos, descreverVeredicto, minimoDaZona, modoDaArea, type LojaParaEntrega, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
@@ -3573,6 +3574,23 @@ async function syncAiOrderToDatabase({
   // Para agora com a loja fechada continua sem fechar (a trava lá de cima
   // deixou passar porque a tag falava em agendamento).
   if (lojaAberta === false && isFinal && !instanteAgendado) return recusaDaLojaFechada();
+
+  // ── CAIXA FECHADO (lib/caixa-aberto-servidor.ts) ─────────────────────────
+  // A mesma escolha da loja que vale no site: travar, abrir sozinho ou seguir
+  // avisando o dono. Só no FECHAMENTO de pedido novo para agora — o rascunho
+  // continua sendo montado, e alteração de pedido já enviado não é venda nova.
+  if (isFinal && ehPedidoNovo && !instanteAgendado) {
+    const caixa = await caixaParaPedidoOnline(franchiseeId);
+    if (!caixa.ok) {
+      console.warn(`[Chatbot AI Order Sync] 🛑 Pedido não fechado: caixa fechado e a loja trava. Loja=${franchiseeId} tel=${phoneClean.slice(-4)}`);
+      return {
+        gravado: false,
+        motivo: "caixa fechado (a loja só aceita pedido com o caixa aberto)",
+        regraDeNegocio: true,
+        mensagemParaOCliente: "A loja ainda não abriu o caixa 😕 Me chama de novo em alguns minutos que eu fecho o seu pedido.",
+      };
+    }
+  }
 
   // ── ONDE ESTÁ O CLIENTE ─────────────────────────────────────────────────
   // A localização que ele mandou nesta conversa (📎 → Localização); senão a

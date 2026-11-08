@@ -111,7 +111,13 @@ export type TipoDeAlerta =
    * virou interruptor em 07/11/2026 (Edu, Duga Burguer, acompanha a loja de
    * longe por ele) para quem não quiser recebê-lo.
    */
-  | "caixa_aberto_fechado";
+  | "caixa_aberto_fechado"
+  /**
+   * Entrou pedido do site ou do robô com o caixa fechado — ou o FireHub abriu
+   * o caixa sozinho por causa dele (lib/caixa-aberto-servidor.ts). Divinos,
+   * 08/11/2026: ~R$ 2.500 vendidos antes de alguém abrir o caixa.
+   */
+  | "vendendo_com_caixa_fechado";
 
 export const ALERTAS_PADRAO: Record<TipoDeAlerta, boolean> = {
   problema_no_pedido: true,
@@ -139,6 +145,8 @@ export const ALERTAS_PADRAO: Record<TipoDeAlerta, boolean> = {
   // vir desligado calaria, sem ninguém pedir, o dono que acompanha o caixa
   // por ele (o troco da abertura, a falta e a sobra do fechamento).
   caixa_aberto_fechado: true,
+  // Ligado: é dinheiro entrando sem caixa para receber. Um por turno.
+  vendendo_com_caixa_fechado: true,
 };
 
 export const ROTULO_DO_ALERTA: Record<TipoDeAlerta, string> = {
@@ -159,6 +167,7 @@ export const ROTULO_DO_ALERTA: Record<TipoDeAlerta, string> = {
   parceiro_fora_do_ar: "JotaJá fora do ar (pedidos de lá podem não entrar) e quando voltou",
   keeta_pausada: "Pedido da Keeta cancelado antes de entrar no FireHub, e a loja pausada na Keeta por isso",
   caixa_aberto_fechado: "Caixa aberto e caixa fechado (a hora, o troco da abertura e, no fechamento, a conferência e as vendas)",
+  vendendo_com_caixa_fechado: "A loja começou a vender pelo site ou pelo robô com o caixa fechado (ou o caixa foi aberto sozinho)",
 };
 
 // Os números do dono (principal + outros) moram em lib/numeros-do-dono.ts,
