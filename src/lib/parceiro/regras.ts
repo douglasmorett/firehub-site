@@ -50,7 +50,7 @@ export const TETO_DE_SPLIT = 40;
  *     nem de estar na equipe de vendas, nem some se outro vendedor atender.
  *   • LINK DE VENDEDOR (contratado): 10% do boleto da loja que veio pelo link
  *     dele, só enquanto ele está na equipe, ativo, e ATENDE a loja.
- *   • ATRIBUÍDA: o vendedor que atende leva `sellerPercent` (3%).
+ *   • ATRIBUÍDA: o vendedor que atende leva `sellerPercent` (5% desde 08/11/2026; era 3%).
  *   • Quem é as duas coisas (Victor): as lojas que ele trouxe pagam o % de
  *     embaixador dele (recorrente), nunca os 10% junto.
  *   • Quem atende, entre os vendedores: o atribuído (User.vendedorId); sem
@@ -70,7 +70,7 @@ export function indicacaoDeEmbaixador(p: { isVendedor?: boolean | null; commissi
   return !p.isVendedor || p.commissionPercent > PCT_DO_LINK_DE_VENDEDOR;
 }
 
-/** O vendedor ganha os 3% de atribuída nesta loja? Só se a loja não veio pelo link DELE. */
+/** O vendedor ganha o % de atribuída nesta loja? Só se a loja não veio pelo link DELE. */
 export function ganhaComoVendedor(vendedorId: string, loja: { ambassadorId?: string | null }): boolean {
   if (loja.ambassadorId && loja.ambassadorId === vendedorId) return false;
   return true;
@@ -116,7 +116,7 @@ export type DonoDaLoja = {
   parceiroId: string;
   /**
    * LINK = veio pelo link de vendedor dele e ele atende (10%);
-   * ATRIBUIDA = posta na carteira dele (3%);
+   * ATRIBUIDA = posta na carteira dele (5%);
    * INDICACAO = ele atende uma loja que indicou como embaixador — o boleto já
    * paga o % de embaixador dele, o papel de vendedor não soma (0%).
    */

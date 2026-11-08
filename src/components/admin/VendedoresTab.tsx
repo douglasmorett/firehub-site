@@ -30,7 +30,7 @@ type Membro = {
 type Embaixador = { id: string; name: string; email: string; asaasWalletId: string | null };
 
 type Form = { name: string; email: string; phone: string; asaasWalletId: string; sellerPercent: string };
-const FORM_VAZIO: Form = { name: "", email: "", phone: "", asaasWalletId: "", sellerPercent: "3" };
+const FORM_VAZIO: Form = { name: "", email: "", phone: "", asaasWalletId: "", sellerPercent: "5" };
 
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 /** "2026-10" → "out/26". */
@@ -308,7 +308,7 @@ export default function VendedoresTab({ onVerCarteira }: { onVerCarteira: (vende
                     {embaixadores.map(e => <option key={e.id} value={e.id}>{e.name} — {e.email}{e.asaasWalletId ? "" : " (sem carteira Asaas)"}</option>)}
                   </select>
                 </label>
-                {campo("Comissão como vendedor (%)", "sellerPercent", { type: "number", dica: "Vale só nas lojas que você passar para ele e que não são indicação dele — nas indicações ele já ganha como embaixador. Padrão: 3%." })}
+                {campo("Comissão como vendedor (%)", "sellerPercent", { type: "number", dica: "Vale só nas lojas que você passar para ele e que não são indicação dele — nas indicações ele já ganha como embaixador. Padrão: 5%." })}
                 <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "0 0 16px" }}>Ele entra com o mesmo e-mail e senha do portal do embaixador.</p>
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
                   <button className="fha-btn" onClick={fechar}>Cancelar</button>
@@ -321,7 +321,7 @@ export default function VendedoresTab({ onVerCarteira }: { onVerCarteira: (vende
                 {campo("E-mail (é o login dele)", "email", { placeholder: "vitor@email.com", type: "email" })}
                 {campo("Telefone completo com DDD", "phone", { placeholder: "(11) 98765-4321" })}
                 {campo("ID da carteira no Asaas", "asaasWalletId", { placeholder: "opcional agora — sem ela o split não sai", dica: "O walletId da conta Asaas do vendedor, para o split da comissão." })}
-                {campo("Comissão (%)", "sellerPercent", { type: "number", dica: "Percentual da mensalidade de cada loja da carteira. Padrão: 3%." })}
+                {campo("Comissão (%)", "sellerPercent", { type: "number", dica: "Percentual da mensalidade de cada loja da carteira. Padrão: 5%." })}
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 6 }}>
                   <button className="fha-btn" onClick={fechar}>Cancelar</button>
                   <button

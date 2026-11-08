@@ -9,7 +9,7 @@
  * O vendedor é uma linha de `Ambassador` com `isVendedor`: o login, a carteira
  * do Asaas e o portal já existiam para o embaixador, e um embaixador pode
  * passar a vender também sem ganhar outra conta. A comissão é
- * `sellerPercent` (3%) da mensalidade das lojas com `User.vendedorId` dele,
+ * `sellerPercent` (5%) da mensalidade das lojas com `User.vendedorId` dele,
  * pelo split do Asaas no fechamento (lib/billing.ts) — somada ao que o
  * embaixador que INDICOU a loja já leva.
  *
