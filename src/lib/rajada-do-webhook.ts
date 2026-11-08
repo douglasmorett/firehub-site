@@ -39,6 +39,8 @@ export type ItemDaRajada = {
   barreira: boolean;
   /** Quando o cliente tinha escrito ANTES desta mensagem (anti-loop), para a saudação do dia. */
   mensagemAnteriorEm?: number | null;
+  /** Quando a mensagem chegou: é a hora com que ela vai para o histórico no banco. */
+  chegouEm?: number;
 };
 
 export type VezDaRajada =
@@ -52,6 +54,8 @@ export type VezDaRajada =
       quantas: number;
       /** `mensagemAnteriorEm` da PRIMEIRA mensagem da rajada. */
       mensagemAnteriorEm: number | null | undefined;
+      /** A chegada mais antiga da rajada: dali em diante, o que o banco tem do cliente já vai neste texto. */
+      primeiraChegada: number | undefined;
       liberar: () => void;
     };
 
@@ -88,6 +92,7 @@ export async function esperarAVezDaRajada(o: {
     texto: itens.length === 1 ? itens[0].texto : juntarTextos(itens.map((i) => i.texto)),
     quantas: itens.length,
     mensagemAnteriorEm: itens[0].mensagemAnteriorEm,
+    primeiraChegada: itens.reduce<number | undefined>((menor, i) => (i.chegouEm !== undefined && (menor === undefined || i.chegouEm < menor) ? i.chegouEm : menor), undefined),
     liberar,
   };
 }

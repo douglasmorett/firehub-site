@@ -24,7 +24,18 @@
  *    só o pedaço do pagamento sai;
  * 3. tira "é outro pedido? / quer acrescentar?" quando o robô já perguntou
  *    isso na conversa ou quando o cliente não pediu item nenhum agora;
- * 4. deixa só a PRIMEIRA pergunta que sobrou.
+ * 4. tira o "Confirma?" do MESMO resumo (mesmo total) que o robô já mostrou
+ *    numa das duas últimas mensagens, quando o cliente falou depois sem
+ *    perguntar nada. Charlie Brown 08/11 18:12: "Confirma pra mim?" três vezes
+ *    em 18 s. O "Confirma?" fica quando o total mudou (o cliente mexeu no
+ *    pedido) e quando o cliente disse "sim": aí o modelo não fechou o pedido,
+ *    e calar deixaria o pedido parado sem ninguém saber.
+ *    Pergunta qualquer repetida ("Qual sabor?", "Qual o bairro?") NÃO entra:
+ *    nas 707 respostas de 08/11 metade das repetições era o cliente que não
+ *    tinha respondido ("Perto do Mercadinho do Maia" → "Qual é o bairro?"), e
+ *    cortar ali trava o pedido. A repetição de verdade vinha do histórico
+ *    velho de cada processo, corrigido no webhook;
+ * 5. deixa só a PRIMEIRA pergunta que sobrou.
  * Frase que não é pergunta não é tocada (resumo, preço, link).
  *
  * Arquivo puro, sem imports: o teste o carrega sozinho
@@ -74,6 +85,23 @@ const PEDACOS_DE_TROCO = [
 /** "É outro pedido?", "Quer acrescentar nele ou fazer um separado?" */
 const PERGUNTA_DE_OUTRO_PEDIDO =
   /segundo pedido|pedido separado|outro pedido|um separado|fazer um novo|pedido novo|[ée] o mesmo pedido|acrescentar (algo|alguma coisa|mais algo|mais alguma coisa|nele|nesse|neste|no pedido|no seu pedido|no n)/iu;
+
+/**
+ * Pergunta que pede para o cliente confirmar o PEDIDO (o resumo): "Confirma
+ * pra mim?", "Posso confirmar e mandar pra cozinha?", "Está certo?". Não pega
+ * "Confirma o endereço?" nem "Qual o bairro pra eu confirmar a entrega?".
+ */
+const PERGUNTA_DE_CONFIRMAR =
+  /(?<!\p{L})(me\s+)?confirma(\s+(pra|para)\s+mim)?(\s+(pra|para)\s+eu\s+[^?]*)?\s*\?|confirma\s+(o|seu)\s+pedido|posso\s+(confirmar|mandar|enviar|fechar|lan[cç]ar)|(est[aá]|t[aá]|ficou)\s+(tudo\s+)?cert[oi]|(mandar|enviar)\s+(pra|para)\s+(a\s+)?cozinha/iu;
+/** "sim", "pode", "isso", "confirmo": o cliente confirmou. */
+const CLIENTE_CONFIRMOU = /^\s*(sim|s|ss|isso|isso mesmo|pode|pode sim|pode mandar|pode fechar|confirmo|confirmado|confirma|certo|ok|okay|blz|beleza|t[aá] certo|est[aá] certo|correto|perfeito|fechado|manda|bora)(?!\p{L})/iu;
+
+/** O total que o resumo diz ("Total: 58 reais", "Valor Total a pagar: R$ 58,00") — o último, não o "Subtotal". */
+function totalDoResumo(texto: string): string | null {
+  const todos = [...texto.matchAll(/(?<!sub)total[^0-9\n]{0,25}(\d+(?:[.,]\d{1,2})?)/giu)];
+  const m = todos[todos.length - 1];
+  return m ? m[1].replace(",", ".").replace(/\.0+$/, "") : null;
+}
 
 /** O cliente está pedindo item agora? ("e uma coca", "quero mais 2", "manda também...") */
 const PEDE_ITEM = palavra(
@@ -147,6 +175,34 @@ export function enxugarResposta(
   );
   const pedeItem = clientePedeItem(o.mensagemDoCliente);
 
+  // Os totais dos resumos com "Confirma?" das duas últimas mensagens do robô
+  // a que o cliente já respondeu: depois delas ele falou, e nada do que
+  // falou era pergunta.
+  const historico = o.historico || [];
+  const resumosJaConfirmaveis: string[] = [];
+  let falasDepois = [String(o.mensagemDoCliente || "")];
+  let mensagensDoRobo = 0;
+  for (let i = historico.length - 1; i >= 0 && mensagensDoRobo < 2; i--) {
+    const m = historico[i];
+    if (!m) continue;
+    if (m.sender === "user") {
+      falasDepois.push(String(m.text || ""));
+      continue;
+    }
+    mensagensDoRobo++;
+    const texto = String(m.text || "");
+    if (!falasDepois.some((t) => t.trim()) || falasDepois.some((t) => ehPergunta(t))) break;
+    const total = totalDoResumo(texto);
+    const pediuConfirmacao = texto.split("\n").some((linha) => frases(linha).some((f) => ehPergunta(f) && PERGUNTA_DE_CONFIRMAR.test(f)));
+    if (total !== null && pediuConfirmacao) resumosJaConfirmaveis.push(total);
+    falasDepois = [];
+  }
+  const totalDaResposta = totalDoResumo(String(resposta || ""));
+  const clienteConfirmou = CLIENTE_CONFIRMOU.test(String(o.mensagemDoCliente || ""));
+  const confirmacaoJaPedida = (f: string): boolean =>
+    PERGUNTA_DE_CONFIRMAR.test(f) && !clienteConfirmou &&
+    resumosJaConfirmaveis.some((total) => totalDaResposta === null || totalDaResposta === total);
+
   let jaTemPergunta = false;
   const linhas = String(resposta || "").split("\n").map((linha) => {
     if (!linha.trim()) return linha;
@@ -199,6 +255,13 @@ export function enxugarResposta(
       }
       if (CUMPRIMENTO.test(f)) {
         manter(f);
+        continue;
+      }
+      // O mesmo resumo já pediu "Confirma?". O "sim" do cliente com o modelo
+      // pedindo de novo NÃO entra (`clienteConfirmou`): a pergunta repetida é
+      // ruim, mas o pedido parado sem ninguém saber é pior.
+      if (confirmacaoJaPedida(f)) {
+        cortar("confirmação: já dito");
         continue;
       }
       if (jaTemPergunta) {

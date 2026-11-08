@@ -123,3 +123,21 @@ export function historicoParaAIa(bruto: unknown, agora: number): MensagemDaConve
   }
   return limpar(lista, agora, MAXIMO_DE_MENSAGENS, VALIDADE_DA_MENSAGEM_MS);
 }
+
+/**
+ * O histórico do banco para a mensagem que vai à IA agora, sem as falas do
+ * cliente que já vão no texto dela: a rajada junta os pedaços ("uma
+ * napolitana" / "grande") num texto só, e cada pedaço que saiu de cena já foi
+ * gravado no banco. Sai só a fala que chegou a partir do primeiro pedaço desta
+ * rajada E que está no texto — a de outra mensagem, respondida por outro
+ * processo nesse meio-tempo, fica.
+ */
+export function historicoSemARajada(
+  historico: MensagemDaConversa[],
+  primeiraChegada: number,
+  textoDaRajada: string,
+): MensagemDaConversa[] {
+  return historico.filter(
+    (m) => !(m.sender === "user" && m.timestamp >= primeiraChegada && textoDaRajada.includes(m.text.trim())),
+  );
+}

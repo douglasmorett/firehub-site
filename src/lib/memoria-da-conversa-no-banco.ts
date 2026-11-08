@@ -141,10 +141,18 @@ export async function acrescentarNoHistorico(
   }
 }
 
-/** Uma mensagem só, do cliente, que chegou e pode não ser respondida. */
-export async function registrarMensagemDoCliente(userId: string, remoteJid: string, texto: string): Promise<void> {
+/**
+ * Uma mensagem só, do cliente, que chegou e pode não ser respondida.
+ *
+ * `quando` é a hora em que ela CHEGOU. A gravação acontece depois da resposta
+ * (que já foi gravada ao sair), e com a hora da gravação a fala do cliente
+ * ficava DEPOIS da resposta a ela — a leitura ordena pela hora. Desde que o
+ * robô lê o histórico do banco a cada mensagem (webhook, 08/11/2026), a ordem
+ * é o que o modelo vê.
+ */
+export async function registrarMensagemDoCliente(userId: string, remoteJid: string, texto: string, quando: number = Date.now()): Promise<void> {
   if (!texto || !texto.trim()) return;
-  await acrescentarNoHistorico(userId, remoteJid, [{ sender: "user", text: texto, timestamp: Date.now() }]);
+  await acrescentarNoHistorico(userId, remoteJid, [{ sender: "user", text: texto, timestamp: quando }]);
 }
 
 /** Uma mensagem só, do lado da loja: o robô ou uma pessoa da equipe. */

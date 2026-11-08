@@ -26,6 +26,8 @@ import { desembrulharMensagem, localizacaoDoPayload, semLinhaDaLocalizacao, text
 import { ehSoReacao, respondeAStatus, respostaAStatusSemPergunta, emojiSemPerguntaDoRobo, AVISO_DE_RESPOSTA_A_STATUS } from '@/lib/reacao-e-status';
 import { enxugarResposta } from '@/lib/resposta-enxuta';
 import { esperarAVezDaRajada, rajadasDoRobo } from '@/lib/rajada-do-webhook';
+import { pegarVez, soltarVez } from '@/lib/vez';
+import { randomUUID } from 'crypto';
 import { avisarDono, avisarAdminDoSistema, textoDeProblemaNoPedido } from '@/lib/alertas-do-dono';
 import { textoDoAvisoDaFicha, type FichaPreenchida } from '@/lib/respostas-prontas';
 import { mesmoTelefone } from '@/lib/telefone';
@@ -55,6 +57,7 @@ import {
 } from '@/lib/falha-da-ia';
 import { comPrazo } from '@/lib/com-prazo';
 import { carregarMemoriaDaConversa, acrescentarNoHistorico, registrarMensagemDoCliente, registrarMensagemDaLoja, limparMemoriasVencidas } from '@/lib/memoria-da-conversa-no-banco';
+import { historicoSemARajada } from '@/lib/memoria-da-conversa';
 import { ehInstanciaDoAtendimento } from '@/lib/atendimento/config';
 import { receberEventoDoAtendimento } from '@/lib/atendimento/entrada';
 
@@ -75,6 +78,12 @@ const TETO_DA_RESPOSTA_TARDIA_MS = 60_000;
  * rajada: conversa muda é pior que duas respostas.
  */
 const TETO_DA_VEZ_DA_CONVERSA_MS = 35_000;
+/**
+ * Quanto vale a vez da conversa no BANCO (a fila entre os processos, mais
+ * abaixo): o prazo da IA (25 s) com folga para a entrega. Processo que cair
+ * segurando a vez a perde sozinho; quem espera desiste no teto acima.
+ */
+const VALIDADE_DA_VEZ_NO_BANCO_MS = 60_000;
 
 /**
  * Respostas descartadas em seguida por conversa ("o cliente escreveu de novo
@@ -465,7 +474,10 @@ async function replyToCustomer(userId: string, remoteJid: string, text: string, 
   // do cliente e nenhuma resposta, como se o robô tivesse ficado mudo. Só
   // grava o que o gateway ACEITOU: mostrar atendimento que não existiu é pior
   // que não mostrar nada.
-  if (enviou) void registrarMensagemDaLoja(userId, remoteJid, text, "robo");
+  //
+  // Com `await`: a próxima mensagem da conversa, em outro processo, lê o
+  // histórico do banco assim que esta solta a vez — a resposta tem de estar lá.
+  if (enviou) await registrarMensagemDaLoja(userId, remoteJid, text, "robo");
   return enviou;
 }
 
@@ -1445,6 +1457,7 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
       texto: textMessage,
       barreira: Boolean(audioData?.base64 || imagemData?.base64 || localizacao),
       mensagemAnteriorEm: guard.action === "allow" ? guard.mensagemAnteriorEm ?? null : null,
+      chegouEm: now,
     },
     janelaMs: audioData ? 1500 : 3000 + Math.floor(Math.random() * 2001),
     tetoDaVezMs: TETO_DA_VEZ_DA_CONVERSA_MS,
@@ -1452,15 +1465,39 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
   if (vezDaRajada.papel !== "carrega") {
     // O texto desta mensagem é (ou já foi) respondido junto com outra. Ela
     // aparece no painel como chegou; quem carrega grava a própria.
-    void registrarMensagemDoCliente(user.id, remoteJid, textoDoClienteParaOPainel);
+    void registrarMensagemDoCliente(user.id, remoteJid, textoDoClienteParaOPainel, now);
     registrarTrace({
       instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace, estagio: "juntada",
       detalhe: vezDaRajada.papel === "juntada" ? "respondida junto com a mensagem seguinte" : "já levada por outra mensagem da conversa",
     });
     return;
   }
+  // ── A VEZ DA CONVERSA ENTRE OS PROCESSOS ─────────────────────────────────
+  // Desde 06/11/2026 o site roda em vários processos (PROCESSOS_DO_SITE=4, 8
+  // desde 07/11; scripts/varios-processos.js) e o node:cluster espalha as
+  // requisições do gateway entre eles. A rajada acima é de UM processo: duas
+  // mensagens seguidas do mesmo cliente caíam em processos diferentes e iam à
+  // IA ao mesmo tempo, uma sem ver a outra. Charlie Brown, 08/11 18:12: "O
+  // pagto será com pux" e "Pix" a 7 s uma da outra → dois resumos com
+  // "Confirma pra mim?" e um "Posso confirmar?" em 18 s; Lapastine, 08/11:
+  // "Qual sabor?" três vezes depois de "Sabor calabresa". A vez no banco
+  // (lib/vez.ts) põe a conversa em fila também entre os processos, e o
+  // histórico (abaixo) é lido DEPOIS dela, com a resposta de quem estava na
+  // frente já gravada. Banco fora do ar: segue, como antes (pegarVez).
+  const chaveDaVezNoBanco = `robo-conversa:${user.id}:${remoteJid}`;
+  const donoDaVezNoBanco = randomUUID();
+  const desisteEm = Date.now() + TETO_DA_VEZ_DA_CONVERSA_MS;
+  while (!(await pegarVez(chaveDaVezNoBanco, VALIDADE_DA_VEZ_NO_BANCO_MS, { dono: donoDaVezNoBanco })) && Date.now() < desisteEm) {
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  let vezDoBancoSolta = false;
   /** Solta a conversa para a próxima mensagem: só depois que a resposta foi ENTREGUE (ou o vigia desistiu). */
-  const liberarAVez = vezDaRajada.liberar;
+  const liberarAVez = () => {
+    vezDaRajada.liberar();
+    if (vezDoBancoSolta) return;
+    vezDoBancoSolta = true;
+    void soltarVez(chaveDaVezNoBanco, donoDaVezNoBanco);
+  };
   if (vezDaRajada.quantas > 1) {
     textMessage = vezDaRajada.texto;
     console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] 🧩 ${vezDaRajada.quantas} mensagens de ${remoteJid} numa resposta só`);
@@ -1473,19 +1510,21 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
   // receber as ultimas mensagens trocadas com a A — produtos, precos, endereco
   // — e continuar a conversa como se fossem dele.
   const convKey = user.id + "_" + remoteJid;
-  let history = conversationCache.get(convKey) || [];
-  // Memória vazia aqui é conversa nova — ou processo novo: deploy no FireHub é
-  // a cada push, e cada um apagava o histórico de TODA conversa em andamento. O
-  // que o robô guardou no banco volta para o cache (lib/memoria-da-conversa.ts).
-  // Só consulta quando o cache está vazio, e nunca lança.
-  if (history.length === 0) {
-    const guardado = await carregarMemoriaDaConversa(user.id, remoteJid);
-    if (guardado.length > 0) {
-      history = guardado;
-      conversationCache.set(convKey, history);
-      console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] 🧠 Histórico de ${remoteJid} recuperado do banco (${guardado.length} mensagens).`);
-    }
-  }
+  // O histórico vem do BANCO a cada mensagem (lib/memoria-da-conversa.ts). O
+  // cache daqui é de UM processo e, com vários (acima), ficava velho: ele só
+  // lia o banco com o cache vazio, então o processo que já tinha atendido a
+  // conversa seguia com a cópia dele, sem o que os outros responderam — e o
+  // modelo perguntava de novo o sabor, o bairro, o pagamento e o "confirma?"
+  // que o cliente já tinha respondido. O cache fica só de reserva, para o
+  // banco que não responde (a leitura nunca lança).
+  //
+  // O que o cliente mandou NESTA rajada já vai em `textMessage`: os pedaços
+  // que outra mensagem gravou ao sair de cena ("juntada") não entram duas vezes.
+  const doBanco = await carregarMemoriaDaConversa(user.id, remoteJid);
+  const primeiraChegada = vezDaRajada.primeiraChegada ?? now;
+  const doBancoSemARajada = historicoSemARajada(doBanco, primeiraChegada, textMessage);
+  let history = doBancoSemARajada.length > 0 ? doBancoSemARajada : (conversationCache.get(convKey) || []);
+  if (doBancoSemARajada.length > 0) conversationCache.set(convKey, history);
   const aiHistory = history.map(msg => ({ sender: msg.sender, text: msg.text }));
 
   // ── EMOJI SOLTO NÃO PEDE RESPOSTA ────────────────────────────────────────
@@ -1495,7 +1534,7 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
   // do robô no ar ("Confirma?"), o 👍 é resposta e segue (lib/reacao-e-status.ts).
   const ultimaDoRobo = [...history].reverse().find((m) => m.sender === "bot")?.text;
   if (!audioData && !imagemData && !localizacao && emojiSemPerguntaDoRobo(textMessage, ultimaDoRobo)) {
-    void registrarMensagemDoCliente(user.id, remoteJid, textoDoClienteParaOPainel);
+    void registrarMensagemDoCliente(user.id, remoteJid, textoDoClienteParaOPainel, now);
     registrarTrace({ instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace, estagio: "reacao-ignorada", detalhe: "emoji solto, sem pergunta do robô no ar" });
     liberarAVez();
     return;
@@ -1770,7 +1809,7 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
         const historicoAtual = conversationCache.get(convKey) || [];
         historicoAtual.push({ sender: 'user', text: transcription || textMessage, timestamp: now });
         conversationCache.set(convKey, historicoAtual.slice(-15));
-        void registrarMensagemDoCliente(user.id, remoteJid, transcription || textoDoClienteParaOPainel);
+        await registrarMensagemDoCliente(user.id, remoteJid, transcription || textoDoClienteParaOPainel, now);
         console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] 🤫 Nada a dizer para ${remoteJid} depois de enxugar a resposta.`);
         return;
       }
@@ -1785,7 +1824,7 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
       // responder": o mesmo sintoma da Hakim, por outro caminho.
       if (await roboEstaPausado(user.id, remoteJid)) {
         await enqueueHumanSupport(user.id, remoteJid, cleanPhone, data.pushName, transcription || textMessage, "", now);
-        void registrarMensagemDoCliente(user.id, remoteJid, transcription || textoDoClienteParaOPainel);
+        await registrarMensagemDoCliente(user.id, remoteJid, transcription || textoDoClienteParaOPainel, now);
         console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] Resposta da IA descartada: ${remoteJid} passou para a equipe enquanto ela era gerada.`);
         return;
       }
@@ -1795,7 +1834,7 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
       if (await lojistaFalouDesde(user.id, remoteJid, now, [key.remoteJid, key.remoteJidAlt, data.senderAlt].filter(
         (j): j is string => typeof j === "string" && j !== remoteJid && ehConversaDeCliente(j),
       ))) {
-        void registrarMensagemDoCliente(user.id, remoteJid, transcription || textoDoClienteParaOPainel);
+        await registrarMensagemDoCliente(user.id, remoteJid, transcription || textoDoClienteParaOPainel, now);
         console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] Resposta da IA descartada: o lojista respondeu ${remoteJid} pelo celular enquanto ela era gerada.`);
         return;
       }
@@ -1819,7 +1858,7 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
           select: { dailyOrderNumber: true },
         }).catch(() => null);
         if (fechadoPorOutro) {
-          void registrarMensagemDoCliente(user.id, remoteJid, transcription || textoDoClienteParaOPainel);
+          await registrarMensagemDoCliente(user.id, remoteJid, transcription || textoDoClienteParaOPainel, now);
           console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] Resposta da IA descartada: o pedido nº ${fechadoPorOutro.dailyOrderNumber ?? "—"} de ${remoteJid} foi fechado enquanto ela era gerada.`);
           return;
         }
@@ -1839,8 +1878,8 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
         const chaveDaRajada = `${user.id}_${remoteJid}`;
         if (rajadas.temPendente(chaveDaRajada) && (descartesSeguidos.get(chaveDaRajada) || 0) < 2) {
           descartesSeguidos.set(chaveDaRajada, (descartesSeguidos.get(chaveDaRajada) || 0) + 1);
-          rajadas.devolver(chaveDaRajada, { texto: textMessage, barreira: false, mensagemAnteriorEm: vezDaRajada.mensagemAnteriorEm ?? null });
-          void registrarMensagemDoCliente(user.id, remoteJid, textoDoClienteParaOPainel);
+          rajadas.devolver(chaveDaRajada, { texto: textMessage, barreira: false, mensagemAnteriorEm: vezDaRajada.mensagemAnteriorEm ?? null, chegouEm: primeiraChegada });
+          await registrarMensagemDoCliente(user.id, remoteJid, textoDoClienteParaOPainel, now);
           registrarTrace({
             instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace, estagio: "juntada",
             detalhe: "resposta descartada: o cliente escreveu de novo enquanto a IA pensava",
@@ -2002,8 +2041,10 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
       // sobrescreve: a mensagem do cliente já pode ter sido gravada por outro
       // caminho. Sem `await`: o cliente já foi respondido, e nunca lança.
       // Só a mensagem do CLIENTE: a resposta do robô já foi gravada dentro de
-      // `replyToCustomer`, no instante em que o gateway a aceitou.
-      void registrarMensagemDoCliente(user.id, remoteJid, textoDoClienteParaOPainel);
+      // `replyToCustomer`, no instante em que o gateway a aceitou. Com a hora
+      // da CHEGADA (a ordem que o modelo lê) e com `await`: a próxima mensagem
+      // lê o banco assim que esta solta a vez.
+      await registrarMensagemDoCliente(user.id, remoteJid, textoDoClienteParaOPainel, now);
     }
   };
 
