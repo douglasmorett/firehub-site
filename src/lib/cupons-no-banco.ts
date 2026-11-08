@@ -89,6 +89,8 @@ export async function fatosDoCupom(
   cupom: Cupom,
   ctx: {
     franchiseeId: string; telefone: unknown; timeZone: string | null | undefined; subtotal: number; taxa: number;
+    /** A parte do subtotal que vale cupom (itens sem MenuProduct.semCupom). Ausente = todos valem. */
+    subtotalComCupom?: number;
     /** O pedido que está sendo gravado: não conta como "já pediu" nem "já usou" dele mesmo. */
     excetoPedidoId?: PedidosDeFora;
     /** A forma de pagamento do pedido e o `paymentFees` da loja (lib/cupom-por-forma.ts). Ausente = não confere. */
@@ -103,6 +105,7 @@ export async function fatosDoCupom(
   ]);
   return {
     subtotal: ctx.subtotal,
+    ...(ctx.subtotalComCupom !== undefined ? { subtotalComCupom: ctx.subtotalComCupom } : {}),
     taxa: ctx.taxa,
     hojeDaLoja: hojeDaLoja(ctx.timeZone),
     usosDoCliente: usos,

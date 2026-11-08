@@ -1,13 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Tv, Copy, ExternalLink, RefreshCw, Shuffle, ListOrdered, AlertTriangle, Check, Loader2, MessageCircle } from "lucide-react";
-import { CORES_DO_PAINEL, type ConfigDoPainel } from "@/lib/painel-de-senhas";
+import { Tv, Copy, ExternalLink, RefreshCw, Shuffle, ListOrdered, AlertTriangle, Check, Loader2, MessageCircle, Users, Bike } from "lucide-react";
+import { CORES_DO_PAINEL, type ConfigDoPainel, type TelaDoPainel } from "@/lib/painel-de-senhas";
 import PainelDeSenhasTV from "@/components/painel-de-senhas/PainelDeSenhasTV";
 
 /**
  * Painel de senhas — a configuração da TV do salão (lib/painel-de-senhas.ts)
  * e a escolha da numeração dos pedidos (lib/senha-aleatoria.ts).
+ *
+ * "Qual tela" não é gravado: é o fim do link (?tela=motoboy). Assim a loja
+ * liga as duas ao mesmo tempo, uma TV para o balcão e outra para os motoboys.
  */
 
 type Dados = {
@@ -61,6 +64,7 @@ export default function PainelDeSenhasClient() {
   const [confirmarNumeracao, setConfirmarNumeracao] = useState<boolean | null>(null);
   const [confirmarCodigo, setConfirmarCodigo] = useState(false);
   const [versaoDaPrevia, setVersaoDaPrevia] = useState(0);
+  const [tela, setTela] = useState<TelaDoPainel>("balcao");
   const fecharAviso = useCallback(() => setAviso(null), []);
 
   useEffect(() => {
@@ -104,8 +108,12 @@ export default function PainelDeSenhasClient() {
   }
 
   const { config } = dados;
-  const link = `https://${SITE}/tv/${config.codigo}`;
-  const textoWhats = `Painel de senhas da ${dados.nome || "loja"}: abra ${link} na TV (ou abra ${SITE}/tv e digite o código ${config.codigo}).`;
+  const motoboy = tela === "motoboy";
+  const caminho = `/tv/${config.codigo}${motoboy ? "?tela=motoboy" : ""}`;
+  const link = `https://${SITE}${caminho}`;
+  const textoWhats = motoboy
+    ? `Painel dos motoboys de aplicativo da ${dados.nome || "loja"}: abra ${link} na TV.`
+    : `Painel de senhas da ${dados.nome || "loja"}: abra ${link} na TV (ou abra ${SITE}/tv e digite o código ${config.codigo}).`;
 
   const Interruptor = ({ campo, titulo, ajuda }: { campo: keyof ConfigDoPainel; titulo: string; ajuda?: string }) => (
     <label style={S.opcao}>
@@ -137,15 +145,48 @@ export default function PainelDeSenhasClient() {
         </p>
       </header>
 
+      {/* ── Qual tela: a de sempre ou a dos motoboys de aplicativo ── */}
+      <div role="tablist" aria-label="Qual tela" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12, maxWidth: 760, marginBottom: 20 }}>
+        {([
+          { valor: "balcao", icone: <Users size={20} />, titulo: "Clientes do balcão", ajuda: "A senha da loja, para chamar quem espera no balcão ou no salão." },
+          { valor: "motoboy", icone: <Bike size={20} />, titulo: "Motoboys de aplicativo", ajuda: "O código do iFood, do 99 e dos outros apps, só dos pedidos que o entregador da plataforma vem buscar." },
+        ] as const).map((o) => {
+          const ativo = tela === o.valor;
+          return (
+            <button
+              key={o.valor}
+              role="tab"
+              aria-selected={ativo}
+              onClick={() => setTela(o.valor)}
+              style={{ textAlign: "left", padding: 16, borderRadius: 14, cursor: "pointer", border: ativo ? "2px solid #DC2626" : "1px solid #E2E8F0", background: ativo ? "#FEF2F2" : "#fff" }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 800, color: "#0F172A", fontSize: 16 }}>
+                <span style={{ color: ativo ? "#DC2626" : "#64748B" }}>{o.icone}</span>
+                {o.titulo}
+              </div>
+              <div style={{ fontSize: 13, color: "#64748B", marginTop: 6 }}>{o.ajuda}</div>
+            </button>
+          );
+        })}
+      </div>
+
       <div style={S.duasColunas}>
         {/* ── Ligar na TV ── */}
         <section style={S.cartao}>
-          <h2 style={S.titulo}>Ligar na TV</h2>
-          <ol style={{ margin: "0 0 18px", paddingLeft: 20, color: "#334155", lineHeight: 1.7, fontSize: 15 }}>
-            <li>Na TV (ou no computador ligado na TV), abra o navegador em <b>{SITE}/tv</b></li>
-            <li>Digite o código abaixo</li>
-            <li>Aperte <b>OK</b> no controle para ligar o som e a tela cheia</li>
-          </ol>
+          <h2 style={S.titulo}>{motoboy ? "Ligar a TV dos motoboys" : "Ligar na TV"}</h2>
+          {motoboy ? (
+            <ol style={{ margin: "0 0 18px", paddingLeft: 20, color: "#334155", lineHeight: 1.7, fontSize: 15 }}>
+              <li>Na TV que fica virada para a porta dos entregadores, abra o navegador em <b style={{ wordBreak: "break-all" }}>{SITE}{caminho}</b></li>
+              <li>Aperte <b>OK</b> no controle para ligar o som e a tela cheia</li>
+              <li>Pode deixar a TV do balcão ligada ao mesmo tempo, com o mesmo código</li>
+            </ol>
+          ) : (
+            <ol style={{ margin: "0 0 18px", paddingLeft: 20, color: "#334155", lineHeight: 1.7, fontSize: 15 }}>
+              <li>Na TV (ou no computador ligado na TV), abra o navegador em <b>{SITE}/tv</b></li>
+              <li>Digite o código abaixo</li>
+              <li>Aperte <b>OK</b> no controle para ligar o som e a tela cheia</li>
+            </ol>
+          )}
 
           <div style={S.codigo} aria-label="Código da TV">{config.codigo}</div>
           <p style={{ fontSize: 13, color: "#64748B", margin: "8px 0 16px", textAlign: "center" }}>
@@ -153,7 +194,7 @@ export default function PainelDeSenhasClient() {
           </p>
 
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            <a href={`/tv/${config.codigo}`} target="_blank" rel="noopener noreferrer" style={S.botaoPrincipal}>
+            <a href={caminho} target="_blank" rel="noopener noreferrer" style={S.botaoPrincipal}>
               <ExternalLink size={16} /> Abrir o painel
             </a>
             <button
@@ -193,10 +234,12 @@ export default function PainelDeSenhasClient() {
         <section style={{ ...S.cartao, padding: 16 }}>
           <h2 style={{ ...S.titulo, marginBottom: 12 }}>Como fica na TV</h2>
           <div style={S.moldura} aria-label="Prévia do painel de senhas">
-            <PainelDeSenhasTV key={`${config.codigo}:${versaoDaPrevia}`} lojaId={dados.lojaId} codigo={config.codigo} previa />
+            <PainelDeSenhasTV key={`${config.codigo}:${versaoDaPrevia}:${tela}`} lojaId={dados.lojaId} codigo={config.codigo} previa tela={tela} />
           </div>
           <p style={{ fontSize: 12, color: "#94A3B8", margin: "8px 0 0" }}>
-            Quando a loja está sem pedido, a prévia mostra números de exemplo.
+            {motoboy
+              ? "Aparecem os pedidos de entrega do iFood, 99, Keeta e dos outros apps em que o entregador é da plataforma (e o pedido da loja com entregador do iFood chamado). Entrega com o seu motoboy não aparece. Sem pedido agora, a prévia mostra códigos de exemplo."
+              : "Quando a loja está sem pedido, a prévia mostra números de exemplo."}
           </p>
         </section>
       </div>

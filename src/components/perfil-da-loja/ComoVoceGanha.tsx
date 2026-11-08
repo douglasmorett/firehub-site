@@ -9,7 +9,7 @@
  *     recorrente enquanto a loja paga — atenda quem atender, mesmo fora da equipe;
  *   • COMO VENDEDOR (contratado), enquanto atende:
  *   • loja que veio pelo link de vendedor dele → % de link do cadastro (10%);
- *   • loja atribuída à carteira dele → % de atribuída (3%);
+ *   • loja atribuída à carteira dele → % de atribuída (5%);
  *   • recarga de disparo das lojas que ele atende → 3% (o vendedor NÃO vê a
  *     margem nem o custo da Meta: só quanto ganha por pacote — pedido do Douglas).
  *
@@ -123,7 +123,7 @@ export default function ComoVoceGanha({ d, modo, tema = "areia", embutido = fals
           : <>{COMISSAO_COMBINADA.DISPARO}% do LUCRO do FireHub em cada recarga das lojas que ele atende (valor − custo da Meta), em split de valor fixo no Pix.
             {d.disparoDoAdmin && d.disparoDoAdmin.bruto > 0 ? <> No período: {dinheiro(d.disparoDoAdmin.bruto)} em recargas, {dinheiro(d.disparoDoAdmin.margem)} de lucro{d.disparoDoAdmin.estimado ? " (custo estimado)" : ""}, {dinheiro(d.ganhoComDisparo || 0)} para ele.</> : null}</>}
         </span></li>}
-        {ehVendedor && <li><DoorOpen size={14} aria-hidden /><span><b>Comissão de vendedor:</b> vale enquanto {vend ? "você trabalha" : "ele trabalha"} na equipe e atende a loja. Parou de atender, deixa de receber dela; saiu da equipe, deixa de receber as comissões de vendedor futuras (10% e 3%).{ehEmbaixador ? " As indicações de embaixador continuam." : ""}</span></li>}
+        {ehVendedor && <li><DoorOpen size={14} aria-hidden /><span><b>Comissão de vendedor:</b> vale enquanto {vend ? "você trabalha" : "ele trabalha"} na equipe e atende a loja. Parou de atender, deixa de receber dela; saiu da equipe, deixa de receber as comissões de vendedor futuras (10% e 5%).{ehEmbaixador ? " As indicações de embaixador continuam." : ""}</span></li>}
       </ul>
 
       {vend && ehVendedor && d.pacotes && d.pacotes.length > 0 && (

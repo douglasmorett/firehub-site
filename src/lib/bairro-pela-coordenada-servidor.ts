@@ -21,6 +21,8 @@ import { prisma } from "@/lib/prisma";
 import { naFila } from "@/lib/geocodificacao-servidor";
 import { enderecoDoPontoNoMapa } from "@/lib/geocoding";
 import { bairroDaRuaNosCorreios } from "@/lib/bairro-dos-correios";
+import { enderecoNoIbgePeloPonto } from "@/lib/enderecos-ibge-servidor";
+import { estadoPeloEndereco } from "@/lib/geocodificacao";
 import {
   decidirBairroDoPedido,
   pontoQuePedeBairro,
@@ -60,10 +62,12 @@ async function reversoNoServidor(ponto: PontoDoCliente, loja: string | null): Pr
   }
 }
 
-function buscasDoServidor(loja: string | null): BuscasDoBairro {
+function buscasDoServidor(loja: string | null, cidade: string | null, uf: string | null): BuscasDoBairro {
   return {
     reverso: (ponto) => reversoNoServidor(ponto, loja),
     correios: (rua, cidade, uf) => bairroDaRuaNosCorreios(rua, cidade, uf, { prazoMs: 2500 }),
+    ibge: async (ponto) =>
+      cidade ? enderecoNoIbgePeloPonto({ ponto, cidade, uf }) : { municipioTemBase: false, bairro: null },
   };
 }
 
@@ -81,14 +85,14 @@ async function trabalhar(pedidoId: string, buscas?: BuscasDoBairro): Promise<str
         openDeliveryChannel: true,
         openDeliveryOrderId: true,
         ifoodOrderId: true,
-        franchisee: { select: { city: true, deliveryZones: true, deliveryZoneType: true } },
+        franchisee: { select: { city: true, storeAddress: true, deliveryZones: true, deliveryZoneType: true } },
       },
     });
     if (!pedido) return null;
-    const loja = pedido.franchisee ?? { city: null, deliveryZones: null, deliveryZoneType: null };
+    const loja = pedido.franchisee ?? { city: null, storeAddress: null, deliveryZones: null, deliveryZoneType: null };
     // Sem rede quando não precisa (retirada, sem ponto, já tem bairro).
     if (!("ponto" in pontoQuePedeBairro(pedido as any, loja.city))) return null;
-    const decisao = await decidirBairroDoPedido(pedido as any, loja, buscas ?? buscasDoServidor(pedido.franchiseeId));
+    const decisao = await decidirBairroDoPedido(pedido as any, loja, buscas ?? buscasDoServidor(pedido.franchiseeId, loja.city, estadoPeloEndereco(loja.storeAddress)));
     if (!decisao.mudar) {
       if (decisao.motivo !== "ja-tem-bairro") console.log(`[Bairro pelo ponto] pedido ${pedidoId}: sem bairro (${decisao.motivo})`);
       return null;

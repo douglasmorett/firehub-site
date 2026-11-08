@@ -157,6 +157,9 @@ export async function propsDoCardapio(franchisee: any, canal: CanalDoCardapio) {
         // Idem para o horário (a marmita das 9h às 14h): sem ele no SELECT, o
         // item de horário vendia o dia todo.
         availableHours: true,
+        // "Não vale cupom nem desconto neste item": a sacola mostra o cupom
+        // só sobre os outros itens, a mesma conta do checkout (lib/cupons.ts).
+        semCupom: true,
         comboGroups: {
           orderBy: { sortOrder: 'asc' },
           select: {

@@ -181,8 +181,10 @@ export default function ContasAPagarClient({ payables, fuso }: { payables: Payab
           {fmtR(p.value)}
         </div>
 
-        {p.status === "PENDING" && (
-          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+        {/* A conta paga também sai com o ✕: lançada em dobro ou que devia estar
+            em Custos Fixos (Lapastine, 07/11/2026). */}
+        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+            {p.status === "PENDING" && (
             <button
               onClick={() => pagar(p.id)}
               disabled={ocupado === p.id}
@@ -195,6 +197,7 @@ export default function ContasAPagarClient({ payables, fuso }: { payables: Payab
             >
               {ocupado === p.id ? "..." : "✓ Já paguei"}
             </button>
+            )}
             <button
               onClick={() => setConfirmarExclusao(p.id)}
               disabled={ocupado === p.id}
@@ -207,8 +210,7 @@ export default function ContasAPagarClient({ payables, fuso }: { payables: Payab
             >
               ✕
             </button>
-          </div>
-        )}
+        </div>
 
         {confirmarExclusao === p.id && (
           <div style={{

@@ -73,6 +73,8 @@ export async function GET(req: NextRequest) {
       // enquanto a coluna que decide o que aparece no cardapio podia nao existir —
       // e a regra cairia calada na heuristica, em todas as telas de venda.
       ["MenuProduct", "apenasEmCombo"],
+      // "Não vale cupom nem desconto neste item" (lib/cupons.ts).
+      ["MenuProduct", "semCupom"],
       ["ComboGroupItem", "additionalPriceSalao"], ["ComboGroupItem", "additionalPriceDelivery"],
       // ── As 39 colunas garantidas por garantirColunasDoSchema() ──
       //

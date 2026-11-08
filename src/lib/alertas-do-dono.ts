@@ -103,7 +103,15 @@ export type TipoDeAlerta =
    * prazo sem confirmação (lib/keeta/eventos.ts). Sem o aviso, a loja seguia
    * fechada lá sem ninguém saber.
    */
-  | "keeta_pausada";
+  | "keeta_pausada"
+  /**
+   * O caixa foi aberto ou fechado (api/cash-session): na abertura, a hora e o
+   * troco; no fechamento, a conferência e as vendas do turno. É o aviso mais
+   * antigo do FireHub e sempre saiu para todo dono com número cadastrado —
+   * virou interruptor em 07/11/2026 (Edu, Duga Burguer, acompanha a loja de
+   * longe por ele) para quem não quiser recebê-lo.
+   */
+  | "caixa_aberto_fechado";
 
 export const ALERTAS_PADRAO: Record<TipoDeAlerta, boolean> = {
   problema_no_pedido: true,
@@ -127,6 +135,10 @@ export const ALERTAS_PADRAO: Record<TipoDeAlerta, boolean> = {
   pix_online: true,
   parceiro_fora_do_ar: true,
   keeta_pausada: true,
+  // Ligado: é rotina, mas já saía para todos antes de virar interruptor —
+  // vir desligado calaria, sem ninguém pedir, o dono que acompanha o caixa
+  // por ele (o troco da abertura, a falta e a sobra do fechamento).
+  caixa_aberto_fechado: true,
 };
 
 export const ROTULO_DO_ALERTA: Record<TipoDeAlerta, string> = {
@@ -146,6 +158,7 @@ export const ROTULO_DO_ALERTA: Record<TipoDeAlerta, string> = {
   pix_online: "Pix pelo site: estorno pendente, Pix pago em pedido cancelado, chave do Asaas desativada",
   parceiro_fora_do_ar: "JotaJá fora do ar (pedidos de lá podem não entrar) e quando voltou",
   keeta_pausada: "Pedido da Keeta cancelado antes de entrar no FireHub, e a loja pausada na Keeta por isso",
+  caixa_aberto_fechado: "Caixa aberto e caixa fechado (a hora, o troco da abertura e, no fechamento, a conferência e as vendas)",
 };
 
 // Os números do dono (principal + outros) moram em lib/numeros-do-dono.ts,

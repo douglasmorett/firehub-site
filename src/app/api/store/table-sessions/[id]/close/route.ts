@@ -287,6 +287,9 @@ export async function POST(
       );
     }
 
+    // O lançamento gravado: a tela de Mesas abre o comprovante do fiado
+    // (imprimir para assinar / assinar na tela) com ele.
+    let fiadoGravado: { id: string; employeeId: string } | null = null;
     // Wrap in transaction
     await prisma.$transaction(async (tx) => {
       // 0. A dívida do fiado, junto com o fechamento: ou os dois, ou nenhum.
@@ -299,7 +302,7 @@ export async function POST(
           });
           employeeId = novo.id;
         }
-        await lancarMesaNoFiado(tx, {
+        const fiadoId = await lancarMesaNoFiado(tx, {
           lojaId: targetFranchiseeId,
           employeeId: employeeId!,
           tableSessionId: id,
@@ -308,6 +311,7 @@ export async function POST(
           descricao: fiado.descricao,
           quem: rotuloDoOperador(operador),
         });
+        fiadoGravado = { id: fiadoId, employeeId: employeeId! };
       }
 
       // 1. Update orders status to ENTREGUE
@@ -396,7 +400,7 @@ export async function POST(
     return NextResponse.json({
       success: true,
       message: "Session closed successfully",
-      ...(fiado ? { fiado: { cliente: fiado.nome, valor: fiado.valor } } : {}),
+      ...(fiado ? { fiado: { cliente: fiado.nome, valor: fiado.valor, ...(fiadoGravado ?? {}) } } : {}),
     });
   } catch (error: any) {
     console.error("[Table Sessions Close POST]", error);

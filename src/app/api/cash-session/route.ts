@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { mandarParaOsNumerosDoDono, numerosDoDono } from "@/lib/alertas-do-dono";
+import { alertaLigado, mandarParaOsNumerosDoDono, numerosDoDono } from "@/lib/alertas-do-dono";
 import { avisoDoTrocoDaAbertura } from "@/lib/troco-da-abertura";
 import { FUSO_PADRAO } from "@/lib/fuso";
 // Só o fechamento imprime sozinho. O cupom de abertura continua em
@@ -338,9 +338,10 @@ export async function POST(req: Request) {
   // automática, não o documento.
 
   // Para o principal e os outros números do dono (aba Alertas do chatbot),
-  // pela instância da própria loja.
+  // pela instância da própria loja. O dono pode desligar em Chatbot IA →
+  // Notificações ("caixa_aberto_fechado", ligado por padrão).
   const numerosDoAviso = numerosDoDono(ownerInfo?.notificationPhone, ownerInfo?.chatbotConfig);
-  if (ownerInfo && numerosDoAviso.length > 0) {
+  if (ownerInfo && numerosDoAviso.length > 0 && alertaLigado(ownerInfo.chatbotConfig, "caixa_aberto_fechado")) {
     const timeStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: ownerInfo.storeTimezone || FUSO_PADRAO });
     // Douglas, 11/10/2026: fechou com um valor e abriu com outro, quer saber.
     const trocoNaoBate = avisoDoTrocoDaAbertura({
@@ -650,8 +651,9 @@ export async function PUT(req: Request) {
   // esperado. Agora: faltou/sobrou/conferiu (ou "fechado SEM conferir"), o
   // esperado e o contado das formas contadas, o que ficou em branco e as
   // vendas do turno (lib/conferencia-do-caixa.ts).
+  // Desligável em Chatbot IA → Notificações, como o da abertura.
   const numerosDoAviso = numerosDoDono(ownerInfo?.notificationPhone, ownerInfo?.chatbotConfig);
-  if (ownerInfo && numerosDoAviso.length > 0 && paraOCupom) {
+  if (ownerInfo && numerosDoAviso.length > 0 && paraOCupom && alertaLigado(ownerInfo.chatbotConfig, "caixa_aberto_fechado")) {
     const fuso = ownerInfo.storeTimezone || FUSO_PADRAO;
     const hora = (d: Date) => d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: fuso });
     const msg = mensagemDoCaixaFechado({

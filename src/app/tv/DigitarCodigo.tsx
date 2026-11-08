@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CHAVE_DO_CODIGO, TAMANHO_DO_CODIGO, normalizarCodigo } from "@/lib/painel-de-senhas";
+import { CHAVE_DA_TELA, CHAVE_DO_CODIGO, TAMANHO_DO_CODIGO, normalizarCodigo } from "@/lib/painel-de-senhas";
 
 export default function DigitarCodigo({ erro }: { erro: string | null }) {
   const router = useRouter();
   const [codigo, setCodigo] = useState("");
   const [lembrado, setLembrado] = useState<string | null>(null);
+  // A TV dos motoboys (?tela=motoboy) volta para a dos motoboys.
+  const [sufixo, setSufixo] = useState("");
   const [segundos, setSegundos] = useState(5);
   const campo = useRef<HTMLInputElement>(null);
 
@@ -19,16 +21,17 @@ export default function DigitarCodigo({ erro }: { erro: string | null }) {
     try {
       const c = normalizarCodigo(localStorage.getItem(CHAVE_DO_CODIGO));
       if (c) setLembrado(c);
+      if (localStorage.getItem(CHAVE_DA_TELA) === "motoboy") setSufixo("?tela=motoboy");
     } catch {}
   }, [erro]);
 
   // A TV que religou volta sozinha ao painel — ninguém precisa pegar o controle.
   useEffect(() => {
     if (!lembrado) return;
-    if (segundos <= 0) { router.replace(`/tv/${lembrado}`); return; }
+    if (segundos <= 0) { router.replace(`/tv/${lembrado}${sufixo}`); return; }
     const t = setTimeout(() => setSegundos((s) => s - 1), 1000);
     return () => clearTimeout(t);
-  }, [lembrado, segundos, router]);
+  }, [lembrado, sufixo, segundos, router]);
 
   const valido = normalizarCodigo(codigo);
   const abrir = () => { if (valido) router.push(`/tv/${valido}`); };
@@ -42,7 +45,7 @@ export default function DigitarCodigo({ erro }: { erro: string | null }) {
         {lembrado ? (
           <>
             <p style={S.texto}>Abrindo o painel <b style={{ letterSpacing: 4 }}>{lembrado}</b> em {segundos}s…</p>
-            <button style={S.botao} onClick={() => router.replace(`/tv/${lembrado}`)}>Abrir agora</button>
+            <button style={S.botao} onClick={() => router.replace(`/tv/${lembrado}${sufixo}`)}>Abrir agora</button>
             <button
               style={S.link}
               onClick={() => { try { localStorage.removeItem(CHAVE_DO_CODIGO); } catch {} setLembrado(null); setTimeout(() => campo.current?.focus(), 50); }}

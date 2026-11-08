@@ -45,6 +45,8 @@ interface Order {
   notes: string | null;
   ifoodReference: string | null;
   ifoodStoreName?: string | null;
+  /** De qual loja é o pedido — só em "Todas as Lojas" com mais de uma (lib/kds-telas.ts, `lojaNoCartao`). */
+  nomeDaLoja?: string | null;
   openDeliveryReference: string | null;
   kdsStage: string | null;
   kdsStationId: string | null;
@@ -113,7 +115,8 @@ function getSourceInfo(order: Order): {
     // Com mais de uma loja iFood na conta, o nome dela entra no selo: a cozinha
     // precisa saber que aquele pedido é da Ragnar Pizza, e não da Ragnar
     // Burguer. Numa loja só o campo vem vazio e o selo sai como sempre saiu.
-    const loja = (order.ifoodStoreName || "").trim();
+    // Em "Todas as Lojas" a loja já tem selo próprio (`nomeDaLoja`): sem repetir.
+    const loja = order.nomeDaLoja ? "" : (order.ifoodStoreName || "").trim();
     return { label: loja ? `iFood${refStr} · ${loja}` : `iFood${refStr}`, color: "#fff", bg: "#EA1D2C" };
   }
   if (src.includes("jotaja") || src.includes("jotajá"))
@@ -2679,6 +2682,30 @@ function OrderCard({
         >
           {`#${getDisplayOrderNumber(order).replace("#", "")}`}
         </span>
+
+        {/* Loja do pedido: só em "Todas as Lojas" com mais de uma loja (a
+            Annalu, a Rush e a PasteLê na mesma cozinha — Karen, 03/11/2026). */}
+        {order.nomeDaLoja && (
+          <span
+            style={{
+              display: "inline-block",
+              maxWidth: 220,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              padding: "3px 10px",
+              borderRadius: 12,
+              background: "#FACC15",
+              color: "#1C1917",
+              fontSize: isHugeOrder ? 13 : 15,
+              fontWeight: 900,
+              textTransform: "uppercase",
+              letterSpacing: "0.3px",
+            }}
+          >
+            {order.nomeDaLoja}
+          </span>
+        )}
 
         {/* Source badge */}
         <span

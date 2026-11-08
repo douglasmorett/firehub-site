@@ -49,7 +49,7 @@ import { avisoDoCep, buscarCep, cepFormatado, digitosDoCep } from "@/lib/cep";
 import { bairroComNomeDosCorreios } from "@/lib/bairro-dos-correios";
 import {
   assinaturaDaConsulta, avisoDoPontoSemEndereco, BOTAO_DO_GPS, carimboDoPonto, comoAbrirOMapa, consultaDaCotacao, criarSequenciadorDeCotacoes,
-  enderecoDoReverso, entregaNoPedidoDoSite, gpsEhPreciso, lerRecusaDoPedido, lerRespostaDaCotacao, oQueFaltaParaFechar, painelDaEntrega, pontoValeParaEndereco,
+  enderecoDoPontoNaTela, enderecoDoReverso, entregaNoPedidoDoSite, gpsEhPreciso, lerRecusaDoPedido, lerRespostaDaCotacao, oQueFaltaParaFechar, painelDaEntrega, pontoValeParaEndereco,
   temOndeAbrirOMapa, temRuaOuBairro,
   type CotacaoNaTela, type EnderecoDigitado, type Ponto, type PontoDoCliente,
 } from "@/lib/entrega-no-checkout";
@@ -73,7 +73,7 @@ import { esquecerCliente, lembrarCliente, lerClienteLembrado } from "@/lib/clien
 import { mesmoEndereco, primeiroNome, type ClienteReconhecido, type EnderecoReconhecido } from "@/lib/cliente-reconhecido";
 import { bandeirasDeValeLigadas, ehFormaPeloSite, entregaSoOnlineMarcada, formaLigada, TEXTO_ENTREGA_SO_ONLINE } from "@/lib/formas-do-cardapio";
 import { rotuloDaForma, textosNoCanal } from "@/lib/formas-proprias";
-import { acharCupom } from "@/lib/cupons";
+import { acharCupom, descontoDoCupomNosItens, MOTIVO_SEM_ITEM_COM_CUPOM } from "@/lib/cupons";
 import { formaRecusadaPeloCupom, textoDasFormasDoCupom } from "@/lib/cupom-por-forma";
 import { useAvisoDoCardapio } from "./AvisoDoCardapio";
 import QuandoReceber, { type Quando } from "./QuandoReceber";
@@ -142,6 +142,8 @@ type MenuProduct = {
   isCombo?: boolean;
   comboConfig?: any;
   comboGroups?: any[];
+  /** "Não vale cupom nem desconto neste item" (lib/cupons.ts). */
+  semCupom?: boolean;
 };
 
 type CartItem = MenuProduct & {
@@ -990,6 +992,13 @@ export default function CustomerStorePage({
 
   const delivConfig = (franchisee as any)?.deliveryConfig || {};
   const cartTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+  // A parte da sacola que vale cupom e desconto: sem os itens marcados "Não
+  // vale cupom nem desconto" (lib/cupons.ts). A marca vem do cardápio atual —
+  // a sacola guardada no aparelho pode ser de antes de a loja marcar.
+  const cartTotalComCupom = cart.reduce((s, i) => {
+    const doCardapio = menuProducts.find((p) => p.id === idDoProduto(i));
+    return (doCardapio ? doCardapio.semCupom : i.semCupom) ? s : s + i.price * i.quantity;
+  }, 0);
 
   // Pedido Mínimo da Loja — separado por tipo de recebimento.
   //
@@ -1200,7 +1209,10 @@ export default function CustomerStorePage({
   const cupomForaDaForma = cupomCadastrado && isCheckout && !mesa
     ? formaRecusadaPeloCupom(cupomCadastrado, paymentMethod, franchisee.paymentFees)
     : null;
-  const cupomNaConta = cupomForaDaForma ? null : couponApplied;
+  // Nenhum item da sacola vale cupom: o desconto sai da conta e o cupom não
+  // vai ao servidor, que recusaria pela mesma regra (lib/cupons.ts).
+  const cupomForaDosItens = Boolean(couponApplied && !couponApplied.isFreeShipping && cartTotal > 0 && cartTotalComCupom <= 0);
+  const cupomNaConta = cupomForaDaForma || cupomForaDosItens ? null : couponApplied;
   const cupomPrimeiroPedidoCadastrado = cupomPrimeiroPedido ? acharCupom((franchisee as any).storeCoupons, cupomPrimeiroPedido.code) : null;
   const formasDoCupomPrimeiroPedido = cupomPrimeiroPedidoCadastrado ? textoDasFormasDoCupom(cupomPrimeiroPedidoCadastrado) : null;
 
@@ -1210,12 +1222,14 @@ export default function CustomerStorePage({
     : 0;
   // Cupom percentual recalcula sobre o carrinho ATUAL — o valor gravado no
   // "Aplicar" congelava e divergia do total quando o cliente mexia na sacola.
+  // A conta é a do servidor (lib/cupons.ts): só sobre os itens que valem cupom.
+  const baseDoCupom = { subtotal: cartTotal, subtotalComCupom: cartTotalComCupom, taxa: effectiveDeliveryFee };
   const discount = cupomNaConta
     ? (cupomNaConta.isFreeShipping
         ? 0
         : (cupomNaConta as any).pct != null
-          ? cartTotal * (Number((cupomNaConta as any).pct) / 100)
-          : cupomNaConta.discount)
+          ? descontoDoCupomNosItens("percent", Number((cupomNaConta as any).pct), baseDoCupom)
+          : descontoDoCupomNosItens("fixed", cupomNaConta.discount, baseDoCupom))
     : 0;
   // ── PRÊMIO DO CARTÃO DE CARIMBOS NA CONTA ──────────────────────────────
   //
@@ -1267,7 +1281,8 @@ export default function CustomerStorePage({
         paymentFees: franchisee.paymentFees,
         paymentMethod,
         ligada: { pix: franchisee.pixOnlineAtivo === true, cartao: cartaoPeloAsaas },
-        base: cartTotal - discount - descontoDaTrilha - descontoDosCarimbos - descontoDaIndicacao - descontoDoClube,
+        // Item marcado "Não vale cupom nem desconto" fica fora da base, como no servidor.
+        base: cartTotal - discount - descontoDaTrilha - descontoDosCarimbos - descontoDaIndicacao - descontoDoClube - (cartTotal - cartTotalComCupom),
       });
   const descontoDoPagamento = descontoOnline?.valor || 0;
 
@@ -1690,6 +1705,7 @@ export default function CustomerStorePage({
         code: cleanCode,
         franchiseeId: franchisee.id,
         subtotal: String(cartTotal || 0),
+        subtotalComCupom: String(cartTotalComCupom || 0),
         fee: String(deliveryFee || 0),
         ...(telefone.length >= 8 ? { phone: telefone } : {}),
       });
@@ -2355,38 +2371,49 @@ export default function CustomerStorePage({
     const endereco: EnderecoDigitado = { ...enderecoNaTela.current };
     let numeroDoMapa = false;
     let leuOMapa = false;
-    const pode = (campo: unknown) => opcoes.sobrescrever || !String(campo ?? "").trim();
-    try {
-      // Sem prazo, um Nominatim lento prendia o "Localizando..." para sempre.
-      const prazo = typeof AbortSignal !== "undefined" && typeof (AbortSignal as any).timeout === "function"
-        ? (AbortSignal as any).timeout(4000) as AbortSignal
-        : undefined;
-      const rev = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${ponto.lat}&lon=${ponto.lng}&addressdetails=1`, {
-        headers: { "Accept-Language": "pt-BR" },
-        signal: prazo,
-      });
-      if (rev.ok) {
-        const revData = await rev.json();
-        leuOMapa = true;
-        // O bairro também vem de residential/quarter/hamlet: loteamento sem
-        // `suburb` fazia o GPS preciso ser jogado fora (enderecoDoReverso).
-        const { rua: road, numero: houseNum, bairro: bairroDoMapa } = enderecoDoReverso(revData?.address);
-        // O mapa diz "Vila Monte Alegre" onde os Correios e o cliente dizem
-        // "Monte Alegre" (Cabo Frio): o bairro na tela é o dos Correios
-        // quando é o mesmo lugar (lib/bairro-dos-correios.ts).
-        const a = revData?.address || {};
-        const neigh = await bairroComNomeDosCorreios(
-          bairroDoMapa, road, a.city || a.town || a.municipality || a.village || "", a["ISO3166-2-lvl4"] || a.state,
-        );
-        if (road && pode(endereco.street)) { setCustomerStreet(road); endereco.street = road; }
-        if (houseNum && pode(endereco.number)) { setCustomerNumber(houseNum); endereco.number = houseNum; numeroDoMapa = true; }
-        if (neigh && !isNeighborhoodType && pode(endereco.neighborhood)) { setCustomerNeighborhood(neigh); endereco.neighborhood = neigh; }
-      } else {
-        console.warn(`Reverse geocode HTTP ${rev.status}`);
+    // Sem prazo, um mapa lento prendia o "Localizando..." para sempre.
+    const prazo = () => typeof AbortSignal !== "undefined" && typeof (AbortSignal as any).timeout === "function"
+      ? (AbortSignal as any).timeout(4000) as AbortSignal
+      : undefined;
+    // Na cidade com a base do IBGE, rua e bairro saem SÓ dela: o OSM chama de
+    // "Gamboa" o Monte Alegre de Cabo Frio (enderecoDoPontoNaTela).
+    const ibge = await fetch(`/api/endereco-do-ponto?franchiseeId=${encodeURIComponent(franchisee.id)}&lat=${ponto.lat}&lng=${ponto.lng}`, { signal: prazo() })
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
+    let mapa: { rua: string; numero: string; bairro: string } | null = null;
+    if (ibge?.municipioTemBase) {
+      leuOMapa = true;
+    } else {
+      try {
+        const rev = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${ponto.lat}&lon=${ponto.lng}&addressdetails=1`, {
+          headers: { "Accept-Language": "pt-BR" },
+          signal: prazo(),
+        });
+        if (rev.ok) {
+          const revData = await rev.json();
+          leuOMapa = true;
+          // O bairro também vem de residential/quarter/hamlet: loteamento sem
+          // `suburb` fazia o GPS preciso ser jogado fora (enderecoDoReverso).
+          const { rua: road, numero: houseNum, bairro: bairroDoMapa } = enderecoDoReverso(revData?.address);
+          // O mapa diz "Vila Monte Alegre" onde os Correios e o cliente dizem
+          // "Monte Alegre": o bairro na tela é o dos Correios quando é o
+          // mesmo lugar (lib/bairro-dos-correios.ts).
+          const a = revData?.address || {};
+          const neigh = await bairroComNomeDosCorreios(
+            bairroDoMapa, road, a.city || a.town || a.municipality || a.village || "", a["ISO3166-2-lvl4"] || a.state,
+          );
+          mapa = { rua: road, numero: houseNum, bairro: neigh };
+        } else {
+          console.warn(`Reverse geocode HTTP ${rev.status}`);
+        }
+      } catch (e) {
+        console.warn("Reverse geocode timeout / failed:", e);
       }
-    } catch (e) {
-      console.warn("Reverse geocode timeout / failed:", e);
     }
+    const novo = enderecoDoPontoNaTela(endereco, opcoes, ibge, mapa);
+    if (novo.street) { setCustomerStreet(novo.street); endereco.street = novo.street; }
+    if (novo.number) { setCustomerNumber(novo.number); endereco.number = novo.number; numeroDoMapa = true; }
+    if (novo.neighborhood && !isNeighborhoodType) { setCustomerNeighborhood(novo.neighborhood); endereco.neighborhood = novo.neighborhood; }
     enderecoNaTela.current = endereco;
     return { endereco, numeroDoMapa, leuOMapa };
   };
@@ -3804,6 +3831,9 @@ export default function CustomerStorePage({
                           {formasDoCupomAplicado && (
                             <div style={{ fontSize: "0.7rem", color: "#166534", marginTop: 1 }}>💳 Válido para {formasDoCupomAplicado}</div>
                           )}
+                          {cupomForaDosItens && (
+                            <div style={{ fontSize: "0.7rem", color: "#92400E", marginTop: 1, fontWeight: 600 }}>⚠️ {MOTIVO_SEM_ITEM_COM_CUPOM}</div>
+                          )}
                         </div>
                         <button onClick={() => setCouponApplied(null)} style={{ background: "none", border: "none", color: "#DC2626", fontWeight: 700, fontSize: "0.75rem", cursor: "pointer" }}>Remover</button>
                       </div>
@@ -4595,6 +4625,12 @@ export default function CustomerStorePage({
               {cupomForaDaForma && (
                 <p style={{ margin: "8px 0 0", padding: "8px 10px", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "10px", fontSize: "0.78rem", color: "#92400E", fontWeight: 600, lineHeight: 1.4 }}>
                   ⚠️ {cupomForaDaForma} O desconto saiu da conta — escolha uma dessas formas para usar o cupom.
+                </p>
+              )}
+              {/* Nenhum item da sacola vale cupom (lib/cupons.ts): o desconto saiu da conta. */}
+              {cupomForaDosItens && !cupomForaDaForma && (
+                <p style={{ margin: "8px 0 0", padding: "8px 10px", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "10px", fontSize: "0.78rem", color: "#92400E", fontWeight: 600, lineHeight: 1.4 }}>
+                  ⚠️ {MOTIVO_SEM_ITEM_COM_CUPOM} O desconto saiu da conta.
                 </p>
               )}
               {/* Pix/cartão pelo site: o Asaas só gera a cobrança com o CPF de quem paga. */}
