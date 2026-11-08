@@ -150,166 +150,186 @@
   "cardapio-combos": {
     "id": "cardapio-combos",
     "titulo": "Cardápio: combos e adicionais",
-    "duracao": 143,
+    "duracao": 168,
     "capitulos": [
       {
         "em": 0,
         "titulo": "O que este vídeo mostra"
       },
       {
-        "em": 9,
+        "em": 8.9,
         "titulo": "Novo Combo"
       },
       {
-        "em": 29.4,
+        "em": 41,
         "titulo": "O que o combo leva"
       },
       {
-        "em": 47.5,
+        "em": 59.5,
         "titulo": "Escolha do cliente"
       },
       {
-        "em": 64.6,
+        "em": 80.4,
         "titulo": "Pausar um item do combo"
       },
       {
-        "em": 86.8,
+        "em": 97.5,
         "titulo": "Adicionais num lanche"
       },
       {
-        "em": 123.2,
+        "em": 129.9,
         "titulo": "Pausar um adicional"
       },
       {
-        "em": 132.4,
+        "em": 139.2,
+        "titulo": "Aba Complementos"
+      },
+      {
+        "em": 155.4,
         "titulo": "Para rever este vídeo"
       }
     ],
-    "versao": "0af53bc6"
+    "versao": "644b0bae"
   },
   "cardapio-organizar": {
     "id": "cardapio-organizar",
     "titulo": "Cardápio: categorias, ordem e disponibilidade",
-    "duracao": 138,
+    "duracao": 187,
     "capitulos": [
       {
         "em": 0,
         "titulo": "O que este vídeo mostra"
       },
       {
-        "em": 9.4,
+        "em": 8.8,
         "titulo": "Criar uma categoria"
       },
       {
-        "em": 27.2,
+        "em": 27,
         "titulo": "Mudar a ordem"
       },
       {
-        "em": 50.9,
+        "em": 48.9,
         "titulo": "Em quais canais o produto aparece"
       },
       {
-        "em": 65.3,
+        "em": 63.5,
         "titulo": "Dias da semana"
       },
       {
-        "em": 79.3,
+        "em": 78.1,
         "titulo": "Etiquetas e destaque"
       },
       {
-        "em": 101.7,
+        "em": 103.3,
         "titulo": "Estoque e pausa"
       },
       {
-        "em": 123.7,
+        "em": 134.4,
+        "titulo": "Ver por canal"
+      },
+      {
+        "em": 150.8,
+        "titulo": "Código PDV e iFood"
+      },
+      {
+        "em": 171.9,
         "titulo": "Para rever este vídeo"
       }
     ],
-    "versao": "8ce8a9c1"
+    "versao": "cb8c64aa"
   },
   "cardapio-precos": {
     "id": "cardapio-precos",
     "titulo": "Cardápio: preço promocional e preço por canal",
-    "duracao": 152,
+    "duracao": 148,
     "capitulos": [
       {
         "em": 0,
         "titulo": "O que este vídeo mostra"
       },
       {
-        "em": 10.9,
+        "em": 11.9,
         "titulo": "Colocar em promoção"
       },
       {
-        "em": 48.2,
+        "em": 52.6,
         "titulo": "Como o cliente vê"
       },
       {
-        "em": 68.2,
+        "em": 70.7,
         "titulo": "Preço por canal"
       },
       {
-        "em": 91.9,
+        "em": 92.8,
         "titulo": "Promoção e canal juntos"
       },
       {
-        "em": 111.2,
+        "em": 110.3,
         "titulo": "Tirar a promoção"
       },
       {
-        "em": 121.1,
+        "em": 118.4,
         "titulo": "Preço por canal nas opções"
       },
       {
-        "em": 137.3,
+        "em": 134,
         "titulo": "Para rever este vídeo"
       }
     ],
-    "versao": "4cd20e32"
+    "versao": "240efc21"
   },
   "cardapio-produto": {
     "id": "cardapio-produto",
     "titulo": "Cardápio: cadastrar e editar um produto",
-    "duracao": 155,
+    "duracao": 207,
     "capitulos": [
       {
         "em": 0,
         "titulo": "O que é esta tela"
       },
       {
-        "em": 10.3,
+        "em": 12.4,
         "titulo": "A lista de produtos"
       },
       {
-        "em": 25,
+        "em": 27.7,
         "titulo": "Cadastrar um produto"
       },
       {
-        "em": 53,
-        "titulo": "A foto"
+        "em": 57.6,
+        "titulo": "Sobre o produto"
       },
       {
-        "em": 58.6,
-        "titulo": "Descrição e comanda"
+        "em": 88.9,
+        "titulo": "Preço"
       },
       {
-        "em": 82.9,
+        "em": 99.6,
+        "titulo": "Onde aparece"
+      },
+      {
+        "em": 115.1,
         "titulo": "Editar um produto"
       },
       {
-        "em": 100.8,
+        "em": 137.5,
         "titulo": "Pausar e ativar"
       },
       {
-        "em": 119.1,
+        "em": 149.8,
+        "titulo": "Mais ações"
+      },
+      {
+        "em": 166.2,
         "titulo": "Como o cliente vê"
       },
       {
-        "em": 141.2,
+        "em": 192.4,
         "titulo": "Para rever este vídeo"
       }
     ],
-    "versao": "9064fbd9"
+    "versao": "dd252c17"
   },
   "chatbot": {
     "id": "chatbot",
@@ -1343,54 +1363,58 @@
   "cardapio-pizza": {
     "id": "cardapio-pizza",
     "titulo": "Cardápio: pizza com tamanhos e meio a meio",
-    "duracao": 156,
+    "duracao": 169,
     "capitulos": [
       {
         "em": 0,
         "titulo": "O que este vídeo mostra"
       },
       {
-        "em": 9.7,
+        "em": 10.2,
         "titulo": "Começar"
       },
       {
-        "em": 17.5,
+        "em": 17.6,
         "titulo": "Os tamanhos"
       },
       {
-        "em": 28.5,
+        "em": 28.2,
         "titulo": "Fatias e sabores"
       },
       {
-        "em": 42.7,
+        "em": 41,
         "titulo": "Como cobra o meio a meio"
       },
       {
-        "em": 57.1,
+        "em": 54.5,
         "titulo": "Sabores e preços"
       },
       {
-        "em": 86.1,
+        "em": 85.9,
         "titulo": "Borda recheada"
       },
       {
-        "em": 96.6,
+        "em": 96.2,
+        "titulo": "Massa"
+      },
+      {
+        "em": 110.3,
         "titulo": "Conferir e salvar"
       },
       {
-        "em": 116,
+        "em": 128.7,
         "titulo": "Como o cliente vê"
       },
       {
-        "em": 131.2,
+        "em": 145,
         "titulo": "Sabor novo depois"
       },
       {
-        "em": 144.1,
+        "em": 158,
         "titulo": "Para rever este vídeo"
       }
     ],
-    "versao": "43015958"
+    "versao": "022d9827"
   },
   "extensao-ifood": {
     "id": "extensao-ifood",
