@@ -252,6 +252,19 @@ export function enderecoDoReverso(address: unknown): { rua: string; numero: stri
 }
 
 /**
+ * O bairro que o GPS/pino escreve na tela — ou null para deixar o campo como
+ * está. O bairro DIGITADO pelo cliente nunca é trocado: o do ponto é palpite
+ * de mapa. Divinos (Cabo Frio, 07/11/2026): o pedido 29 saiu "Rua Monte
+ * Alegre, 99 - Gamboa" para quem mora no Monte Alegre — o reverse do OSM
+ * chama a região inteira de "Gamboa". Com o campo vazio, vale o bairro do
+ * IBGE do ponto (/api/bairro-do-ponto) antes do nome do mapa.
+ */
+export function bairroDoPontoNaTela(digitado: unknown, doIbge: string | null | undefined, doMapa: string | null | undefined): string | null {
+  if (String(digitado ?? "").trim()) return null;
+  return String(doIbge || "").trim() || String(doMapa || "").trim() || null;
+}
+
+/**
  * O aviso de quando o ponto (GPS ou pino) não vira o do cliente porque o
  * endereço na tela não diz onde (sem rua e sem bairro: pontoValeParaEndereco).
  *

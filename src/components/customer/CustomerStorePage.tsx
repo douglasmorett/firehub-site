@@ -49,7 +49,7 @@ import { avisoDoCep, buscarCep, cepFormatado, digitosDoCep } from "@/lib/cep";
 import { bairroComNomeDosCorreios } from "@/lib/bairro-dos-correios";
 import {
   assinaturaDaConsulta, avisoDoPontoSemEndereco, BOTAO_DO_GPS, carimboDoPonto, comoAbrirOMapa, consultaDaCotacao, criarSequenciadorDeCotacoes,
-  enderecoDoReverso, entregaNoPedidoDoSite, gpsEhPreciso, lerRecusaDoPedido, lerRespostaDaCotacao, oQueFaltaParaFechar, painelDaEntrega, pontoValeParaEndereco,
+  bairroDoPontoNaTela, enderecoDoReverso, entregaNoPedidoDoSite, gpsEhPreciso, lerRecusaDoPedido, lerRespostaDaCotacao, oQueFaltaParaFechar, painelDaEntrega, pontoValeParaEndereco,
   temOndeAbrirOMapa, temRuaOuBairro,
   type CotacaoNaTela, type EnderecoDigitado, type Ponto, type PontoDoCliente,
 } from "@/lib/entrega-no-checkout";
@@ -2372,6 +2372,11 @@ export default function CustomerStorePage({
     let numeroDoMapa = false;
     let leuOMapa = false;
     const pode = (campo: unknown) => opcoes.sobrescrever || !String(campo ?? "").trim();
+    // O bairro oficial do ponto (IBGE), junto com o mapa: null = sem base ou fora do ar.
+    const doIbge = fetch(`/api/bairro-do-ponto?franchiseeId=${encodeURIComponent(franchisee.id)}&lat=${ponto.lat}&lng=${ponto.lng}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => (typeof j?.bairro === "string" ? j.bairro : null))
+      .catch(() => null);
     try {
       // Sem prazo, um Nominatim lento prendia o "Localizando..." para sempre.
       const prazo = typeof AbortSignal !== "undefined" && typeof (AbortSignal as any).timeout === "function"
@@ -2396,7 +2401,9 @@ export default function CustomerStorePage({
         );
         if (road && pode(endereco.street)) { setCustomerStreet(road); endereco.street = road; }
         if (houseNum && pode(endereco.number)) { setCustomerNumber(houseNum); endereco.number = houseNum; numeroDoMapa = true; }
-        if (neigh && !isNeighborhoodType && pode(endereco.neighborhood)) { setCustomerNeighborhood(neigh); endereco.neighborhood = neigh; }
+        // O bairro digitado fica; vazio, o do IBGE vence o nome do mapa (bairroDoPontoNaTela).
+        const bairroNovo = bairroDoPontoNaTela(endereco.neighborhood, await doIbge, neigh);
+        if (bairroNovo && !isNeighborhoodType) { setCustomerNeighborhood(bairroNovo); endereco.neighborhood = bairroNovo; }
       } else {
         console.warn(`Reverse geocode HTTP ${rev.status}`);
       }

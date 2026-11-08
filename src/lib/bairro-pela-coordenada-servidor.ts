@@ -21,6 +21,7 @@ import { prisma } from "@/lib/prisma";
 import { naFila } from "@/lib/geocodificacao-servidor";
 import { enderecoDoPontoNoMapa } from "@/lib/geocoding";
 import { bairroDaRuaNosCorreios } from "@/lib/bairro-dos-correios";
+import { bairroNoIbgePeloPonto } from "@/lib/enderecos-ibge-servidor";
 import {
   decidirBairroDoPedido,
   pontoQuePedeBairro,
@@ -64,6 +65,7 @@ function buscasDoServidor(loja: string | null): BuscasDoBairro {
   return {
     reverso: (ponto) => reversoNoServidor(ponto, loja),
     correios: (rua, cidade, uf) => bairroDaRuaNosCorreios(rua, cidade, uf, { prazoMs: 2500 }),
+    ibge: (ponto, cidade, uf) => bairroNoIbgePeloPonto({ ponto, cidade, uf }),
   };
 }
 

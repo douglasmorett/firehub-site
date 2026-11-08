@@ -492,6 +492,36 @@ export function bairroMaisPerto(trechos: RuaDoIbge[], p: Ponto): string {
   return melhor;
 }
 
+/**
+ * Até onde o endereço do IBGE mais perto do GPS ainda diz o bairro do cliente.
+ * O GPS preciso erra ~20–50 m; a quadra do lado ainda é o mesmo bairro.
+ */
+export const BAIRRO_PELO_PONTO_KM = 0.2;
+
+/**
+ * O bairro do ponto pelo endereço do IBGE mais perto (a localidade do CNEFE
+ * dele), quando há um a até `maxKm`. Divinos (Cabo Frio, pedido 29 de
+ * 07/11/2026): o GPS em -22.8577, -42.0305 é o Monte Alegre para o IBGE (Rua
+ * Monte Alegre nº 90 a ~150 m), e o mapa aberto chama tudo ali de "Gamboa".
+ */
+export function bairroDoEnderecoMaisPerto(
+  p: Ponto,
+  trechos: Pick<RuaDoIbge, "bairro" | "lats" | "lngs">[],
+  maxKm = BAIRRO_PELO_PONTO_KM,
+): { bairro: string; km: number } | null {
+  // Corte barato em graus antes da conta (1° ≈ 111 km; folga para a longitude).
+  const grau = maxKm / 90;
+  let melhor: { bairro: string; km: number } | null = null;
+  for (const t of trechos) {
+    for (let i = 0; i < t.lats.length; i++) {
+      if (Math.abs(t.lats[i] - p.lat) > grau || Math.abs(t.lngs[i] - p.lng) > grau) continue;
+      const km = distanciaKm(p, { lat: t.lats[i], lng: t.lngs[i] });
+      if (km <= maxKm && (!melhor || km < melhor.km)) melhor = { bairro: t.bairro, km };
+    }
+  }
+  return melhor;
+}
+
 // ── O BAIRRO PELO POLÍGONO (malha de bairros do Censo 2022) ────────────────
 
 /** Um bairro da malha: anéis [lng, lat] (o 1º é o contorno; os de sentido contrário são buracos — par/ímpar resolve os dois). */

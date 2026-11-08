@@ -23,6 +23,7 @@ import { executarDDL } from "./ddl-do-boot";
 import { DDL_DO_IBGE } from "./enderecos-ibge-ddl";
 import {
   acharNoIbge,
+  bairroDoEnderecoMaisPerto,
   bairroDoPonto,
   casamentoDoNome,
   mesmoBairro,
@@ -228,8 +229,66 @@ export async function enderecoNoIbge(p: PedidoAoIbge): Promise<AchadoNoIbgeParaO
   }
 }
 
+// ── O bairro do ponto (GPS/pino), pelo endereço do IBGE mais perto ─────────
+
+type PontosDoMunicipio = Pick<RuaDoIbge, "bairro" | "lats" | "lngs">[];
+const pontosDosMunicipios = new Map<number, { voo: Promise<PontosDoMunicipio>; exp: number }>();
+
+/** Todos os pontos do município (Cabo Frio: 148 mil, ~2 MB), uma vez a cada 6 h por processo. */
+function pontosDoMunicipio(codigo: number): Promise<PontosDoMunicipio> {
+  const guardado = pontosDosMunicipios.get(codigo);
+  if (guardado && guardado.exp > Date.now()) return guardado.voo;
+  const voo = prisma
+    .$queryRawUnsafe<{ bairro: string; lats: number[]; lngs: number[] }[]>(
+      `SELECT "bairro", "lats", "lngs" FROM "IbgeRua" WHERE "municipio" = $1`,
+      codigo,
+    )
+    .then((linhas) => linhas.map((l) => ({ bairro: l.bairro, lats: l.lats.map(Number), lngs: l.lngs.map(Number) })));
+  pontosDosMunicipios.set(codigo, { voo, exp: Date.now() + VALIDADE_DO_INDICE_MS });
+  voo.catch(() => pontosDosMunicipios.delete(codigo)); // falha não fica guardada
+  return voo;
+}
+
+/**
+ * O bairro OFICIAL do ponto do cliente (GPS, pino): o polígono da malha do
+ * Censo quando o município tem, senão a localidade do CNEFE do endereço mais
+ * perto (até 200 m). null = município não importado, nenhum endereço perto,
+ * banco lento — quem chamou segue com Correios/mapa como antes.
+ *
+ * Divinos (Cabo Frio, 07/11/2026): o reverse do OSM chama de "Gamboa" e
+ * "Vila Rainha da Sucata" o que o IBGE (e o cliente) chamam de Monte Alegre e
+ * Boca do Mato; esse nome ia para o texto do pedido.
+ */
+export async function bairroNoIbgePeloPonto(p: { ponto: Ponto; cidade: string; uf?: string | null; textoDoCliente?: string | null }): Promise<string | null> {
+  const trabalho = (async () => {
+    if (!/^postgres/i.test(process.env.DATABASE_URL || "")) return null;
+    const codigo = await municipioImportado(p.cidade, p.uf);
+    if (!codigo) return null;
+    const m = await doMunicipio(codigo);
+    if (!m) return null;
+    const daMalha = m.malha.length > 0 ? bairroDoPonto(p.ponto, m.malha) : null;
+    let nome = daMalha;
+    if (!nome) {
+      nome = bairroDoEnderecoMaisPerto(p.ponto, await pontosDoMunicipio(codigo))?.bairro ?? null;
+    }
+    return nome ? nomeComAcento(nome, p.textoDoCliente) : null;
+  })();
+  let relogio: ReturnType<typeof setTimeout> | undefined;
+  const prazo = new Promise<null>((r) => { relogio = setTimeout(() => r(null), PRAZO_DO_IBGE_MS); });
+  try {
+    return await Promise.race([trabalho, prazo]);
+  } catch (e: any) {
+    console.warn(`[IBGE] bairro do ponto falhou, segue o mapa: ${e?.message}`);
+    return null;
+  } finally {
+    clearTimeout(relogio);
+    trabalho.catch(() => undefined);
+  }
+}
+
 /** Esquece os índices na memória (depois de uma importação, e nos testes). */
 export function esquecerIndicesDoIbge() {
   municipios = null;
   indices.clear();
+  pontosDosMunicipios.clear();
 }
