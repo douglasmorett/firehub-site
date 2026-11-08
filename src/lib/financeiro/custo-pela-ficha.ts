@@ -36,11 +36,11 @@
  * Opção que não é produto nenhum ("Sem cebola") num produto com ficha própria
  * e sem preço não muda o custo. Em combo, ou com preço, fica sem custo.
  *
- * NÃO coberto (de propósito): pizza meio a meio cuja opção é o sabor inteiro —
- * nenhuma loja tem ficha de pizza hoje; quando tiver, a metade precisa de regra
- * própria (hoje somaria o sabor inteiro duas vezes).
+ * Pizza meio a meio: cada sabor entra com a sua parte, a mesma regra da baixa
+ * (lib/metade-da-pizza.ts) — antes o 2º sabor entrava inteiro (NIK, 16/10/2026).
  */
 import { ehPreparo, type CustoNoDia, type InsumoParaCusto } from "@/lib/cmv/custo-do-insumo";
+import { fatoresDasMetades, fracaoDoNome } from "@/lib/metade-da-pizza";
 
 export type LinhaDaFicha = { insumoId: string; nome: string; quantidade: number };
 
@@ -54,7 +54,7 @@ export type ProdutoParaCusto = {
   custo: number | null;
   combo: boolean;
   ficha: LinhaDaFicha[];
-  grupos: { id: string; opcoes: { id: string; produtoId: string }[] }[];
+  grupos: { id: string; titulo?: string | null; regra?: string | null; opcoes: { id: string; produtoId: string }[] }[];
 };
 
 /** O que falta para o item ter custo. */
@@ -169,7 +169,7 @@ export function custoDoInsumoNoDia(
 
 // ── As escolhas do combo ────────────────────────────────────────────────────
 
-export type EscolhaDoItem = { grupoId?: string; chaves: string[]; nome: string; qtd: number; preco: number | null };
+export type EscolhaDoItem = { grupoId?: string; chaves: string[]; nome: string; qtd: number; preco: number | null; fracao?: number | null };
 
 /**
  * Os dois formatos de `comboSelections` numa lista só — o mesmo trabalho de
@@ -192,20 +192,23 @@ export function lerEscolhas(bruto: unknown): EscolhaDoItem[] {
         const m = texto.match(/^(\d+)\s*x\s+(.+)$/i);
         const nome = m ? m[2].trim() : texto;
         const qtd = m ? Number(m[1]) : 1;
-        if (nome && qtd > 0) lista.push({ chaves: [nome], nome, qtd, preco: null });
+        const metade = fracaoDoNome(nome);
+        if (nome && qtd > 0) lista.push({ chaves: metade.fracao ? [nome, metade.nome] : [nome], nome, qtd, preco: null, fracao: metade.fracao });
         continue;
       }
       if (!e || typeof e !== "object") continue;
       const qtd = Number(e.quantity ?? e.qty ?? 1);
       if (!Number.isFinite(qtd) || qtd <= 0) continue;
       const nome = String(e.name ?? e.productName ?? e.label ?? "").trim();
-      const chaves = [e.comboGroupItemId, e.optionId, e.menuProductId, e.productId, e.id, nome]
+      // "1/2 Calabresa" (iFood): casa também pelo sabor sem a fração.
+      const metade = fracaoDoNome(nome);
+      const chaves = [e.comboGroupItemId, e.optionId, e.menuProductId, e.productId, e.id, nome, metade.fracao ? metade.nome : ""]
         .map((c) => (c == null ? "" : String(c).trim()))
         .filter(Boolean);
       if (!chaves.length) continue;
       const grupoId = e.groupId ?? e.comboGroupId;
       const preco = e.price != null && Number.isFinite(Number(e.price)) ? Number(e.price) : null;
-      lista.push({ grupoId: grupoId ? String(grupoId) : undefined, chaves, nome: nome || chaves[0], qtd, preco });
+      lista.push({ grupoId: grupoId ? String(grupoId) : undefined, chaves, nome: nome || chaves[0], qtd, preco, fracao: metade.fracao });
     }
     return lista;
   }
@@ -256,7 +259,19 @@ function acharOpcao(indice: IndiceDoCombo | null, e: EscolhaDoItem, cat: Catalog
     }
   }
   // Combo do iFood (o espelho não tem grupos) ou opção fora dos grupos: pelo nome.
-  return cat.porNome.get(chave(e.nome)) ?? null;
+  return cat.porNome.get(chave(e.nome)) ?? (e.fracao ? cat.porNome.get(chave(e.chaves[e.chaves.length - 1])) ?? null : null);
+}
+
+/** As escolhas casadas com o produto e o quanto cada uma vale na pizza meio a meio. */
+function escolhasComFator(produto: ProdutoParaCusto | null, escolhas: EscolhaDoItem[], cat: Catalogo) {
+  const indice = produto && produto.grupos.length ? indexarCombo(produto, cat) : null;
+  const casadas = escolhas.map((e) => ({ e, o: acharOpcao(indice, e, cat) }));
+  const { fatores, fatorDaFicha } = fatoresDasMetades({
+    grupos: (produto?.grupos ?? []).map((g) => ({ id: g.id, titulo: g.titulo, regra: g.regra, produtos: g.opcoes.map((o) => o.produtoId) })),
+    escolhas: casadas.map(({ e, o }) => ({ produtoId: o?.id ?? "", qtd: e.qtd, fracao: e.fracao, grupoId: e.grupoId })),
+    temFichaPropria: Boolean(produto?.ficha.length),
+  });
+  return { casadas: casadas.map((c, i) => ({ ...c, fator: fatores[i] })), fatorDaFicha };
 }
 
 // ── O item ──────────────────────────────────────────────────────────────────
@@ -303,8 +318,9 @@ export function custoDoItem(item: ItemParaCusto, cat: Catalogo, insumo: CustoDoI
   };
 
   const ehCombo = Boolean(produto && (produto.combo || produto.grupos.length > 0));
+  const { casadas, fatorDaFicha } = escolhasComFator(produto, escolhas, cat);
   if (produto && produto.ficha.length) {
-    somarFicha(produto, 1);
+    somarFicha(produto, fatorDaFicha);
   } else if (ehCombo && escolhas.length > 0) {
     // Combo sem ficha própria: o custo vem todo das opções escolhidas.
   } else {
@@ -318,11 +334,9 @@ export function custoDoItem(item: ItemParaCusto, cat: Catalogo, insumo: CustoDoI
   }
 
   if (escolhas.length) {
-    const indice = produto && produto.grupos.length ? indexarCombo(produto, cat) : null;
-    for (const e of escolhas) {
-      const o = acharOpcao(indice, e, cat);
-      if (o && o.ficha.length) { somarFicha(o, e.qtd); continue; }
-      if (o && temCusto(o)) { custoUnitario += o.custo! * e.qtd; usouCadastro = true; continue; }
+    for (const { e, o, fator } of casadas) {
+      if (o && o.ficha.length) { somarFicha(o, fator); continue; }
+      if (o && temCusto(o)) { custoUnitario += o.custo! * fator; usouCadastro = true; continue; }
       if (o) { faltas.push({ motivo: "OPCAO_SEM_FICHA", nome: o.nome }); continue; }
       // Não é produto nenhum. Num produto com ficha própria, opção sem preço é
       // modificador ("Sem cebola", "Bem passada"): não muda o custo.
@@ -378,14 +392,13 @@ export function consumoDoItem(item: ItemParaCusto, cat: Catalogo): ConsumoDoItem
 
   const escolhas = lerEscolhas(item.escolhas);
   const ehCombo = produto.combo || produto.grupos.length > 0;
-  if (produto.ficha.length) somar(produto, 1);
+  const { casadas, fatorDaFicha } = escolhasComFator(produto, escolhas, cat);
+  if (produto.ficha.length) somar(produto, fatorDaFicha);
   else if (!(ehCombo && escolhas.length > 0)) return { insumos, semFicha: true, incompleto: false, nome };
 
   if (escolhas.length) {
-    const indice = produto.grupos.length ? indexarCombo(produto, cat) : null;
-    for (const e of escolhas) {
-      const o = acharOpcao(indice, e, cat);
-      if (o && o.ficha.length) { somar(o, e.qtd); continue; }
+    for (const { e, o, fator } of casadas) {
+      if (o && o.ficha.length) { somar(o, fator); continue; }
       // Modificador ("Sem cebola") num produto com ficha própria não muda nada.
       if (!o && !ehCombo && produto.ficha.length && !((e.preco ?? 0) > 0)) continue;
       incompleto = true;

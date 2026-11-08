@@ -88,13 +88,13 @@ export async function carregarCatalogo(lojaId: string): Promise<Catalogo> {
     select: {
       id: true, name: true, active: true, cost: true, isCombo: true,
       recipeItems: { select: { stockItemId: true, quantityConsumed: true, stockItem: { select: { name: true } } } },
-      comboGroups: { select: { id: true, items: { select: { id: true, menuProductId: true } } } },
+      comboGroups: { select: { id: true, title: true, priceRule: true, items: { select: { id: true, menuProductId: true } } } },
     },
   });
   return montarCatalogo(produtos.map((p): ProdutoParaCusto => ({
     id: p.id, nome: p.name || "", ativo: p.active !== false, custo: p.cost ?? null, combo: Boolean(p.isCombo),
     ficha: p.recipeItems.map((r) => ({ insumoId: r.stockItemId, nome: r.stockItem?.name || "insumo", quantidade: Number(r.quantityConsumed) || 0 })),
-    grupos: p.comboGroups.map((g) => ({ id: g.id, opcoes: g.items.map((i) => ({ id: i.id, produtoId: i.menuProductId })) })),
+    grupos: p.comboGroups.map((g) => ({ id: g.id, titulo: g.title, regra: g.priceRule, opcoes: g.items.map((i) => ({ id: i.id, produtoId: i.menuProductId })) })),
   })));
 }
 
