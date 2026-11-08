@@ -565,7 +565,7 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
     // painel aberto faz o mesmo no poll — é o que mantém os dois trilhos iguais.
     if (recentOrders.length > 0) {
       const { resolverCategoriasDosPedidos } = await import("@/lib/categoria-do-item");
-      recentOrders = (await resolverCategoriasDosPedidos(recentOrders as any).catch(() => recentOrders)) as typeof recentOrders;
+      recentOrders = (await resolverCategoriasDosPedidos(recentOrders as any).catch((err) => { console.error("[Impressão] categoria real dos itens falhou, sai a crua:", (err as any)?.message || err); return recentOrders; })) as typeof recentOrders;
     }
 
     // Carimba a consulta — no máximo uma vez por minuto (o Assistente bate a

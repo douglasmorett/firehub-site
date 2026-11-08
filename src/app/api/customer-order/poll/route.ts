@@ -1305,7 +1305,7 @@ export async function GET(req: NextRequest) {
     // marca. Quem não casa fica "iFood", que a impressão trata como "sai em
     // todas". Falhou a leitura do cardápio? Os pedidos seguem como estavam.
     const { resolverCategoriasDosPedidos } = await import("@/lib/categoria-do-item");
-    const ordersWithDailyNum = await resolverCategoriasDosPedidos(orders as any[]).catch(() => orders);
+    const ordersWithDailyNum = await resolverCategoriasDosPedidos(orders as any[]).catch((err) => { console.error("[Poll] categoria real dos itens falhou, sai a crua:", (err as any)?.message || err); return orders; });
 
     // ── 🤖 A ROTA AUTOMÁTICA DO PEDIDO ───────────────────────────────────────
     // O card mostra "🤖 Rota #7 · 2/3 prontos" / "· chamada" / "· saiu"

@@ -320,7 +320,12 @@ export function itensDaImpressora<T extends ItemDoPedido>(
   // na Cozinha (esfiha + bebida juntas), e a Coca de um pedido de pizza
   // puxava a comanda inteira da pizza para a Cozinha.
   const daCozinha = filtrados.filter((item) => !itemEhBebida(item, pedido?.source));
-  if (impressora.comandaInteiraNoMisto === true && (daCozinha.length > 0 || dasOpcoes.length > 0)) {
+  // O item sem categoria (o combo do iFood que não casou, ver acima) também
+  // puxa a comanda inteira: ele sai nesta impressora de qualquer jeito, e sem
+  // isto a Pizza da NIK imprimiu SÓ a pizza do pedido 38 (07/11/2026) quando a
+  // categoria do iFood chegou crua.
+  const semRotuloDeComida = semRotulo.filter((item) => !itemEhBebida(item, pedido?.source));
+  if (impressora.comandaInteiraNoMisto === true && (daCozinha.length > 0 || dasOpcoes.length > 0 || semRotuloDeComida.length > 0)) {
     return itens as T[];
   }
 
