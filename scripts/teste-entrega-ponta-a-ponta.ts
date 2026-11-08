@@ -437,6 +437,28 @@ async function main() {
   const v7c = await avaliarEntrega(DIVINOS, { endereco: "Rua Inexistente, 30 - Lugar Nenhum", coords: null });
   conferir("mapa não achou: o robô pede a localização ('desconhecido'), sem taxa", robo.motivoParaPedirLocalizacao(v7c, false) === "desconhecido" && v7c.taxa === null, v7c);
 
+  console.log("\n== 8. Robô por bairro: referência da casa não vira bairro fora da lista (Pizzaria 17, 08/11) ==");
+  const lojaPorBairro = {
+    city: "Macaé", deliveryZoneType: "NEIGHBORHOOD",
+    deliveryZones: [{ name: "Lagomar", fee: 3, time: 40, motoboyFee: 2 }],
+    deliveryConfig: { areasDeRisco: [], limiteDeAtendimento: [] },
+  };
+  const cotarBairro = async (endereco: string) => (await robo.avaliarEntregaDoRobo(
+    (p) => avaliarEntrega(lojaPorBairro, p),
+    { endereco, partes: robo.partesDoEnderecoDigitado(endereco, lojaPorBairro.city) },
+  )).veredito;
+  // Travessa/número anonimizados; mesma estrutura da mensagem que causou a recusa.
+  const enderecoW26 = "W26 sentido praia travessa das flores número 10 última casa da rua com plantas na frente";
+  const v8 = await cotarBairro(enderecoW26);
+  conferir("cotação real: sem bairro, DESCONHECIDO/faltaBairro, nunca FORA nem taxa inventada",
+    v8.resultado === "DESCONHECIDO" && v8.faltaBairro === true && v8.taxa === null, v8);
+  const v8b = await cotarBairro(`${enderecoW26}, bairro Lagomar`);
+  conferir("cliente informa Lagomar: ATENDE pela mesma taxa cadastrada, R$ 3",
+    v8b.resultado === "ATENDE" && v8b.bairro === "Lagomar" && v8b.taxa === 3 && v8b.tempoMin === 40, v8b);
+  const v8c = await cotarBairro(`${enderecoW26}, bairro Imboassica`);
+  conferir("bairro explicitamente fora da lista continua FORA (não libera área nova)",
+    v8c.resultado === "FORA" && !v8c.faltaBairro && v8c.taxa === null, v8c);
+
   console.log(`\n${ok} ok, ${falhou} falharam`);
   process.exit(falhou ? 1 : 0);
 }

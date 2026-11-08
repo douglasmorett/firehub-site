@@ -209,6 +209,8 @@ type PartesDoEndereco = { street?: string; number?: string; neighborhood?: strin
 const TIPO_DE_RUA = /\b(?:rua|r\.|avenida|av\.?|travessa|tv\.?|trav\.?|alameda|al\.|estrada|estr\.?|est\.|rodovia|rod\.|pra[çc]a|largo|beco|servid[ãa]o|viela|ladeira)\s+/i;
 /** Pedaço que é complemento da casa, não bairro. */
 const COMPLEMENTO = /^(?:casa|c\.|apto?\.?|apartamento|bloco|bl\.?|fundos|frente|lote|lt\.?|quadra|qd\.?|sala|loja|andar|kitnet|perto|pr[óo]x|em frente|ao lado|esquina|refer[êe]ncia|ponto de|port[ãa]o|cep|condom[íi]nio|cond\.?|edif[íi]cio|ed\.|entre|atr[áa]s|depois|antes|n[º°o]?\.?\s*\d)/i;
+/** "Última casa da rua" descreve a casa, não informa um bairro (Pizzaria 17, 08/11). */
+const REFERENCIA_DE_POSICAO = /^(?:(?:a|o)\s+)?(?:[úu]ltim[ao]|primeir[ao]|segund[ao]|terceir[ao]|pen[úu]ltim[ao])\s+(?:casa|port[ãa]o|sobrado|pr[ée]dio|apartamento)\b/i;
 
 /**
  * Rua, número e bairro tirados do que o cliente DIGITOU, para a cotação da
@@ -246,7 +248,7 @@ export function partesDoEnderecoDigitado(texto: unknown, cidade?: string | null)
       .filter(Boolean);
     let rua = pedacos.shift() || "";
     // "Rua Tal 45 Centro": o número (e o que vem depois) dentro do pedaço da rua.
-    const comNumero = rua.match(/^(.*?[a-zà-úç.])\s+(?:n[º°o]?\.?\s*)?(\d{1,5}[a-z]?)(?:\s+(.*))?$/i);
+    const comNumero = rua.match(/^(.*?[a-zà-úç.])\s+(?:n[º°o]?\.?\s*|n[úu]mero\s*)?(\d{1,5}[a-z]?)(?:\s+(.*))?$/i);
     // Só quando sobra NOME antes do número: em "Rua 7" o 7 é o nome da rua.
     if (comNumero && `${comNumero[1]} `.replace(TIPO_DE_RUA, "").trim()) {
       rua = comNumero[1].trim();
@@ -266,7 +268,7 @@ export function partesDoEnderecoDigitado(texto: unknown, cidade?: string | null)
       const bairro = pedacos.find((p) => {
         const s = semAcento(p);
         if (!/[a-z]{3,}/.test(s) || /^\d/.test(s)) return false;
-        if (COMPLEMENTO.test(p)) return false;
+        if (COMPLEMENTO.test(p) || REFERENCIA_DE_POSICAO.test(p)) return false;
         if (/^[a-z]{2}$/.test(s) || /\bcep\b/.test(s)) return false;
         if (daCidade && (s === daCidade || s.startsWith(`${daCidade} `))) return false;
         return true;

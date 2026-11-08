@@ -178,6 +178,10 @@ console.log("\n8) Rua, número e bairro do que o cliente DIGITOU (cotação da c
   caso("rua itajuru 120 centro", { street: "rua itajuru", number: "120", neighborhood: "centro" });
   caso("Moro na Rua Sol Nascente, 23, bairro Aquários, Cabo Frio", { street: "Rua Sol Nascente", number: "23", neighborhood: "Aquários" });
   caso("Av. Brasil 500 apto 302", { street: "Av. Brasil", number: "500" });
+  caso("Travessa das Flores número 10 última casa da rua", { street: "Travessa das Flores", number: "10" });
+  caso("Travessa das Flores numero 10, a última casa da rua", { street: "Travessa das Flores", number: "10" });
+  caso("Rua Sol, número 10, primeiro portão à direita", { street: "Rua Sol", number: "10" });
+  caso("Rua Sol número 10, segunda casa, Centro", { street: "Rua Sol", number: "10", neighborhood: "Centro" });
   caso("Rua 7, 45, Jardim Excelsior", { street: "Rua 7", number: "45", neighborhood: "Jardim Excelsior" });
   caso("Rua Tal 45, Centro, 1 x-burguer, pix, pode fechar", { street: "Rua Tal", number: "45", neighborhood: "Centro" });
   caso("Rua X, 10, Cabo Frio - RJ", { street: "Rua X", number: "10" });
@@ -286,6 +290,20 @@ console.log("\n12) Loja por bairro, endereço sem bairro: pergunta o bairro, nã
       : { modo: "BAIRRO", resultado: "FORA", taxa: null, tempoMin: null, motivo: `bairro não cadastrado (${bairro || partes?.neighborhood || endereco})` };
   };
   const pelaConversa = (texto) => avaliarEntregaDoRobo(avaliar, { endereco: texto, partes: partesDoEnderecoDigitado(texto, "MACAE"), gps: null });
+  // Mesma estrutura da conversa real; nome da travessa/número anonimizados.
+  const enderecoW26 = "W26 sentido praia travessa das flores número 10 última casa da rua aonde tem um monte de plantas na frente.";
+  const partesW26 = partesDoEnderecoDigitado(enderecoW26, "MACAE");
+  conferir("W26: rua e número separados, descrição da última casa não vira bairro", partesW26?.street === "travessa das flores" && partesW26?.number === "10" && !partesW26?.neighborhood, partesW26);
+  const w26 = (await pelaConversa(enderecoW26)).veredito;
+  conferir("W26 sem bairro: pergunta o bairro antes de recusar", w26.resultado === "DESCONHECIDO" && w26.faltaBairro === true, w26);
+  const w26ComLagomar = (await pelaConversa(`${enderecoW26} Bairro Lagomar`)).veredito;
+  conferir("W26 depois de informar Lagomar: ATENDE por R$ 3", w26ComLagomar.resultado === "ATENDE" && w26ComLagomar.taxa === 3, w26ComLagomar);
+  const w26Fora = (await pelaConversa(`${enderecoW26} Bairro Imboassica`)).veredito;
+  conferir("W26 com bairro explicitamente fora da lista: continua FORA", w26Fora.resultado === "FORA" && !w26Fora.faltaBairro, w26Fora);
+  const w28 = (await pelaConversa("W28 sentido W1 Travessa B número 8 última casa da rua")).veredito;
+  conferir("W28 com referência e sem bairro: pergunta antes de recusar", w28.resultado === "DESCONHECIDO" && w28.faltaBairro === true, w28);
+  const w28ComLagomar = (await pelaConversa("W28 sentido W1 Travessa B número 8 última casa da rua, Lagomar")).veredito;
+  conferir("W28 com Lagomar: mantém atendimento e taxa", w28ComLagomar.resultado === "ATENDE" && w28ComLagomar.taxa === 3, w28ComLagomar);
   const semBairro = (await pelaConversa("W 5 travessa Francisca casa 12")).veredito;
   conferir("'W 5 travessa Francisca casa 12': falta o bairro, não é FORA", semBairro.resultado === "DESCONHECIDO" && semBairro.faltaBairro === true, semBairro);
   const comBairro = (await pelaConversa("W 5 travessa Francisca casa 12 Lagomar")).veredito;
