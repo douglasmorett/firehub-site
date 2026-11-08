@@ -2407,7 +2407,7 @@ model Ambassador {
   /// embaixador que passou a vender também — o login é o mesmo.
   isVendedor        Boolean    @default(false)
   /// % da mensalidade das lojas da carteira dele (User.vendedorId).
-  sellerPercent     Float      @default(3)
+  sellerPercent     Float      @default(5)
   carteira          User[]     @relation("VendedorStores")
 
   @@index([parentAmbassadorId])

@@ -9,7 +9,7 @@
  * para dentro… o vendedor que ganha 10% perde se sair. Porque o embaixador é
  * um cara autônomo; o vendedor é contratado nosso").
  *
- * As comissões de vendedor (10% do link de vendedor enquanto atende, 3% das
+  * As comissões de vendedor (10% do link de vendedor enquanto atende, 5% das
  * atribuídas, 3% sobre a margem do disparo) só valem enquanto o vendedor
  * trabalha com a FireHub e enquanto atende a loja.
  *
@@ -35,7 +35,7 @@
  *
  * Arquivo puro (sem banco): a tela importa.
  */
-export const VERSAO_DO_TERMO_DE_COMISSIONAMENTO = "2026-10-18b-rascunho";
+export const VERSAO_DO_TERMO_DE_COMISSIONAMENTO = "2026-11-08-rascunho";
 
 export const TITULO_DO_TERMO_DE_COMISSIONAMENTO = "Termo de comissionamento — vendedor FireHub";
 
@@ -45,7 +45,7 @@ export const CLAUSULAS_DO_TERMO_DE_COMISSIONAMENTO = [
   "Este termo vale para as minhas comissões de VENDEDOR da FireHub. Indicação de embaixador é outro programa (autônomo), com regra própria: se eu também for embaixador, as lojas que indiquei como embaixador seguem pagando o % de embaixador enquanto estiverem ativas e pagando, e não entram nas regras de perda abaixo.",
   "Comissão é uma parte do que a loja paga ao FireHub (o boleto do mês: mensalidade e serviços cobrados nele), não das vendas da loja. Ela é paga pelo split do Asaas, direto na minha carteira, quando a loja paga o boleto. Boleto não pago não gera comissão.",
   "Loja que se cadastrou pelo meu link de vendedor e que EU atendo: recebo 10% de cada boleto pago. Se a loja passar a ser atendida por outro vendedor, deixo de receber os 10% dela a partir do boleto seguinte.",
-  "Loja que o FireHub atribuiu à minha carteira e que eu atendo: recebo 3% de cada boleto pago.",
+  "Loja que o FireHub atribuiu à minha carteira e que eu atendo: recebo 5% de cada boleto pago.",
   "Recarga de disparo pelo WhatsApp oficial das lojas que eu atendo: recebo 3% em cada recarga paga, calculados sobre o que fica com o FireHub depois do custo das mensagens, pelo split do Pix da recarga. O quanto isso dá por pacote aparece no portal. Os 10% do link valem só para o boleto, não para o disparo.",
   "As comissões de vendedor só valem enquanto eu trabalho na equipe de vendas da FireHub e enquanto atendo a loja. Se eu parar de atender uma loja, deixo de receber dela; se eu sair da equipe, deixo de receber as comissões de vendedor futuras de todas as lojas, inclusive das que convidei pelo meu link de vendedor.",
   // ⚠ Ver o alerta no topo do arquivo (CLT 457/466): comissão de boleto já pago pode ser direito adquirido.

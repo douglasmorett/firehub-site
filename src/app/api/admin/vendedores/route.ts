@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
   if (!(await ehAdmin())) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   const body = await req.json().catch(() => ({}));
 
-  const percentual = percentualDoVendedor(body.sellerPercent) ?? 3;
+  const percentual = percentualDoVendedor(body.sellerPercent) ?? 5;
 
   if (body.ambassadorId) {
     const emb = await prisma.ambassador.findUnique({ where: { id: String(body.ambassadorId) }, select: { id: true, password: true } });
