@@ -42,9 +42,21 @@ export default {
     {
       capitulo: "O que este vídeo mostra",
       fala: "Neste vídeo do Cardápio: como montar um combo, e como pôr adicionais num lanche. A pizza tem um vídeo só dela.",
-      acao: async (palco) => {
+      acao: async (palco, ctx) => {
+        const p = palco.pagina;
         await dormir(500);
         await palco.mover({ x: 780, y: 470 }, { ms: 700 });
+        const novo = p.getByRole("button", { name: /Novo Combo/ });
+        const aba = p.getByRole("button", { name: /Combos \(/ });
+        await palco.rolarAte(novo, { bloco: "center" });
+        await ctx.ate(0.25);
+        await palco.destacar(novo, { folga: 6 });
+        await palco.mover(novo, { ms: 600 });
+        await ctx.ate(0.6);
+        await palco.destacar(aba, { folga: 6 });
+        await palco.mover(aba, { ms: 600 });
+        await ctx.ate(0.95);
+        await palco.apagarDestaque();
       },
     },
     {
@@ -69,7 +81,7 @@ export default {
       },
     },
     {
-      fala: "Escreva o nome do combo e a descrição, que o cliente lê embaixo do nome, e clique em Continuar. No passo do preço, o valor do combo, e Continuar de novo.",
+      fala: "Escreva o nome do combo e a descrição, que o cliente lê embaixo do nome. Depois, clique em Continuar.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
         await palco.camera([campo.nome(p), campo.categoria(p)], { zoomMax: 1.45, margem: 44 });
@@ -77,12 +89,21 @@ export default {
         await palco.cameraAberta({ ms: 300 });
         await palco.rolarAte(campo.descricao(p), { bloco: "center" });
         await palco.digitar(campo.descricao(p), "2 X-Burger, batata e refrigerante");
-        await ctx.ate(0.5);
+        await ctx.ate(0.8);
         await palco.rolarAte(campo.continuar(p), { bloco: "end" });
         await palco.clicar(campo.continuar(p));
         await campo.preco(p).waitFor({ state: "visible", timeout: 5000 });
+        await ctx.ate(1);
+      },
+    },
+    {
+      fala: "No passo do preço, digite o valor do combo e clique em Continuar de novo.",
+      acao: async (palco, ctx) => {
+        const p = palco.pagina;
+        await palco.camera(campo.preco(p), { zoomMax: 1.5, margem: 60 });
         await palco.digitar(campo.preco(p), "59");
-        await ctx.ate(0.85);
+        await ctx.ate(0.7);
+        await palco.cameraAberta({ ms: 300 });
         await palco.rolarAte(campo.continuar(p), { bloco: "end" });
         await palco.clicar(campo.continuar(p));
         await leva(p).waitFor({ state: "visible", timeout: 5000 });
