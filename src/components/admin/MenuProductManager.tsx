@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { ehProdutoDeIntegracao, espelhosRepetidos, idsSoDeOpcaoDeCombo, combosQueUsamOpcao, lerHorarioDoProduto } from "@/lib/cardapio-interno";
 import { perguntaTravadaPelaPausa } from "@/lib/opcao-pausada";
 import { combosQueDependemDoItem, combosParaReativar, itemFixoDoGrupo } from "@/lib/combo-e-pergunta";
@@ -1001,6 +1001,28 @@ export default function MenuProductManager({
   // Smart Pause — pausar item que está em combos
   const [pauseModal, setPauseModal] = useState<{ id: string; name: string; affectedCombos: any[]; newActive: boolean } | null>(null);
   const [pausing, setPausing] = useState(false);
+
+  // Preço trocado direto na lista: clica no valor, digita, Enter (Douglas, 08/11).
+  const [precoNaLista, setPrecoNaLista] = useState<{ id: string; valor: string } | null>(null);
+  const precoCancelado = useRef(false);
+  const salvarPrecoNaLista = async () => {
+    if (!precoNaLista) return;
+    const { id, valor } = precoNaLista;
+    setPrecoNaLista(null);
+    if (precoCancelado.current) { precoCancelado.current = false; return; }
+    const preco = Number(valor.replace(",", "."));
+    const atual = products.find((x: any) => x.id === id)?.price;
+    if (!(preco > 0) || preco === Number(atual)) return;
+    const r = await fetch("/api/admin/menu-products", {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, price: preco }),
+    }).catch(() => null);
+    if (!r?.ok) {
+      showToast("⚠️ Não deu para trocar o preço. Tente de novo.", "#C92E09");
+      return;
+    }
+    router.refresh();
+  };
 
   const handleDelete = (id: string, name: string) => {
     setDeleteConfirmText("");
@@ -4467,8 +4489,25 @@ export default function MenuProductManager({
                                     <span style={{ fontSize: "0.62rem", fontWeight: 700, color: "#94A3B8" }}>a partir de</span>
                                     <span style={{ fontSize: "1rem", fontWeight: 900, color: "#E8360C" }}>R$ {precoMinimoDoProduto(p).toFixed(2).replace(".", ",")}</span>
                                   </span>
+                                ) : precoNaLista?.id === p.id ? (
+                                  <input
+                                    autoFocus
+                                    inputMode="decimal"
+                                    value={precoNaLista?.valor ?? ""}
+                                    onChange={(e) => setPrecoNaLista({ id: p.id, valor: e.target.value })}
+                                    onBlur={salvarPrecoNaLista}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter") e.currentTarget.blur();
+                                      if (e.key === "Escape") { precoCancelado.current = true; e.currentTarget.blur(); }
+                                    }}
+                                    style={{ width: 80, fontSize: "1rem", fontWeight: 900, color: "#E8360C", marginRight: "6px", padding: "2px 6px", border: "1px solid #E8360C", borderRadius: 6 }}
+                                  />
                                 ) : (
-                                  <span style={{ fontSize: "1rem", fontWeight: 900, color: "#E8360C", whiteSpace: "nowrap", marginRight: "6px" }}>
+                                  <span
+                                    title="Clique para trocar o preço"
+                                    onClick={() => setPrecoNaLista({ id: p.id, valor: p.price.toFixed(2).replace(".", ",") })}
+                                    style={{ fontSize: "1rem", fontWeight: 900, color: "#E8360C", whiteSpace: "nowrap", marginRight: "6px", cursor: "pointer", borderBottom: "1px dashed #E8360C" }}
+                                  >
                                     R$ {p.price.toFixed(2).replace(".", ",")}
                                   </span>
                                 )}
