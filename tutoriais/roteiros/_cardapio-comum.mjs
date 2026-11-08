@@ -188,6 +188,11 @@ export const abaDoFormulario = (p, rotulo) => janela(p).getByRole("button", { na
 /** Abre o menu ⋮ da linha e clica num item dele. */
 export async function peloMenu(palco, nome, texto) {
   const p = palco.pagina;
+  // O menu fecha quando a página rola: a linha tem de estar na tela antes do clique.
+  const c = await maisAcoes(p, nome).boundingBox();
+  const altura = p.viewportSize()?.height ?? 900;
+  // Embaixo à direita ficam os botões flutuantes do WhatsApp da loja: lá o clique cairia neles.
+  if (!c || c.y < 80 || c.y + c.height > altura - 220) await palco.rolarAte(linha(p, nome), { bloco: "center" });
   await palco.clicar(maisAcoes(p, nome));
   const item = itemDoMenu(p, nome, texto);
   await item.waitFor({ state: "visible", timeout: 5000 });
