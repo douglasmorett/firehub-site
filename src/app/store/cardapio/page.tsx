@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { SEM_ESPELHO } from "@/lib/espelho-de-integracao";
+import { cookieDaVisao } from "@/lib/loja-ativa";
 import MenuProductManager from "@/components/admin/MenuProductManager";
 import CopiamosSeuCardapio from "@/components/customer/CopiamosSeuCardapio";
 import ConviteDoMultimarcas from "@/components/customer/ConviteDoMultimarcas";
@@ -33,12 +34,14 @@ export default async function StoreCardapioPage() {
   });
   if (!user) redirect("/login");
 
-  const targetFranchiseeId = (user as any).ownerId || user.id;
-
-  // ADMIN vê tudo; FRANCHISEE / STAFF só vê os produtos da sua loja
-  const franchiseeFilter = user.role === "ADMIN"
-    ? {}
-    : { franchiseeId: targetFranchiseeId };
+  // ADMIN vê o cardápio da loja escolhida no seletor (cookie firehub_active_store,
+  // como as telas de Código PDV e de integrações). Antes ele carregava o
+  // cardápio de TODAS as lojas juntas: milhares de linhas, e a aba travava no
+  // navegador (08/11/2026). Sem loja escolhida, a lista fica vazia com o aviso.
+  const lojaDoAdmin = user.role === "ADMIN" ? await cookieDaVisao() : undefined;
+  const adminSemLoja = user.role === "ADMIN" && (!lojaDoAdmin || lojaDoAdmin === "all");
+  const targetFranchiseeId = user.role === "ADMIN" && !adminSemLoja ? (lojaDoAdmin as string) : ((user as any).ownerId || user.id);
+  const franchiseeFilter = adminSemLoja ? { franchiseeId: "__nenhuma_loja__" } : { franchiseeId: targetFranchiseeId };
 
   let products: any[] = [];
   let availableItems: any[] = [];
@@ -73,7 +76,7 @@ export default async function StoreCardapioPage() {
         orderBy: { name: "asc" },
       }),
       prisma.menuCategory.findMany({
-        where: user.role === "ADMIN" ? {} : { franchiseeId: targetFranchiseeId },
+        where: franchiseeFilter,
         orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       }),
       targetFranchiseeId === user.id
@@ -168,6 +171,12 @@ export default async function StoreCardapioPage() {
 
       {/* A dica "Destaques da Casa" saiu em 02/10/2026: o vídeo de tutorial da
           tela já explica o que cada coisa faz. */}
+
+      {adminSemLoja && (
+        <div style={{ padding: "1rem 1.25rem", background: "#FFF7E6", border: "1.5px solid #FDE68A", borderRadius: 12, margin: "1rem 0", color: "#92400E", fontWeight: 600 }}>
+          Escolha uma loja no seletor do menu ao lado para ver e editar o cardápio dela.
+        </div>
+      )}
 
       {products.length === 0 && user.role !== "ADMIN" ? (
         <div
