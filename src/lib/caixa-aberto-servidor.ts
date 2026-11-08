@@ -117,8 +117,11 @@ _Ass: Seu Assistente FireHub 🔥_`,
 
     // "Como hoje": entra, e o dono fica sabendo — uma vez por turno. A vez
     // (lib/vez.ts) com dono novo a cada chamada é o intervalo entre avisos;
-    // banco fora = sem aviso, para não virar um por pedido.
-    if (await pegarVez(`aviso-vendendo-caixa-fechado:${lojaId}`, INTERVALO_DO_AVISO_MS, { dono: randomUUID(), seFalhar: false })) {
+    // banco fora = sem aviso, para não virar um por pedido. Só para loja que
+    // já usou o caixa alguma vez: quem nunca abriu caixa não trabalha com ele
+    // e receberia um aviso por dia sem sentido.
+    const usaCaixa = await prisma.cashSession.findFirst({ where: { franchiseeId: lojaId }, select: { id: true } });
+    if (usaCaixa && await pegarVez(`aviso-vendendo-caixa-fechado:${lojaId}`, INTERVALO_DO_AVISO_MS, { dono: randomUUID(), seFalhar: false })) {
       void avisarDono(
         lojaId,
         "vendendo_com_caixa_fechado",
