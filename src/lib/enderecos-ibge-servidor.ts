@@ -23,7 +23,7 @@ import { executarDDL } from "./ddl-do-boot";
 import { DDL_DO_IBGE } from "./enderecos-ibge-ddl";
 import {
   acharNoIbge,
-  bairroDoEnderecoMaisPerto,
+  enderecoDoPontoNoIbge,
   bairroDoPonto,
   casamentoDoNome,
   mesmoBairro,
@@ -34,6 +34,7 @@ import {
   primeiroPedaco,
   separarLogradouro,
   type BairroDaMalha,
+  type EnderecoDoPonto,
   type Ponto,
   type RuaDoIbge,
 } from "./enderecos-ibge";
@@ -229,57 +230,63 @@ export async function enderecoNoIbge(p: PedidoAoIbge): Promise<AchadoNoIbgeParaO
   }
 }
 
-// ── O bairro do ponto (GPS/pino), pelo endereço do IBGE mais perto ─────────
+// ── O endereço do ponto (GPS/pino), pelo endereço do IBGE mais perto ───────
 
-type PontosDoMunicipio = Pick<RuaDoIbge, "bairro" | "lats" | "lngs">[];
+type PontosDoMunicipio = Pick<RuaDoIbge, "tipo" | "nome" | "chave" | "bairro" | "numeros" | "lats" | "lngs">[];
 const pontosDosMunicipios = new Map<number, { voo: Promise<PontosDoMunicipio>; exp: number }>();
 
-/** Todos os pontos do município (Cabo Frio: 148 mil, ~2 MB), uma vez a cada 6 h por processo. */
+/** Todos os pontos do município (Cabo Frio: 148 mil, ~3 MB), uma vez a cada 6 h por processo. */
 function pontosDoMunicipio(codigo: number): Promise<PontosDoMunicipio> {
   const guardado = pontosDosMunicipios.get(codigo);
   if (guardado && guardado.exp > Date.now()) return guardado.voo;
   const voo = prisma
-    .$queryRawUnsafe<{ bairro: string; lats: number[]; lngs: number[] }[]>(
-      `SELECT "bairro", "lats", "lngs" FROM "IbgeRua" WHERE "municipio" = $1`,
+    .$queryRawUnsafe<{ tipo: string; nome: string; chave: string; bairro: string; numeros: number[]; lats: number[]; lngs: number[] }[]>(
+      `SELECT "tipo", "nome", "chave", "bairro", "numeros", "lats", "lngs" FROM "IbgeRua" WHERE "municipio" = $1`,
       codigo,
     )
-    .then((linhas) => linhas.map((l) => ({ bairro: l.bairro, lats: l.lats.map(Number), lngs: l.lngs.map(Number) })));
+    .then((linhas) =>
+      linhas.map((l) => ({ tipo: l.tipo, nome: l.nome, chave: l.chave, bairro: l.bairro, numeros: l.numeros.map(Number), lats: l.lats.map(Number), lngs: l.lngs.map(Number) })),
+    );
   pontosDosMunicipios.set(codigo, { voo, exp: Date.now() + VALIDADE_DO_INDICE_MS });
   voo.catch(() => pontosDosMunicipios.delete(codigo)); // falha não fica guardada
   return voo;
 }
 
+/** `municipioTemBase`: a cidade tem a base do IBGE — aí o texto do ponto NÃO cai no OSM, mesmo com os campos null. */
+export type EnderecoDoPontoNoIbge = EnderecoDoPonto & { municipioTemBase: boolean };
+
 /**
- * O bairro OFICIAL do ponto do cliente (GPS, pino): o polígono da malha do
- * Censo quando o município tem, senão a localidade do CNEFE do endereço mais
- * perto (até 200 m). null = município não importado, nenhum endereço perto,
- * banco lento — quem chamou segue com Correios/mapa como antes.
+ * Rua, número e bairro OFICIAIS do ponto do cliente (GPS, pino) — regra em
+ * enderecoDoPontoNoIbge (lib/enderecos-ibge.ts): o bairro da malha do Censo
+ * ou a localidade do endereço do CNEFE mais perto (200 m), a rua só do
+ * endereço colado no ponto (70 m). Município sem base: `municipioTemBase`
+ * false e quem chamou segue com Correios/OSM como antes. Com base e o banco
+ * lento ou com erro: campos null e `municipioTemBase` true (o cliente digita).
  *
  * Divinos (Cabo Frio, 07/11/2026): o reverse do OSM chama de "Gamboa" e
  * "Vila Rainha da Sucata" o que o IBGE (e o cliente) chamam de Monte Alegre e
  * Boca do Mato; esse nome ia para o texto do pedido.
  */
-export async function bairroNoIbgePeloPonto(p: { ponto: Ponto; cidade: string; uf?: string | null; textoDoCliente?: string | null }): Promise<string | null> {
-  const trabalho = (async () => {
-    if (!/^postgres/i.test(process.env.DATABASE_URL || "")) return null;
+export async function enderecoNoIbgePeloPonto(p: { ponto: Ponto; cidade: string; uf?: string | null }): Promise<EnderecoDoPontoNoIbge> {
+  const vazio: EnderecoDoPonto = { rua: null, numero: null, bairro: null };
+  if (!/^postgres/i.test(process.env.DATABASE_URL || "")) return { ...vazio, municipioTemBase: false };
+  let municipioTemBase = false;
+  const trabalho = (async (): Promise<EnderecoDoPonto> => {
     const codigo = await municipioImportado(p.cidade, p.uf);
-    if (!codigo) return null;
+    if (!codigo) return vazio;
+    municipioTemBase = true;
     const m = await doMunicipio(codigo);
-    if (!m) return null;
-    const daMalha = m.malha.length > 0 ? bairroDoPonto(p.ponto, m.malha) : null;
-    let nome = daMalha;
-    if (!nome) {
-      nome = bairroDoEnderecoMaisPerto(p.ponto, await pontosDoMunicipio(codigo))?.bairro ?? null;
-    }
-    return nome ? nomeComAcento(nome, p.textoDoCliente) : null;
+    const daMalha = m && m.malha.length > 0 ? bairroDoPonto(p.ponto, m.malha) : null;
+    return enderecoDoPontoNoIbge(p.ponto, await pontosDoMunicipio(codigo), daMalha);
   })();
   let relogio: ReturnType<typeof setTimeout> | undefined;
-  const prazo = new Promise<null>((r) => { relogio = setTimeout(() => r(null), PRAZO_DO_IBGE_MS); });
+  const prazo = new Promise<EnderecoDoPonto>((r) => { relogio = setTimeout(() => r(vazio), PRAZO_DO_IBGE_MS); });
   try {
-    return await Promise.race([trabalho, prazo]);
+    const e = await Promise.race([trabalho, prazo]);
+    return { ...e, municipioTemBase };
   } catch (e: any) {
-    console.warn(`[IBGE] bairro do ponto falhou, segue o mapa: ${e?.message}`);
-    return null;
+    console.warn(`[IBGE] endereço do ponto falhou: ${e?.message}`);
+    return { ...vazio, municipioTemBase };
   } finally {
     clearTimeout(relogio);
     trabalho.catch(() => undefined);

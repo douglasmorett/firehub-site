@@ -251,17 +251,42 @@ export function enderecoDoReverso(address: unknown): { rua: string; numero: stri
   };
 }
 
+/** O que um ponto diz do endereço: rua, número e bairro (null/"" = não sabe). */
+export type EnderecoDoPonto = { rua?: string | null; numero?: string | null; bairro?: string | null };
+
 /**
- * O bairro que o GPS/pino escreve na tela — ou null para deixar o campo como
- * está. O bairro DIGITADO pelo cliente nunca é trocado: o do ponto é palpite
- * de mapa. Divinos (Cabo Frio, 07/11/2026): o pedido 29 saiu "Rua Monte
- * Alegre, 99 - Gamboa" para quem mora no Monte Alegre — o reverse do OSM
- * chama a região inteira de "Gamboa". Com o campo vazio, vale o bairro do
- * IBGE do ponto (/api/bairro-do-ponto) antes do nome do mapa.
+ * O que o GPS/pino escreve na tela: só os campos devolvidos mudam.
+ *
+ * - Na cidade com a base do IBGE (`ibge.municipioTemBase`), o texto vem SÓ do
+ *   IBGE (/api/endereco-do-ponto) — campo que o IBGE não sabe fica como está
+ *   (vazio = o cliente digita), nunca o nome do OSM. Fora dela, o do mapa
+ *   (reverse do OSM + Correios), como sempre.
+ * - Rua e número: `sobrescrever` (o "usar minha localização") troca o que
+ *   estava digitado; o pino só preenche o vazio.
+ * - Bairro: o DIGITADO nunca é trocado — o do ponto é palpite.
+ *
+ * Divinos (Cabo Frio, 07/11/2026): o pedido 29 saiu "Rua Monte Alegre, 99 -
+ * Gamboa" para quem mora no Monte Alegre — o reverse do OSM chama a região
+ * inteira de "Gamboa".
  */
-export function bairroDoPontoNaTela(digitado: unknown, doIbge: string | null | undefined, doMapa: string | null | undefined): string | null {
-  if (String(digitado ?? "").trim()) return null;
-  return String(doIbge || "").trim() || String(doMapa || "").trim() || null;
+export function enderecoDoPontoNaTela(
+  digitado: EnderecoDigitado,
+  opcoes: { sobrescrever: boolean },
+  ibge: (EnderecoDoPonto & { municipioTemBase?: boolean }) | null,
+  mapa: EnderecoDoPonto | null,
+): { street?: string; number?: string; neighborhood?: string } {
+  const fonte = ibge?.municipioTemBase ? ibge : mapa;
+  if (!fonte) return {};
+  const vazio = (v: unknown) => !String(v ?? "").trim();
+  const pode = (campo: unknown) => opcoes.sobrescrever || vazio(campo);
+  const rua = String(fonte.rua ?? "").trim();
+  const numero = String(fonte.numero ?? "").trim();
+  const bairro = String(fonte.bairro ?? "").trim();
+  const out: { street?: string; number?: string; neighborhood?: string } = {};
+  if (rua && pode(digitado.street)) out.street = rua;
+  if (numero && pode(digitado.number)) out.number = numero;
+  if (bairro && vazio(digitado.neighborhood)) out.neighborhood = bairro;
+  return out;
 }
 
 /**

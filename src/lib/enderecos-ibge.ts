@@ -498,6 +498,25 @@ export function bairroMaisPerto(trechos: RuaDoIbge[], p: Ponto): string {
  */
 export const BAIRRO_PELO_PONTO_KM = 0.2;
 
+/** O endereço do IBGE mais perto do ponto, a até `maxKm` (null = nenhum). */
+export function enderecoMaisPerto<T extends Pick<RuaDoIbge, "lats" | "lngs">>(
+  p: Ponto,
+  trechos: T[],
+  maxKm: number,
+): { trecho: T; i: number; km: number } | null {
+  // Corte barato em graus antes da conta (1° ≈ 111 km; folga para a longitude).
+  const grau = maxKm / 90;
+  let melhor: { trecho: T; i: number; km: number } | null = null;
+  for (const t of trechos) {
+    for (let i = 0; i < t.lats.length; i++) {
+      if (Math.abs(t.lats[i] - p.lat) > grau || Math.abs(t.lngs[i] - p.lng) > grau) continue;
+      const km = distanciaKm(p, { lat: t.lats[i], lng: t.lngs[i] });
+      if (km <= maxKm && (!melhor || km < melhor.km)) melhor = { trecho: t, i, km };
+    }
+  }
+  return melhor;
+}
+
 /**
  * O bairro do ponto pelo endereço do IBGE mais perto (a localidade do CNEFE
  * dele), quando há um a até `maxKm`. Divinos (Cabo Frio, pedido 29 de
@@ -509,17 +528,41 @@ export function bairroDoEnderecoMaisPerto(
   trechos: Pick<RuaDoIbge, "bairro" | "lats" | "lngs">[],
   maxKm = BAIRRO_PELO_PONTO_KM,
 ): { bairro: string; km: number } | null {
-  // Corte barato em graus antes da conta (1° ≈ 111 km; folga para a longitude).
-  const grau = maxKm / 90;
-  let melhor: { bairro: string; km: number } | null = null;
-  for (const t of trechos) {
-    for (let i = 0; i < t.lats.length; i++) {
-      if (Math.abs(t.lats[i] - p.lat) > grau || Math.abs(t.lngs[i] - p.lng) > grau) continue;
-      const km = distanciaKm(p, { lat: t.lats[i], lng: t.lngs[i] });
-      if (km <= maxKm && (!melhor || km < melhor.km)) melhor = { bairro: t.bairro, km };
-    }
-  }
-  return melhor;
+  const m = enderecoMaisPerto(p, trechos, maxKm);
+  return m ? { bairro: m.trecho.bairro, km: m.km } : null;
+}
+
+/** A rua só sai do endereço do IBGE colado no ponto: a rua de trás fica a ~80 m. */
+export const RUA_PELO_PONTO_KM = 0.07;
+/** O número só como sugestão da casa do lado (o GPS erra 20–30 m). */
+export const NUMERO_PELO_PONTO_KM = 0.03;
+
+export type EnderecoDoPonto = { rua: string | null; numero: string | null; bairro: string | null };
+
+/**
+ * Rua, número e bairro do ponto do cliente (GPS, pino) só pela base do IBGE —
+ * na cidade importada o texto do pedido não usa o OSM. Cada campo só sai com
+ * o endereço do IBGE perto o bastante; senão fica null (o cliente digita).
+ * `bairroDaMalha` = o polígono do Censo onde o ponto cai, quando a cidade tem.
+ *
+ *   Divinos #29 (-22.85774, -42.03045) → "Travessa Ernesto Cardoso da Fonseca",
+ *   97, "Monte Alegre" (o OSM dizia "Gamboa").
+ */
+export function enderecoDoPontoNoIbge(
+  p: Ponto,
+  trechos: Pick<RuaDoIbge, "tipo" | "nome" | "chave" | "bairro" | "numeros" | "lats" | "lngs">[],
+  bairroDaMalha?: string | null,
+): EnderecoDoPonto {
+  const m = enderecoMaisPerto(p, trechos, BAIRRO_PELO_PONTO_KM);
+  const localidade = m && m.trecho.bairro !== "SEM LOCALIDADE" ? m.trecho.bairro : null;
+  const bairro = bairroDaMalha || localidade;
+  const ruaPerto = m && m.km <= RUA_PELO_PONTO_KM && !NOME_GENERICO.test(m.trecho.chave) ? m.trecho : null;
+  const numero = ruaPerto && m!.km <= NUMERO_PELO_PONTO_KM && m!.trecho.numeros[m!.i] > 0 ? String(m!.trecho.numeros[m!.i]) : null;
+  return {
+    rua: ruaPerto ? nomeComAcento(`${ruaPerto.tipo} ${ruaPerto.nome}`) : null,
+    numero,
+    bairro: bairro ? nomeComAcento(bairro) : null,
+  };
 }
 
 // ── O BAIRRO PELO POLÍGONO (malha de bairros do Censo 2022) ────────────────

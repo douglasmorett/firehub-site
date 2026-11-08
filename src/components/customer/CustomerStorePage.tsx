@@ -49,7 +49,7 @@ import { avisoDoCep, buscarCep, cepFormatado, digitosDoCep } from "@/lib/cep";
 import { bairroComNomeDosCorreios } from "@/lib/bairro-dos-correios";
 import {
   assinaturaDaConsulta, avisoDoPontoSemEndereco, BOTAO_DO_GPS, carimboDoPonto, comoAbrirOMapa, consultaDaCotacao, criarSequenciadorDeCotacoes,
-  bairroDoPontoNaTela, enderecoDoReverso, entregaNoPedidoDoSite, gpsEhPreciso, lerRecusaDoPedido, lerRespostaDaCotacao, oQueFaltaParaFechar, painelDaEntrega, pontoValeParaEndereco,
+  enderecoDoPontoNaTela, enderecoDoReverso, entregaNoPedidoDoSite, gpsEhPreciso, lerRecusaDoPedido, lerRespostaDaCotacao, oQueFaltaParaFechar, painelDaEntrega, pontoValeParaEndereco,
   temOndeAbrirOMapa, temRuaOuBairro,
   type CotacaoNaTela, type EnderecoDigitado, type Ponto, type PontoDoCliente,
 } from "@/lib/entrega-no-checkout";
@@ -2371,45 +2371,49 @@ export default function CustomerStorePage({
     const endereco: EnderecoDigitado = { ...enderecoNaTela.current };
     let numeroDoMapa = false;
     let leuOMapa = false;
-    const pode = (campo: unknown) => opcoes.sobrescrever || !String(campo ?? "").trim();
-    // O bairro oficial do ponto (IBGE), junto com o mapa: null = sem base ou fora do ar.
-    const doIbge = fetch(`/api/bairro-do-ponto?franchiseeId=${encodeURIComponent(franchisee.id)}&lat=${ponto.lat}&lng=${ponto.lng}`)
+    // Sem prazo, um mapa lento prendia o "Localizando..." para sempre.
+    const prazo = () => typeof AbortSignal !== "undefined" && typeof (AbortSignal as any).timeout === "function"
+      ? (AbortSignal as any).timeout(4000) as AbortSignal
+      : undefined;
+    // Na cidade com a base do IBGE, rua e bairro saem SÓ dela: o OSM chama de
+    // "Gamboa" o Monte Alegre de Cabo Frio (enderecoDoPontoNaTela).
+    const ibge = await fetch(`/api/endereco-do-ponto?franchiseeId=${encodeURIComponent(franchisee.id)}&lat=${ponto.lat}&lng=${ponto.lng}`, { signal: prazo() })
       .then((r) => (r.ok ? r.json() : null))
-      .then((j) => (typeof j?.bairro === "string" ? j.bairro : null))
       .catch(() => null);
-    try {
-      // Sem prazo, um Nominatim lento prendia o "Localizando..." para sempre.
-      const prazo = typeof AbortSignal !== "undefined" && typeof (AbortSignal as any).timeout === "function"
-        ? (AbortSignal as any).timeout(4000) as AbortSignal
-        : undefined;
-      const rev = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${ponto.lat}&lon=${ponto.lng}&addressdetails=1`, {
-        headers: { "Accept-Language": "pt-BR" },
-        signal: prazo,
-      });
-      if (rev.ok) {
-        const revData = await rev.json();
-        leuOMapa = true;
-        // O bairro também vem de residential/quarter/hamlet: loteamento sem
-        // `suburb` fazia o GPS preciso ser jogado fora (enderecoDoReverso).
-        const { rua: road, numero: houseNum, bairro: bairroDoMapa } = enderecoDoReverso(revData?.address);
-        // O mapa diz "Vila Monte Alegre" onde os Correios e o cliente dizem
-        // "Monte Alegre" (Cabo Frio): o bairro na tela é o dos Correios
-        // quando é o mesmo lugar (lib/bairro-dos-correios.ts).
-        const a = revData?.address || {};
-        const neigh = await bairroComNomeDosCorreios(
-          bairroDoMapa, road, a.city || a.town || a.municipality || a.village || "", a["ISO3166-2-lvl4"] || a.state,
-        );
-        if (road && pode(endereco.street)) { setCustomerStreet(road); endereco.street = road; }
-        if (houseNum && pode(endereco.number)) { setCustomerNumber(houseNum); endereco.number = houseNum; numeroDoMapa = true; }
-        // O bairro digitado fica; vazio, o do IBGE vence o nome do mapa (bairroDoPontoNaTela).
-        const bairroNovo = bairroDoPontoNaTela(endereco.neighborhood, await doIbge, neigh);
-        if (bairroNovo && !isNeighborhoodType) { setCustomerNeighborhood(bairroNovo); endereco.neighborhood = bairroNovo; }
-      } else {
-        console.warn(`Reverse geocode HTTP ${rev.status}`);
+    let mapa: { rua: string; numero: string; bairro: string } | null = null;
+    if (ibge?.municipioTemBase) {
+      leuOMapa = true;
+    } else {
+      try {
+        const rev = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${ponto.lat}&lon=${ponto.lng}&addressdetails=1`, {
+          headers: { "Accept-Language": "pt-BR" },
+          signal: prazo(),
+        });
+        if (rev.ok) {
+          const revData = await rev.json();
+          leuOMapa = true;
+          // O bairro também vem de residential/quarter/hamlet: loteamento sem
+          // `suburb` fazia o GPS preciso ser jogado fora (enderecoDoReverso).
+          const { rua: road, numero: houseNum, bairro: bairroDoMapa } = enderecoDoReverso(revData?.address);
+          // O mapa diz "Vila Monte Alegre" onde os Correios e o cliente dizem
+          // "Monte Alegre": o bairro na tela é o dos Correios quando é o
+          // mesmo lugar (lib/bairro-dos-correios.ts).
+          const a = revData?.address || {};
+          const neigh = await bairroComNomeDosCorreios(
+            bairroDoMapa, road, a.city || a.town || a.municipality || a.village || "", a["ISO3166-2-lvl4"] || a.state,
+          );
+          mapa = { rua: road, numero: houseNum, bairro: neigh };
+        } else {
+          console.warn(`Reverse geocode HTTP ${rev.status}`);
+        }
+      } catch (e) {
+        console.warn("Reverse geocode timeout / failed:", e);
       }
-    } catch (e) {
-      console.warn("Reverse geocode timeout / failed:", e);
     }
+    const novo = enderecoDoPontoNaTela(endereco, opcoes, ibge, mapa);
+    if (novo.street) { setCustomerStreet(novo.street); endereco.street = novo.street; }
+    if (novo.number) { setCustomerNumber(novo.number); endereco.number = novo.number; numeroDoMapa = true; }
+    if (novo.neighborhood && !isNeighborhoodType) { setCustomerNeighborhood(novo.neighborhood); endereco.neighborhood = novo.neighborhood; }
     enderecoNaTela.current = endereco;
     return { endereco, numeroDoMapa, leuOMapa };
   };

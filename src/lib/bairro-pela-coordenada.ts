@@ -22,16 +22,19 @@
  * régua da linha BAIRRO (`camposDoEnderecoParaImpressao`). Endereço com bairro
  * não é tocado.
  *
- * O bairro, nesta ordem:
+ * Na cidade com a base do IBGE importada (Cabo Frio), o bairro é SÓ o do
+ * IBGE (lib/enderecos-ibge-servidor.ts, enderecoNoIbgePeloPonto) — ou o
+ * cadastrado da loja por bairro que casa com ele. O IBGE não achou (nenhum
+ * endereço a 200 m, banco lento): sem bairro, nunca o do OSM. Divinos, pedido
+ * 29 de 07/11/2026: o reverse do OSM chama de "Gamboa" o Monte Alegre inteiro.
+ *
+ * Nas outras cidades, nesta ordem:
  *   1. o bairro CADASTRADO da loja que entrega por bairro, quando um dos nomes
  *      do ponto (Correios ou mapa) casa com ele — o nome que a loja usa;
- *   2. o bairro do IBGE do ponto (lib/enderecos-ibge-servidor.ts,
- *      bairroNoIbgePeloPonto) no município importado: o reverse do OSM chama
- *      de "Gamboa" o Monte Alegre inteiro (Divinos, pedido 29 de 07/11/2026);
- *   3. o bairro dos Correios (ViaCEP) da rua do ponto, quando a rua tem um
+ *   2. o bairro dos Correios (ViaCEP) da rua do ponto, quando a rua tem um
  *      bairro só na cidade. O OSM chama de "Vila Porto do Carro"/"Gamboa" o que
  *      os Correios e o cliente chamam de Porto do Carro;
- *   4. o bairro do mapa, na ordem do checkout (enderecoDoReverso).
+ *   3. o bairro do mapa, na ordem do checkout (enderecoDoReverso).
  * Nada disso respondeu: o pedido segue como hoje, sem bairro.
  *
  * Onde fica: no próprio `customerAddress`, no formato que já funciona
@@ -169,8 +172,8 @@ export type BuscasDoBairro = {
   reverso(ponto: PontoDoCliente): Promise<unknown | null>;
   /** O bairro da rua nos Correios (um só na cidade), ou null. */
   correios?(rua: string, cidade: string, uf: string): Promise<string | null>;
-  /** O bairro oficial do ponto na base do IBGE do município, ou null. */
-  ibge?(ponto: PontoDoCliente, cidade: string, uf: string | null): Promise<string | null>;
+  /** O bairro oficial do ponto na base do IBGE da cidade da loja; `municipioTemBase` false = a cidade não tem base. */
+  ibge?(ponto: PontoDoCliente): Promise<{ municipioTemBase: boolean; bairro: string | null }>;
 };
 
 export type BairroDoPonto = { bairro: string; fonte: "zona-da-loja" | "ibge" | "correios" | "mapa" };
@@ -181,6 +184,21 @@ export async function bairroDoPonto(
   loja: LojaDoBairro,
   buscas: BuscasDoBairro,
 ): Promise<BairroDoPonto | null> {
+  // A cidade com a base do IBGE não pergunta ao mapa: o texto não usa o OSM.
+  if (buscas.ibge) {
+    let doIbge: { municipioTemBase: boolean; bairro: string | null } | null = null;
+    try {
+      doIbge = await buscas.ibge(ponto);
+    } catch {
+      doIbge = null; // não se sabe se a cidade tem base: segue como antes
+    }
+    if (doIbge?.municipioTemBase) {
+      if (!doIbge.bairro) return null;
+      const z = bairroPeloEndereco(doIbge.bairro, loja.deliveryZones, { tipo: loja.deliveryZoneType, cidades: [loja.city] });
+      return z ? { bairro: z.name, fonte: "zona-da-loja" } : { bairro: doIbge.bairro, fonte: "ibge" };
+    }
+  }
+
   let lido: PontoNoMapa | null = null;
   try {
     lido = lerPontoNoMapa(await buscas.reverso(ponto));
@@ -198,24 +216,13 @@ export async function bairroDoPonto(
     }
   }
 
-  let doIbge: string | null = null;
-  const cidadeDoIbge = lido.cidade || String(loja.city || "");
-  if (buscas.ibge && cidadeDoIbge) {
-    try {
-      doIbge = (await buscas.ibge(ponto, cidadeDoIbge, lido.uf)) || null;
-    } catch {
-      doIbge = null;
-    }
-  }
-
   // 1. O bairro cadastrado da loja (só loja por bairro responde).
-  const nomes = [doIbge, dosCorreios, ...lido.areas].filter((n): n is string => !!n);
+  const nomes = [dosCorreios, ...lido.areas].filter((n): n is string => !!n);
   for (const nome of nomes) {
     const z = bairroPeloEndereco(nome, loja.deliveryZones, { tipo: loja.deliveryZoneType, cidades: [loja.city, lido.cidade] });
     if (z) return { bairro: z.name, fonte: "zona-da-loja" };
   }
-  // 2. O IBGE. 3. Os Correios. 4. O mapa.
-  if (doIbge) return { bairro: doIbge, fonte: "ibge" };
+  // 2. Os Correios. 3. O mapa.
   if (dosCorreios) return { bairro: dosCorreios, fonte: "correios" };
   if (lido.bairroDoMapa) return { bairro: lido.bairroDoMapa, fonte: "mapa" };
   return null;
