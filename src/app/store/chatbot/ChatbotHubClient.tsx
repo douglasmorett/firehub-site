@@ -1660,6 +1660,12 @@ export default function ChatbotHubClient() {
                 titulo: "Passou do horário e o caixa não foi aberto",
                 detalhe: "15 minutos depois do horário de abrir, ninguém abriu o caixa. Um aviso por turno.",
               },
+              // Sai da própria abertura e do fechamento (api/cash-session).
+              {
+                id: "caixa_aberto_fechado",
+                titulo: "Caixa aberto e caixa fechado",
+                detalhe: "Na hora em que alguém abre ou fecha o caixa: a abertura vem com o troco; o fechamento, com a conferência (faltou, sobrou ou conferiu) e as vendas do turno.",
+              },
               {
                 id: "ifood_fechado",
                 titulo: "Loja fechada no iFood dentro do horário",
