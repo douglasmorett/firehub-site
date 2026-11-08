@@ -1,12 +1,12 @@
 // Tutorial 2 de 4 da tela de Cardápio (/store/cardapio): preço promocional e
-// preço por canal.
+// preço por canal. Refeito em 08/11/2026: o produto abre pela etiqueta do preço.
 //
 // A regra que este vídeo conta está em src/lib/preco-por-canal.ts: a promoção
 // é um desconto sobre o preço DE CADA canal, e só vale onde for menor que ele.
 // O formulário e o servidor ainda exigem que ela seja menor que o Preço de Venda.
 import { dormir } from "../motor/palco.mjs";
 import {
-  ROTA, PRONTA, linha, janela, lapis, campo, caixa,
+  ROTA, PRONTA, linha, janela, campo, caixa, etiquetaDoPreco,
   abrirEdicao, esperarFechar, fecharSemClicar, redigitar, rolarSePreciso, cenaFinal,
   abrirCardapioDoCliente, voltarAoPainel, semearCombos,
   assentar,
@@ -42,15 +42,17 @@ export default {
     },
     {
       capitulo: "Colocar em promoção",
-      fala: "Clique no lápis do produto. O Preço de Venda é o preço normal. Logo abaixo fica o Preço promocional.",
+      fala: "Clique na etiqueta, ao lado do preço do produto: ele abre direto na aba Preço. O Preço de Venda é o preço normal. Logo abaixo fica o Preço promocional.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
-        await palco.destacar(lapis(p, PRODUTO), { folga: 5 });
-        await palco.mover(lapis(p, PRODUTO), { ms: 700 });
+        await palco.rolarAte(linha(p, PRODUTO), { bloco: "center" });
+        await palco.destacar(etiquetaDoPreco(p, PRODUTO), { folga: 5 });
+        await palco.mover(etiquetaDoPreco(p, PRODUTO), { ms: 700 });
         await ctx.ate(0.22);
         await palco.apagarDestaque();
-        await abrirEdicao(palco, PRODUTO);
-        await palco.camera([campo.nome(p), campo.preco(p), campo.faixaDaPromo(p)], { zoomMax: 1.6, margem: 36 });
+        await palco.clicar(etiquetaDoPreco(p, PRODUTO));
+        await campo.preco(p).waitFor({ state: "visible", timeout: 8000 });
+        await palco.camera([campo.preco(p), campo.faixaDaPromo(p)], { zoomMax: 1.6, margem: 36 });
         await ctx.ate(0.4);
         await palco.destacar(campo.preco(p), { folga: 8 });
         await palco.mover(campo.preco(p), { ms: 500 });
@@ -102,7 +104,7 @@ export default {
         await esperarFechar(palco);
         const selo = linha(p, PRODUTO).getByText("PROMO", { exact: true });
         await selo.waitFor({ state: "visible", timeout: 10_000 });
-        await rolarSePreciso(palco, ALTURA_DA_LISTA);
+        await palco.rolarAte(linha(p, PRODUTO), { bloco: "center" });
         await palco.camera(linha(p, PRODUTO), { zoomMax: 1.2, margem: 20 });
         await palco.destacar(selo.locator("xpath=.."), { folga: 8 });
         await palco.mover(selo, { ms: 600 });
@@ -143,11 +145,12 @@ export default {
     },
     {
       capitulo: "Preço por canal",
-      fala: "Agora o preço por canal. No lápis do produto, abra Preço diferente por canal.",
+      fala: "Agora o preço por canal. Na etiqueta do produto, abra Preço diferente por canal.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
-        await palco.rolarPagina(ALTURA_DA_LISTA);
-        await abrirEdicao(palco, PRODUTO);
+        await palco.rolarAte(linha(p, PRODUTO), { bloco: "center" });
+        await palco.clicar(etiquetaDoPreco(p, PRODUTO));
+        await campo.preco(p).waitFor({ state: "visible", timeout: 8000 });
         await ctx.ate(0.5);
         await palco.destacar(abaDeCanais(p), { folga: 4 });
         await ctx.ate(0.72);
@@ -214,7 +217,7 @@ export default {
         // a linha ainda encolhe e o clique seguinte cai fora do lugar.
         await linha(p, PRODUTO).getByText("PROMO", { exact: true }).waitFor({ state: "hidden", timeout: 15_000 });
         await dormir(300);
-        await rolarSePreciso(palco, ALTURA_DA_LISTA);
+        await palco.rolarAte(linha(p, PRODUTO), { bloco: "center" });
         const preco = linha(p, PRODUTO).getByText("R$ 27,00");
         await preco.waitFor({ state: "visible", timeout: 10_000 });
         await palco.destacar(preco, { folga: 8 });
@@ -228,7 +231,7 @@ export default {
       fala: "Em combo e em pizza, quando o preço está nas opções, o preço por canal fica junto delas. No formulário do combo, abra Preço diferente por canal nas opções: cada opção ganha os três campos.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
-        await abrirEdicao(palco, COMBO);
+        await abrirEdicao(palco, COMBO, "O que o combo leva");
         const aba = janela(p).getByRole("button", { name: /Preço diferente por canal nas opções/ });
         await palco.rolarAte(aba, { bloco: "start" });
         await ctx.ate(0.4);

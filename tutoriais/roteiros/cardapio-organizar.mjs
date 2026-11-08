@@ -9,7 +9,7 @@ import { dormir } from "../motor/palco.mjs";
 import {
   ROTA, PRONTA, linha, cabecalho, janela, canal, campo, bloco,
   abrirEdicao, esperarFechar, rolarSePreciso, rolarPaginaAte, cenaFinal,
-  assentar,
+  assentar, peloMenu, abaDoFormulario,
 } from "./_cardapio-comum.mjs";
 
 const NOVA = "Sobremesas";
@@ -169,11 +169,13 @@ export default {
     },
     {
       capitulo: "Dias da semana",
-      fala: "Prato que só sai em alguns dias? No lápis do produto, em Dias de Disponibilidade, clique em Dias Específicos e deixe ligados só os dias em que ele aparece no cardápio.",
+      fala: "Prato que só sai em alguns dias? Nos três pontinhos do produto, clique em Dias e horário. Em Dias de Disponibilidade, clique em Dias Específicos e deixe ligados só os dias em que ele aparece no cardápio.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
-        await ctx.ate(0.12);
-        await abrirEdicao(palco, PRODUTO);
+        await ctx.ate(0.08);
+        await peloMenu(palco, PRODUTO, "Dias e horário");
+        await janela(p).waitFor({ state: "visible", timeout: 8000 });
+        await dormir(350);
         const dias = bloco(p, "Dias de Disponibilidade no Cardápio");
         await palco.rolarAte(dias, { bloco: "center" });
         await palco.camera(dias, { zoomMax: 1.5, margem: 40 });
@@ -191,11 +193,14 @@ export default {
     },
     {
       capitulo: "Etiquetas e destaque",
-      fala: "Logo acima ficam as Tags do Produto, como Novo e Mais Vendido. Marque as que quiser e salve: elas aparecem no cardápio do cliente, e também aqui na lista, embaixo do nome do produto.",
+      fala: "Na aba Sobre o produto ficam as Tags, como Novo e Mais Vendido. Marque as que quiser e salve: elas aparecem no cardápio do cliente, e também aqui na lista, embaixo do nome do produto.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
-        const tags = bloco(p, "Tags do Produto");
         await palco.cameraAberta({ ms: 300 });
+        await palco.rolarAte(abaDoFormulario(p, "Sobre o produto"), { bloco: "center" });
+        await palco.clicar(abaDoFormulario(p, "Sobre o produto"));
+        const tags = bloco(p, "Tags do Produto");
+        await tags.waitFor({ state: "visible", timeout: 5000 });
         await palco.rolarAte(tags, { bloco: "center" });
         await palco.camera(tags, { zoomMax: 1.5, margem: 40 });
         await palco.destacar(tags, { folga: 4 });
@@ -217,17 +222,13 @@ export default {
       },
     },
     {
-      fala: "E o botão Destacar põe o produto nos Destaques da Casa, no topo do cardápio do cliente.",
+      fala: "E Destacar na vitrine, também nos três pontinhos, põe o produto nos Destaques da Casa, no topo do cardápio do cliente.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
-        const destacar = linha(p, PRODUTO).getByRole("button", { name: /Destacar/ });
         await palco.camera(linha(p, PRODUTO), { zoomMax: 1.3, margem: 30 });
-        await palco.destacar(destacar, { folga: 5 });
-        await palco.mover(destacar, { ms: 600 });
-        await ctx.ate(0.4);
-        await palco.apagarDestaque();
-        await palco.clicar(destacar);
-        const destacado = linha(p, PRODUTO).getByRole("button", { name: /Destacado/ });
+        await ctx.ate(0.25);
+        await peloMenu(palco, PRODUTO, "Destacar na vitrine");
+        const destacado = linha(p, PRODUTO).getByText(/Destaque/).first();
         await destacado.waitFor({ state: "visible", timeout: 10_000 });
         await palco.destacar(destacado, { folga: 5 });
         await ctx.ate(1);
@@ -263,15 +264,52 @@ export default {
       },
     },
     {
-      fala: "E Pausar categoria pausa de uma vez todos os produtos dela. A tela pede confirmação antes.",
+      fala: "E o botão de pausar, no cabeçalho da categoria, pausa de uma vez todos os produtos dela. A tela pede confirmação antes. Renomear, mudar de lugar e excluir a categoria ficam nos três pontinhos ao lado.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
-        const botao = cabecalho(p, "Pizzas").getByRole("button", { name: /Pausar categoria/ });
+        const botao = cabecalho(p, "Pizzas").locator('button[title="Pausar todos os produtos desta categoria"]');
         await palco.camera(cabecalho(p, "Pizzas"), { zoomMax: 1.4, margem: 40 });
         await palco.destacar(botao, { folga: 6 });
         await palco.mover(botao, { ms: 700 });
         await ctx.ate(1);
         await dormir(300);
+        await palco.apagarDestaque();
+        await palco.cameraAberta({ ms: 400 });
+      },
+    },
+    {
+      capitulo: "Ver por canal",
+      fala: "Para conferir um canal só, use estes filtros: Delivery, Totem, Mesa ou Balcão. O produto que não sai naquele canal fica apagado, com o botão para ativar ali mesmo, sem mexer nos outros canais.",
+      acao: async (palco, ctx) => {
+        const p = palco.pagina;
+        const totem = p.getByRole("button", { name: /^🖥 Totem$/ });
+        await palco.rolarAte(totem, { bloco: "center" });
+        const todos = p.getByRole("button", { name: "Todos os canais", exact: true });
+        await palco.destacar([todos, p.getByRole("button", { name: /Balcão$/ }).first()], { folga: 6 });
+        await palco.mover(totem, { ms: 600 });
+        await ctx.ate(0.3);
+        await palco.apagarDestaque();
+        await palco.clicar(totem);
+        await ctx.ate(0.9);
+        await palco.clicar(todos);
+        await ctx.ate(1);
+      },
+    },
+    {
+      capitulo: "Código PDV e iFood",
+      fala: "Na aba PDV fica o número de cada produto. Digite esse número no campo Código PDV do iFood, e o pedido do iFood já entra ligado ao produto certo. E em Vincular itens do iFood e 99, você diz qual produto seu é cada item que chegou com outro nome.",
+      acao: async (palco, ctx) => {
+        const p = palco.pagina;
+        const pdv = p.getByRole("link", { name: /PDV/ }).first();
+        const vincular = p.getByRole("link", { name: /Vincular itens do iFood e 99/ });
+        await palco.rolarAte(pdv, { bloco: "center" });
+        await palco.camera([pdv, vincular], { zoomMax: 1.4, margem: 40 });
+        await palco.destacar(pdv, { folga: 6 });
+        await palco.mover(pdv, { ms: 600 });
+        await ctx.ate(0.5);
+        await palco.destacar(vincular, { folga: 6 });
+        await palco.mover(vincular, { ms: 600 });
+        await ctx.ate(1);
         await palco.apagarDestaque();
         await palco.cameraAberta({ ms: 400 });
       },

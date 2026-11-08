@@ -69,15 +69,23 @@ export default {
       },
     },
     {
-      fala: "Escreva o nome do combo, o preço e a descrição, que o cliente lê embaixo do nome.",
+      fala: "Escreva o nome do combo e a descrição, que o cliente lê embaixo do nome, e clique em Continuar. No passo do preço, o valor do combo, e Continuar de novo.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
-        await palco.camera([campo.nome(p), campo.preco(p)], { zoomMax: 1.45, margem: 44 });
+        await palco.camera([campo.nome(p), campo.categoria(p)], { zoomMax: 1.45, margem: 44 });
         await palco.digitar(campo.nome(p), NOVO);
-        await palco.digitar(campo.preco(p), "59");
         await palco.cameraAberta({ ms: 300 });
         await palco.rolarAte(campo.descricao(p), { bloco: "center" });
         await palco.digitar(campo.descricao(p), "2 X-Burger, batata e refrigerante");
+        await ctx.ate(0.5);
+        await palco.rolarAte(campo.continuar(p), { bloco: "end" });
+        await palco.clicar(campo.continuar(p));
+        await campo.preco(p).waitFor({ state: "visible", timeout: 5000 });
+        await palco.digitar(campo.preco(p), "59");
+        await ctx.ate(0.85);
+        await palco.rolarAte(campo.continuar(p), { bloco: "end" });
+        await palco.clicar(campo.continuar(p));
+        await leva(p).waitFor({ state: "visible", timeout: 5000 });
         await ctx.ate(1);
       },
     },
@@ -140,10 +148,14 @@ export default {
       },
     },
     {
-      fala: "Pronto. Clique em Cadastrar Produto, e o combo entra na lista com o selo Combo.",
+      fala: "Pronto. Clique em Continuar, confira onde o combo aparece, e em Cadastrar Produto. Ele entra na lista com o selo Combo.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
         await palco.cameraAberta({ ms: 300 });
+        await palco.rolarAte(campo.continuar(p), { bloco: "end" });
+        await palco.clicar(campo.continuar(p));
+        await campo.salvar(p).waitFor({ state: "visible", timeout: 5000 });
+        await ctx.ate(0.4);
         await palco.rolarAte(campo.salvar(p), { bloco: "end" });
         await palco.clicar(campo.salvar(p));
         await esperarFechar(palco);
@@ -196,12 +208,12 @@ export default {
     },
     {
       capitulo: "Adicionais num lanche",
-      fala: "Adicional não precisa de combo: qualquer item pode ter perguntas. No lápis do X-Tudo, em Perguntas do produto, clique em Adicionar pergunta.",
+      fala: "Adicional não precisa de combo: qualquer item pode ter perguntas. Nos três pontinhos do X-Tudo, clique em Editar produto, abra a aba Perguntas e clique em Adicionar pergunta.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
         await rolarPaginaAte(palco, cabecalho(p, "Lanches"), 120);
-        await ctx.ate(0.3);
-        await abrirEdicao(palco, "X-Tudo");
+        await ctx.ate(0.2);
+        await abrirEdicao(palco, "X-Tudo", "Perguntas");
         await palco.rolarAte(perguntas(p), { bloco: "start" });
         await palco.destacar(janela(p).getByText("❓ Perguntas do produto"), { folga: 6 });
         await ctx.ate(0.8);
@@ -267,6 +279,33 @@ export default {
         await dormir(400);
         await palco.apagarDestaque();
         await palco.cameraAberta({ ms: 300 });
+      },
+    },
+    {
+      capitulo: "Aba Complementos",
+      fala: "Na aba Complementos ficam todas as perguntas do cardápio, uma em cada cartão, com o produto onde ela está, como no iFood. Em Criar grupo de complementos você monta uma pergunta e coloca em vários produtos de uma vez.",
+      acao: async (palco, ctx) => {
+        const p = palco.pagina;
+        await palco.rolarPagina(0);
+        const aba = p.getByRole("button", { name: /Complementos \(/ });
+        await palco.rolarAte(aba, { bloco: "center" });
+        await palco.destacar(aba, { folga: 5 });
+        await palco.mover(aba, { ms: 600 });
+        await ctx.ate(0.12);
+        await palco.apagarDestaque();
+        await palco.clicar(aba);
+        const titulo = p.getByText("Grupos de complementos", { exact: true });
+        await titulo.waitFor({ state: "visible", timeout: 8000 });
+        const cartao = p.getByText("Deseja adicionais?", { exact: true }).first();
+        await palco.rolarAte(titulo, { bloco: "start" });
+        await palco.destacar(cartao.locator("xpath=../.."), { folga: 4 });
+        await palco.mover(cartao, { ms: 600 });
+        await ctx.ate(0.62);
+        const criar = p.getByRole("button", { name: /Criar grupo de complementos/ });
+        await palco.destacar(criar, { folga: 6 });
+        await palco.mover(criar, { ms: 600 });
+        await ctx.ate(1);
+        await palco.apagarDestaque();
       },
     },
     cenaFinal("Para rever este vídeo, é só clicar em Tutorial, aqui no topo. Na janela do Tutorial ficam também os outros vídeos do cardápio."),

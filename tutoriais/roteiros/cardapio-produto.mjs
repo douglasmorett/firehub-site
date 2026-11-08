@@ -1,14 +1,15 @@
 // Tutorial 1 de 4 da tela de Cardápio (/store/cardapio): cadastrar, editar e
-// pausar um produto, e onde isso aparece para o cliente.
+// pausar um produto (cadastro em 3 passos, etiqueta do preço, menu ⋮), e onde
+// isso aparece para o cliente. Refeito em 08/11/2026 para a tela no modelo do iFood.
 //
 // Regra de todo roteiro: a fala só afirma o que a tela faz DE VERDADE nesta
 // gravação. Se a frase descreve um clique, o clique acontece na imagem.
 import { dormir, BASE } from "../motor/palco.mjs";
 import { LOJA } from "../ambiente/semente.mjs";
 import {
-  ROTA, PRONTA, linha, cabecalho, janela, lapis, pausar, botaoDaLinha, campo,
-  abrirEdicao, esperarFechar, redigitar, rolarSePreciso, cenaFinal, caixa, voltarAoPainel,
-  assentar, perguntaDoNovoItem, botaoOutroItem, botaoPizza,
+  ROTA, PRONTA, linha, cabecalho, janela, pausar, campo, maisAcoes, itemDoMenu, etiquetaDoPreco,
+  abaDoFormulario, esperarFechar, redigitar, rolarSePreciso, cenaFinal, caixa, voltarAoPainel,
+  assentar, perguntaDoNovoItem, botaoOutroItem, botaoPizza, fecharMenu,
 } from "./_cardapio-comum.mjs";
 
 const NOVO = "Misto Quente";
@@ -69,10 +70,10 @@ export default {
     },
     {
       capitulo: "Cadastrar um produto",
-      fala: "Para cadastrar, clique em Criar item, na categoria onde o produto vai ficar.",
+      fala: "Para cadastrar, clique em Adicionar produto, na categoria onde ele vai ficar.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
-        const criar = cabecalho(p, "Lanches").getByRole("button", { name: "+ Criar item" });
+        const criar = cabecalho(p, "Lanches").getByRole("button", { name: "+ Adicionar produto" });
         await palco.destacar(criar, { folga: 6 });
         await palco.mover(criar, { ms: 700 });
         await ctx.ate(0.55);
@@ -106,13 +107,29 @@ export default {
       },
     },
     {
-      fala: "Escreva o nome do produto e o preço de venda. A categoria já vem escolhida, e dá para trocar aqui.",
+      fala: "O cadastro tem três passos, como no iFood: sobre o produto, preço e onde ele aparece.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
-        await palco.camera([campo.nome(p), campo.preco(p), campo.categoria(p)], { zoomMax: 1.45, margem: 44 });
+        const passos = [abaDoFormulario(p, "Sobre o produto"), abaDoFormulario(p, "Disponível em")];
+        await palco.camera(passos, { zoomMax: 1.8, margem: 40 });
+        await palco.destacar(passos, { folga: 6 });
+        await palco.mover(abaDoFormulario(p, "Sobre o produto"), { ms: 600 });
+        await ctx.ate(0.6);
+        await palco.mover(abaDoFormulario(p, "Preço"), { ms: 400 });
+        await ctx.ate(0.8);
+        await palco.mover(abaDoFormulario(p, "Disponível em"), { ms: 400 });
+        await ctx.ate(1);
+        await palco.apagarDestaque();
+      },
+    },
+    {
+      capitulo: "Sobre o produto",
+      fala: "No primeiro passo, escreva o nome. A categoria já vem escolhida, e dá para trocar aqui.",
+      acao: async (palco, ctx) => {
+        const p = palco.pagina;
+        await palco.camera([campo.nome(p), campo.categoria(p)], { zoomMax: 1.45, margem: 44 });
         await palco.digitar(campo.nome(p), NOVO);
-        await palco.digitar(campo.preco(p), "14");
-        await ctx.ate(0.7);
+        await ctx.ate(0.6);
         await palco.destacar(campo.categoria(p), { folga: 6 });
         await palco.mover(campo.categoria(p), { ms: 600 });
         await ctx.ate(1);
@@ -120,7 +137,6 @@ export default {
       },
     },
     {
-      capitulo: "A foto",
       fala: "Para a foto, clique em Inserir Foto e escolha a imagem no seu computador.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
@@ -134,8 +150,7 @@ export default {
       },
     },
     {
-      capitulo: "Descrição e comanda",
-      fala: "Na descrição, conte o que vem no produto: é o texto que o cliente lê embaixo do nome. Sem nome, preço e descrição, o produto não salva.",
+      fala: "Na descrição, conte o que vem no produto: é o texto que o cliente lê embaixo do nome.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
         await palco.cameraAberta({ ms: 400 });
@@ -146,7 +161,7 @@ export default {
       },
     },
     {
-      fala: "Se for bebida, marque esta caixa: a comanda impressa sai com o aviso de bebida, para ninguém esquecer o item.",
+      fala: "Se for bebida, marque esta caixa: a comanda impressa sai com o aviso de bebida, para ninguém esquecer o item. Depois, clique em Continuar.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
         const bebida = janela(p).locator("label").filter({ hasText: "Sinalizar como BEBIDA" });
@@ -155,17 +170,44 @@ export default {
         await palco.camera(bebida, { zoomMax: 1.5, margem: 50 });
         await palco.destacar(bebida, { folga: 10 });
         await palco.mover(bebida.locator("input"), { ms: 700 });
-        await ctx.ate(1);
+        await ctx.ate(0.7);
         await palco.apagarDestaque();
+        await palco.cameraAberta({ ms: 300 });
+        await palco.rolarAte(campo.continuar(p), { bloco: "end" });
+        await palco.clicar(campo.continuar(p));
+        await campo.preco(p).waitFor({ state: "visible", timeout: 5000 });
+        await ctx.ate(1);
       },
     },
     {
-      fala: "Para terminar, clique em Cadastrar Produto. Ele já entra na lista.",
+      capitulo: "Preço",
+      fala: "No segundo passo vai o preço de venda. A promoção e o preço por canal também ficam aqui, e têm um vídeo só deles. Clique em Continuar.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
-        await palco.cameraAberta({ ms: 400 });
+        await palco.camera([campo.preco(p), campo.faixaDaPromo(p)], { zoomMax: 1.45, margem: 44 });
+        await palco.digitar(campo.preco(p), "14");
+        await ctx.ate(0.4);
+        await palco.destacar(campo.faixaDaPromo(p), { folga: 6 });
+        await ctx.ate(0.8);
+        await palco.apagarDestaque();
+        await palco.cameraAberta({ ms: 300 });
+        await palco.rolarAte(campo.continuar(p), { bloco: "end" });
+        await palco.clicar(campo.continuar(p));
+        await campo.salvar(p).waitFor({ state: "visible", timeout: 5000 });
+        await ctx.ate(1);
+      },
+    },
+    {
+      capitulo: "Onde aparece",
+      fala: "No último passo você escolhe os dias, o horário e os canais onde o produto aparece. Do jeito que vem, ele vende todo dia, em todos os canais. Clique em Cadastrar Produto, e ele já entra na lista.",
+      acao: async (palco, ctx) => {
+        const p = palco.pagina;
+        const canais = janela(p).locator("p").filter({ hasText: "Canais de Venda" }).first();
+        await palco.rolarAte(canais, { bloco: "center" });
+        await palco.destacar(canais.locator("xpath=.."), { folga: 6 });
+        await ctx.ate(0.6);
+        await palco.apagarDestaque();
         await palco.rolarAte(campo.salvar(p), { bloco: "end" });
-        await ctx.ate(0.3);
         await palco.clicar(campo.salvar(p));
         await esperarFechar(palco);
         await linha(p, NOVO).waitFor({ state: "visible", timeout: 10_000 });
@@ -177,38 +219,41 @@ export default {
     },
     {
       capitulo: "Editar um produto",
-      fala: "Para mudar qualquer coisa de um produto, clique no lápis da linha dele.",
+      fala: "Para mudar o preço, clique na etiqueta, ao lado do valor. O produto abre direto no passo do preço.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
+        const etiqueta = etiquetaDoPreco(p, NOVO);
+        await palco.rolarAte(linha(p, NOVO), { bloco: "center" });
         const botoes = caixa(1050, (await linha(p, NOVO).boundingBox()).y - 6, 300, 90);
         await palco.camera(botoes, { zoomMax: 1.8, margem: 60 });
-        await palco.destacar(lapis(p, NOVO), { folga: 5 });
-        await palco.mover(lapis(p, NOVO), { ms: 700 });
-        await ctx.ate(0.75);
+        await palco.destacar(etiqueta, { folga: 5 });
+        await palco.mover(etiqueta, { ms: 700 });
+        await ctx.ate(0.5);
         await palco.apagarDestaque();
         await palco.cameraAberta({ ms: 400 });
-        await abrirEdicao(palco, NOVO);
+        await palco.clicar(etiqueta);
+        await campo.preco(p).waitFor({ state: "visible", timeout: 8000 });
         await ctx.ate(1);
       },
     },
     {
-      fala: "O formulário abre preenchido. Troque o que precisar, o preço por exemplo, e clique em Salvar Alterações.",
+      fala: "Troque o valor e clique em Salvar Alterações. As outras partes do produto ficam nestas abas, aqui em cima.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
-        await palco.camera([campo.nome(p), campo.preco(p)], { zoomMax: 1.5, margem: 50 });
-        await ctx.ate(0.25);
+        await palco.camera([campo.preco(p)], { zoomMax: 1.5, margem: 50 });
         await redigitar(palco, campo.preco(p), "15");
-        await ctx.ate(0.6);
+        await ctx.ate(0.45);
         await palco.cameraAberta({ ms: 400 });
+        await palco.destacar([abaDoFormulario(p, "Sobre o produto"), abaDoFormulario(p, "Disponível em")], { folga: 6 });
+        await palco.mover(abaDoFormulario(p, "Perguntas"), { ms: 600 });
+        await ctx.ate(0.85);
+        await palco.apagarDestaque();
         await palco.rolarAte(campo.salvar(p), { bloco: "end" });
         await palco.clicar(campo.salvar(p));
         await ctx.ate(1);
       },
     },
     {
-      // A espera pelo servidor (fechar o formulário e a lista voltar com o
-      // preço novo) cai durante esta fala: numa cena só, quando o servidor de
-      // gravação demorava, sobrava tela parada depois da fala.
       fala: "Pronto: na lista, o produto já aparece com o preço novo.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
@@ -226,7 +271,7 @@ export default {
       acao: async (palco, ctx) => {
         const p = palco.pagina;
         const l = linha(p, "X-Tudo");
-        await rolarSePreciso(palco, ALTURA_DA_LISTA);
+        await palco.rolarAte(l, { bloco: "center" });
         await palco.camera([linha(p, "X-Bacon"), l], { zoomMax: 1.2, margem: 16 });
         await palco.destacar(pausar(p, "X-Tudo"), { folga: 5 });
         await palco.mover(pausar(p, "X-Tudo"), { ms: 700 });
@@ -243,14 +288,27 @@ export default {
       },
     },
     {
-      fala: "A lixeira é para excluir o produto. Se é só por um tempo, prefira pausar.",
+      capitulo: "Mais ações",
+      fala: "Nos três pontinhos ficam as outras ações: editar, duplicar, destacar na vitrine, ficha técnica, dias e horário, e excluir. Se é só por um tempo, prefira pausar em vez de excluir.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
-        const lixeira = botaoDaLinha(p, "X-Bacon", "Excluir produto");
-        await palco.destacar(lixeira, { folga: 5 });
-        await palco.mover(lixeira, { ms: 700 });
+        const menu = maisAcoes(p, "X-Bacon");
+        await palco.destacar(menu, { folga: 5 });
+        await palco.mover(menu, { ms: 600 });
+        await ctx.ate(0.15);
+        await palco.apagarDestaque();
+        await palco.clicar(menu);
+        const excluir = itemDoMenu(p, "X-Bacon", "Excluir produto");
+        await excluir.waitFor({ state: "visible", timeout: 5000 });
+        const editar = itemDoMenu(p, "X-Bacon", "Editar produto");
+        await palco.camera([editar, excluir], { zoomMax: 1.6, margem: 40 });
+        await palco.mover(editar, { ms: 500 });
+        await ctx.ate(0.75);
+        await palco.destacar(excluir, { folga: 4 });
+        await palco.mover(excluir, { ms: 500 });
         await ctx.ate(1);
         await palco.apagarDestaque();
+        await fecharMenu(palco);
         await palco.cameraAberta({ ms: 500 });
       },
     },

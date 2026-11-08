@@ -400,6 +400,25 @@ export default function MenuProductManager({
   const [criandoGrupo, setCriandoGrupo] = useState(false);
   /** O menu ⋮ aberto (id do produto ou "cat:<id>" da categoria), como na lista do iFood. */
   const [menuAberto, setMenuAberto] = useState<string | null>(null);
+  // O menu abre "por cima de tudo" (position fixed): dentro da linha ele era
+  // cortado pela caixa da categoria (overflow hidden) e, no último produto de
+  // cada categoria, os itens de baixo ficavam sem clique. Sem espaço embaixo,
+  // abre para cima.
+  const [posDoMenu, setPosDoMenu] = useState<React.CSSProperties>({});
+  const abrirMenu = (chave: string, e: React.MouseEvent<HTMLElement>) => {
+    if (menuAberto === chave) { setMenuAberto(null); return; }
+    const r = e.currentTarget.getBoundingClientRect();
+    const right = Math.max(8, window.innerWidth - r.right);
+    setPosDoMenu(window.innerHeight - r.bottom < 300 ? { bottom: window.innerHeight - r.top + 4, right } : { top: r.bottom + 4, right });
+    setMenuAberto(chave);
+  };
+  useEffect(() => {
+    if (!menuAberto) return;
+    const fechar = () => setMenuAberto(null);
+    window.addEventListener("scroll", fechar, { passive: true, capture: true });
+    window.addEventListener("resize", fechar);
+    return () => { window.removeEventListener("scroll", fechar, { capture: true }); window.removeEventListener("resize", fechar); };
+  }, [menuAberto]);
   const [mostrarOpcoesSemCombo, setMostrarOpcoesSemCombo] = useState(false);
   /**
    * Opção de combo pausada/reativada com 1 clique: o chip vira NA HORA, antes
@@ -4273,7 +4292,7 @@ export default function MenuProductManager({
                       <div style={{ position: "relative" }}>
                         <button
                           type="button"
-                          onClick={() => setMenuAberto(menuAberto === `cat:${cat.id}` ? null : `cat:${cat.id}`)}
+                          onClick={(e) => abrirMenu(`cat:${cat.id}`, e)}
                           style={{ padding: "6px 7px", borderRadius: "8px", border: "1.5px solid #CBD5E1", background: menuAberto === `cat:${cat.id}` ? "#F1F5F9" : "#FFF", color: "#334155", cursor: "pointer", display: "inline-flex", alignItems: "center" }}
                           title="Mais ações da categoria"
                         >
@@ -4282,7 +4301,7 @@ export default function MenuProductManager({
                         {menuAberto === `cat:${cat.id}` && (
                           <>
                             <div onClick={() => setMenuAberto(null)} style={{ position: "fixed", inset: 0, zIndex: 50 }} />
-                            <div style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 51, background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 12, boxShadow: "0 10px 30px rgba(15,23,42,0.15)", minWidth: 200, padding: 6, display: "flex", flexDirection: "column" }}>
+                            <div style={{ position: "fixed", ...posDoMenu, zIndex: 51, background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 12, boxShadow: "0 10px 30px rgba(15,23,42,0.15)", minWidth: 200, padding: 6, display: "flex", flexDirection: "column" }}>
                               {[
                                 { r: "✏️ Renomear categoria", f: () => setEditingCat({ id: cat.id, name: cat.name }) },
                                 { r: "⬆️ Mover para cima", f: () => handleMoveCategoryDirect(cat.name, "up"), off: catIdx === 0 },
@@ -4490,7 +4509,7 @@ export default function MenuProductManager({
                                 <div style={{ position: "relative" }}>
                                   <button
                                     type="button"
-                                    onClick={() => setMenuAberto(menuAberto === p.id ? null : p.id)}
+                                    onClick={(e) => abrirMenu(p.id, e)}
                                     className="btn btn-outline"
                                     style={{ padding: "4px 6px", fontSize: "0.72rem", borderRadius: "8px", background: menuAberto === p.id ? "#F1F5F9" : undefined }}
                                     title="Mais ações"
@@ -4500,7 +4519,7 @@ export default function MenuProductManager({
                                   {menuAberto === p.id && (
                                     <>
                                       <div onClick={() => setMenuAberto(null)} style={{ position: "fixed", inset: 0, zIndex: 50 }} />
-                                      <div style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 51, background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 12, boxShadow: "0 10px 30px rgba(15,23,42,0.15)", minWidth: 220, padding: 6, display: "flex", flexDirection: "column" }}>
+                                      <div style={{ position: "fixed", ...posDoMenu, zIndex: 51, background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 12, boxShadow: "0 10px 30px rgba(15,23,42,0.15)", minWidth: 220, padding: 6, display: "flex", flexDirection: "column" }}>
                                         {[
                                           { r: "✏️ Editar produto", f: () => openEdit(p) },
                                           { r: "📄 Duplicar", f: () => openDuplicate(p) },

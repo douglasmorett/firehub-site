@@ -197,6 +197,26 @@ export default {
       },
     },
     {
+      capitulo: "Massa",
+      fala: "Depois, a massa. Se o cliente escolhe entre tradicional, integral ou sem glúten, marque Pergunto a massa e diga quanto cada uma soma. Aqui, a pizzaria tem uma massa só: Não pergunto.",
+      acao: async (palco, ctx) => {
+        const p = palco.pagina;
+        await palco.clicar(continuar(p));
+        await passo(p).getByText("O cliente escolhe a massa?").waitFor({ state: "visible", timeout: 8000 });
+        const pergunto = passo(p).getByRole("button", { name: /Pergunto a massa/ });
+        const naoPergunto = passo(p).getByRole("button", { name: /Não pergunto/ });
+        await palco.camera([naoPergunto, pergunto], { zoomMax: 1.4, margem: 30 });
+        await ctx.ate(0.2);
+        await palco.destacar(pergunto, { folga: 4 });
+        await palco.mover(pergunto, { ms: 600 });
+        await ctx.ate(0.72);
+        await palco.apagarDestaque();
+        await palco.clicar(naoPergunto);
+        await ctx.ate(1);
+        await palco.cameraAberta({ ms: 300 });
+      },
+    },
+    {
       capitulo: "Conferir e salvar",
       fala: "Na última tela, confira a categoria, como cada pizza vai aparecer no cardápio, e o exemplo do meio a meio com os seus sabores. Depois, Cadastrar as pizzas.",
       acao: async (palco, ctx) => {

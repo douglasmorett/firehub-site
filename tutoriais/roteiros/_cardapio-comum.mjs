@@ -5,7 +5,7 @@ import { dormir, BASE } from "../motor/palco.mjs";
 import { LOJA } from "../ambiente/semente.mjs";
 
 export const ROTA = "store/cardapio";
-export const PRONTA = "text=Cardápio Completo";
+export const PRONTA = "text=Reordenar Cardápio";
 
 // ── onde está cada coisa ───────────────────────────────────────────────────
 /**
@@ -39,7 +39,14 @@ export const nomeDaCategoria = (p, nome) =>
 export const janela = (p) => p.locator('div[style*="max-height: 90vh"], div[style*="max-height:90vh"]').first();
 
 export const botaoDaLinha = (p, nome, titulo) => linha(p, nome).locator(`button[title="${titulo}"]`);
-export const lapis = (p, nome) => botaoDaLinha(p, nome, "Editar produto");
+/** O menu ⋮ da linha (como no iFood): editar, duplicar, destacar, ficha, dias e horário, excluir. */
+export const maisAcoes = (p, nome) => botaoDaLinha(p, nome, "Mais ações");
+/** Um item do menu ⋮ aberto, pelo texto ("Editar produto", "Excluir produto"…). */
+export const itemDoMenu = (p, nome, texto) => linha(p, nome).getByRole("button", { name: new RegExp(texto) });
+/** A etiqueta do preço: abre o produto direto na aba Preço. */
+export const etiquetaDoPreco = (p, nome) => botaoDaLinha(p, nome, "Mudar preço, promoção ou preço por canal");
+/** Compatibilidade: o "lápis" agora é o ⋮ (o Editar mora dentro dele). */
+export const lapis = maisAcoes;
 export const pausar = (p, nome) => linha(p, nome).locator('button[title="Pausar vendas"], button[title="Ativar vendas"]');
 export const canal = (p, nome, rotulo) => linha(p, nome).locator("button").filter({ hasText: new RegExp(`${rotulo}$`) }).first();
 
@@ -52,7 +59,9 @@ export const campo = {
   categoria: (p) => janela(p).locator("select.input-field").first(),
   custo: (p) => janela(p).getByPlaceholder("Ex: 4.50"),
   descricao: (p) => janela(p).locator("textarea"),
-  salvar: (p) => janela(p).getByRole("button", { name: /Salvar Alterações|Cadastrar Produto/ }),
+  salvar: (p) => janela(p).getByRole("button", { name: /Salvar Alterações|Cadastrar Produto|Cadastrar cópia/ }),
+  /** Cadastro novo anda em passos: Sobre o produto → Preço → Disponível em. */
+  continuar: (p) => janela(p).getByRole("button", { name: /Continuar/ }),
   cancelar: (p) => janela(p).getByRole("button", { name: "Cancelar", exact: true }),
 };
 
@@ -173,12 +182,35 @@ function rolagemFirme(palco) {
 }
 
 // ── gestos ─────────────────────────────────────────────────────────────────
-/** Abre o formulário de um produto pelo lápis e espera a janela. */
-export async function abrirEdicao(palco, nome) {
+/** A aba (ou o passo) do formulário: "Sobre o produto", "Preço", "Perguntas", "Disponível em", "O que o combo leva". */
+export const abaDoFormulario = (p, rotulo) => janela(p).getByRole("button", { name: new RegExp(`^([0-9] *)?(✓ *)?${rotulo}$`) }).first();
+
+/** Abre o menu ⋮ da linha e clica num item dele. */
+export async function peloMenu(palco, nome, texto) {
   const p = palco.pagina;
-  await palco.clicar(lapis(p, nome));
+  await palco.clicar(maisAcoes(p, nome));
+  const item = itemDoMenu(p, nome, texto);
+  await item.waitFor({ state: "visible", timeout: 5000 });
+  await dormir(250);
+  await palco.clicar(item);
+}
+
+/** Fecha um menu ⋮ aberto sem mexer a seta: o clique cai na película transparente que o menu põe atrás dele. */
+export async function fecharMenu(palco) {
+  await palco.pagina.evaluate(() => {
+    const pelicula = [...document.querySelectorAll("div")].find((d) => d.style.position === "fixed" && d.style.zIndex === "50" && d.style.inset === "0px");
+    pelicula?.click();
+  });
+  await dormir(250);
+}
+
+/** Abre o formulário de um produto pelo ⋮ › Editar produto e espera a janela. */
+export async function abrirEdicao(palco, nome, aba) {
+  const p = palco.pagina;
+  await peloMenu(palco, nome, "Editar produto");
   await janela(p).waitFor({ state: "visible", timeout: 8000 });
   await dormir(350);
+  if (aba) { await palco.clicar(abaDoFormulario(p, aba)); await dormir(300); }
 }
 
 /**
