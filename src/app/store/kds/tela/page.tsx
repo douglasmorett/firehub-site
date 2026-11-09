@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import TutorialDaTela from "@/components/TutorialDaTela";
 import { parseComboSelections } from "@/lib/parse-combo";
 import { nomeDoItem } from "@/lib/nome-do-item";
@@ -17,7 +18,7 @@ import {
   type KdsConfig,
 } from "@/lib/kds-telas";
 import { CHAVE_DA_ULTIMA_TELA, destinoDaTelaSemEtapa, ultimaTelaParaGuardar } from "@/lib/kds-ultima-tela";
-import { controleDoTecladoNumerico, focoProtegidoNoKds } from "@/lib/kds-teclado";
+import { baixaRecenteNoKds, chaveDaBaixaNoKds, controleDoTecladoNumerico, desfazerPeloTeclado, focoProtegidoNoKds } from "@/lib/kds-teclado";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -192,6 +193,7 @@ const MONO_FONT = `'Courier New', 'Consolas', 'SF Mono', monospace`;
 export default function KDSTelaPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { data: sessao } = useSession();
 
   const stage = searchParams.get("stage") as "production" | "finishing" | null;
   // ── QUEM SOU EU, PARA A BAIXA ───────────────────────────────────────────
@@ -394,10 +396,13 @@ export default function KDSTelaPage() {
   const [lastCompletedOrder, setLastCompletedOrder] = useState<{
     order: Order;
     previousStage: "production" | "finishing";
+    em: number;
+    escopo: string;
     /** Itens que a baixa da produção carimbou: é exatamente o que o desfazer apaga. */
     carimbados?: string[];
   } | null>(null);
   const [isUndoing, setIsUndoing] = useState(false);
+  const desfazendoRef = useRef(false);
 
   /**
    * Onde a baixa recente fica guardada entre recargas.
@@ -405,19 +410,23 @@ export default function KDSTelaPage() {
    * A chave leva a tela: duas telas de KDS no mesmo navegador (produção e
    * finalização) não podem oferecer uma à outra o desfazer da baixa alheia.
    */
-  const chaveDaBaixa = `firehub_kds_ultima_baixa_${stage || "x"}_${screenName || "x"}`;
-
-  // Meia hora. Passado isso, o pedido já saiu para o cliente e desfazer não é
-  // corrigir engano, é bagunçar o histórico do dia.
-  const VALIDADE_DA_BAIXA = 30 * 60 * 1000;
+  const contaDaBaixa = String((sessao?.user as { id?: string } | undefined)?.id || "");
+  // Mesmo cookie que /api/kds usa para distinguir a loja de "Todas as Lojas".
+  const visaoDaBaixa = typeof document === "undefined" ? "" :
+    (document.cookie.split(";").map((p) => p.trim()).find((p) => p.startsWith("firehub_active_store=")) || "").slice("firehub_active_store=".length);
+  const chaveDaBaixa = chaveDaBaixaNoKds(contaDaBaixa, visaoDaBaixa, stage || "", chaveDaTela, screenName);
+  const escopoAtualDaBaixaRef = useRef(chaveDaBaixa);
+  escopoAtualDaBaixaRef.current = chaveDaBaixa;
 
   useEffect(() => {
+    setLastCompletedOrder(null);
+    if (!chaveDaBaixa) return;
     try {
       const bruto = localStorage.getItem(chaveDaBaixa);
       if (!bruto) return;
       const salvo = JSON.parse(bruto);
       if (!salvo?.order?.id || !salvo?.previousStage) return;
-      if (!salvo.em || Date.now() - salvo.em > VALIDADE_DA_BAIXA) {
+      if (!baixaRecenteNoKds(salvo, chaveDaBaixa, stage, Date.now())) {
         localStorage.removeItem(chaveDaBaixa);
         return;
       }
@@ -425,13 +434,15 @@ export default function KDSTelaPage() {
         order: salvo.order,
         previousStage: salvo.previousStage,
         carimbados: Array.isArray(salvo.carimbados) ? salvo.carimbados : undefined,
+        em: salvo.em,
+        escopo: chaveDaBaixa,
       });
     } catch {
       // Navegador com armazenamento bloqueado: o botão volta a valer só nesta
       // sessão, que é exatamente o comportamento de antes. Nada quebra.
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chaveDaBaixa]);
+  }, [chaveDaBaixa, stage]);
 
   const [cashOpenedAt, setCashOpenedAt] = useState<Date | null>(null);
 
@@ -978,6 +989,7 @@ export default function KDSTelaPage() {
 
   const markAsPronto = useCallback(
     async (order: Order) => {
+      if (desfazendoRef.current) return;
       if (!stage) return;
       if (
         exitingOrderIdsRef.current.has(order.id) ||
@@ -1010,9 +1022,10 @@ export default function KDSTelaPage() {
 
       // Salva para poder desfazer a baixa caso tenha clicado por engano
       const previousStage = stage === "production" ? "production" : "finishing";
-      setLastCompletedOrder({ order, previousStage });
+      const baixa: NonNullable<typeof lastCompletedOrder> = { order, previousStage, em: Date.now(), escopo: chaveDaBaixa };
+      setLastCompletedOrder(baixa);
       try {
-        localStorage.setItem(chaveDaBaixa, JSON.stringify({ order, previousStage, em: Date.now() }));
+        if (chaveDaBaixa) localStorage.setItem(chaveDaBaixa, JSON.stringify(baixa));
       } catch { /* sem armazenamento, vale só nesta sessão */ }
 
       // Show toast
@@ -1057,7 +1070,7 @@ export default function KDSTelaPage() {
               if (Array.isArray(corpo?.carimbados)) {
                 const carimbados = corpo.carimbados.map((v: unknown) => String(v));
                 setLastCompletedOrder((atual) =>
-                  atual?.order.id === order.id ? { ...atual, carimbados } : atual,
+                  atual?.order.id === order.id && atual.escopo === chaveDaBaixa ? { ...atual, carimbados } : atual,
                 );
                 try {
                   const bruto = localStorage.getItem(chaveDaBaixa);
@@ -1067,7 +1080,7 @@ export default function KDSTelaPage() {
                   }
                 } catch { /* sem armazenamento, vale só nesta sessão */ }
               }
-              if (corpo?.aguardandoOutraTela) {
+              if (corpo?.aguardandoOutraTela && escopoAtualDaBaixaRef.current === chaveDaBaixa) {
                 const quem = Array.isArray(corpo.faltando) && corpo.faltando.length
                   ? corpo.faltando.join(", ")
                   : "outra tela";
@@ -1103,6 +1116,16 @@ export default function KDSTelaPage() {
       // pedido que voltasse para esta tela (desfeito em outro aparelho, pelo
       // painel) não saía mais com o toque.
       exitingOrderIdsRef.current.delete(order.id);
+      if (escopoAtualDaBaixaRef.current !== chaveDaBaixa) {
+        if (!success || faltamNaProducao) {
+          completedOrderIdsRef.current.delete(order.id);
+          try {
+            const salvo = JSON.parse(localStorage.getItem(chaveDaBaixa) || "null");
+            if (salvo?.order?.id === order.id) localStorage.removeItem(chaveDaBaixa);
+          } catch {}
+        }
+        return;
+      }
       setExitingOrderIds(new Set(exitingOrderIdsRef.current));
       geracaoRef.current++;
 
@@ -1111,8 +1134,11 @@ export default function KDSTelaPage() {
         // o aviso no cartão — e sem o "PRONTO!" nem o desfazer de uma baixa
         // que não houve.
         completedOrderIdsRef.current.delete(order.id);
-        setLastCompletedOrder((atual) => (atual?.order.id === order.id ? null : atual));
-        try { localStorage.removeItem(chaveDaBaixa); } catch {}
+        setLastCompletedOrder((atual) => (atual?.order.id === order.id && atual.escopo === chaveDaBaixa ? null : atual));
+        try {
+          const salvo = JSON.parse(localStorage.getItem(chaveDaBaixa) || "null");
+          if (salvo?.order?.id === order.id) localStorage.removeItem(chaveDaBaixa);
+        } catch {}
         lastJsonRef.current = "";
         setOrders((prev) => {
           if (prev.some((o) => o.id === order.id)) return prev;
@@ -1140,8 +1166,11 @@ export default function KDSTelaPage() {
         completedOrderIdsRef.current.delete(order.id);
         exitingOrderIdsRef.current.delete(order.id);
         setExitingOrderIds(new Set(exitingOrderIdsRef.current));
-        setLastCompletedOrder((atual) => (atual?.order.id === order.id ? null : atual));
-        try { localStorage.removeItem(chaveDaBaixa); } catch {}
+        setLastCompletedOrder((atual) => (atual?.order.id === order.id && atual.escopo === chaveDaBaixa ? null : atual));
+        try {
+          const salvo = JSON.parse(localStorage.getItem(chaveDaBaixa) || "null");
+          if (salvo?.order?.id === order.id) localStorage.removeItem(chaveDaBaixa);
+        } catch {}
         lastJsonRef.current = "";
         setToast({
           orderId: order.id,
@@ -1155,13 +1184,19 @@ export default function KDSTelaPage() {
       // Confirma busca atualizada
       fetchOrders();
     },
-    [stage, fetchOrders, esquecerConfirmacao],
+    [stage, fetchOrders, esquecerConfirmacao, chaveDaBaixa],
   );
 
   // ─── Desfazer ÚLTIMA baixa ──────────────────────────────────────────────────
 
   const undoLastCompletedOrder = useCallback(async () => {
-    if (!lastCompletedOrder || isUndoing) return;
+    if (!lastCompletedOrder || desfazendoRef.current || isUndoing) return;
+    if (!baixaRecenteNoKds(lastCompletedOrder, chaveDaBaixa, stage, Date.now())) {
+      setLastCompletedOrder(null);
+      try { if (chaveDaBaixa && lastCompletedOrder.escopo === chaveDaBaixa) localStorage.removeItem(chaveDaBaixa); } catch {}
+      return;
+    }
+    desfazendoRef.current = true;
     setIsUndoing(true);
 
     const targetAction =
@@ -1186,11 +1221,14 @@ export default function KDSTelaPage() {
       const emAndamento = baixasEmAndamentoRef.current.get(orderId);
       if (emAndamento) {
         const chegou = await emAndamento;
+        if (escopoAtualDaBaixaRef.current !== chaveDaBaixa) return;
         if (!chegou) {
           esquecerBaixa();
           return;
         }
       }
+      // A espera não pode atravessar uma troca de conta ou tela.
+      if (escopoAtualDaBaixaRef.current !== chaveDaBaixa) return;
       // Os carimbos podem ter chegado agora, com a resposta da baixa.
       let carimbados = lastCompletedOrder.carimbados;
       try {
@@ -1218,6 +1256,7 @@ export default function KDSTelaPage() {
         clearTimeout(timeoutId);
       }
       const corpo = await res.json().catch(() => null);
+      if (escopoAtualDaBaixaRef.current !== chaveDaBaixa) return;
 
       // ── SÓ DIZ QUE VOLTOU QUANDO VOLTOU ─────────────────────────────────
       // A resposta não era lida: com erro, a tela dizia "Restaurado!" e o
@@ -1249,12 +1288,14 @@ export default function KDSTelaPage() {
       geracaoRef.current++;
       await fetchOrders();
     } catch (err) {
+      if (escopoAtualDaBaixaRef.current !== chaveDaBaixa) return;
       console.error("Erro ao desfazer baixa KDS:", err);
       avisar(`#${restoredLabel}: sem conexão para desfazer. Toque de novo.`, "erro", 5000);
     } finally {
+      desfazendoRef.current = false;
       setIsUndoing(false);
     }
-  }, [lastCompletedOrder, isUndoing, fetchOrders, chaveDaBaixa, chaveDaTela]);
+  }, [lastCompletedOrder, isUndoing, fetchOrders, chaveDaBaixa, chaveDaTela, stage]);
 
   // ─── Keyboard support ──────────────────────────────────────────────────────
 
@@ -1298,19 +1339,13 @@ export default function KDSTelaPage() {
       }
 
       // Atalho de desfazer baixa: Backspace ou 'z' ou 'u' ou Ctrl+Z
-      if (
-        e.key === "Backspace" ||
-        e.key === "z" ||
-        e.key === "Z" ||
-        e.key === "u" ||
-        e.key === "U" ||
-        (e.ctrlKey && e.key.toLowerCase() === "z")
-      ) {
+      if (desfazerPeloTeclado(e)) {
+        // No fundo da tela, Backspace só desfaz; sem baixa, não navega para trás.
+        if (lastCompletedOrder || e.key === "Backspace" || e.code === "Backspace") e.preventDefault();
         if (lastCompletedOrder) {
-          e.preventDefault();
           undoLastCompletedOrder();
-          return;
         }
+        return;
       }
 
       // Ctrl+1, Alt+2… são atalhos do navegador, não baixa.
@@ -1543,7 +1578,7 @@ export default function KDSTelaPage() {
               type="button"
               onClick={undoLastCompletedOrder}
               disabled={isUndoing || !lastCompletedOrder}
-              title="Clique ou pressione 'Z' / 'Backspace' para restaurar o último pedido finalizado"
+              title="Backspace: voltar o último pedido que recebeu baixa nesta tela"
               style={{
                 display: "inline-flex",
                 alignItems: "center",
