@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
-import { controleDoTecladoNumerico, focoProtegidoNoKds } from "../src/lib/kds-teclado";
+import { controleDoTecladoNumerico, desfazerPeloTeclado, focoProtegidoNoKds } from "../src/lib/kds-teclado";
 
 const source = readFileSync("src/app/store/kds/tela/page.tsx", "utf8");
 const ast = ts.createSourceFile("page.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -39,7 +39,7 @@ function screen(stage = "production", key = "kds-zoom:p1") {
   const scrollDown = execute(scrollInitializer("scrollDown"), { scrollContainerRef, window });
   const ultimaBaixaPorTeclaRef = { current: 0 };
   const deps = { stage, mudarZoom, scrollUp, scrollDown, scrollContainerRef,
-    focoProtegidoNoKds, controleDoTecladoNumerico, document: { querySelector: () => modal ? {} : null },
+    focoProtegidoNoKds, controleDoTecladoNumerico, desfazerPeloTeclado, document: { querySelector: () => modal ? {} : null },
     filteredOrders: Array.from({ length: 9 }, (_,i) => ({ id: String(i+1) })),
     markAsPronto: (o: { id: string }) => completed.push(o.id), lastCompletedOrder: {}, undoLastCompletedOrder: () => undone++,
     ultimaBaixaPorTeclaRef, INTERVALO_ENTRE_BAIXAS_POR_TECLA_MS: 500, posicaoDesdeRef: { current: new Map() }, TOQUE_PROTEGIDO_MS: 500,
