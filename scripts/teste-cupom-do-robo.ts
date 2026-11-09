@@ -100,6 +100,15 @@ confere("Cliente novo: oferece o PRIMEIROPEDIDO", /NUNCA PEDIU[\s\S]*PRIMEIROPED
 confere("Cliente antigo: proíbe oferecer", /JÁ PEDIU[\s\S]*NÃO vale para ele/.test(prompt(false)), true);
 confere("Telefone desconhecido e nada citado: seção vazia", prompt(null), "");
 confere("Citou e vale: aplica com couponCode", /citou o cupom CLIENTE INATIVO A 7 DIAS[\s\S]*"couponCode": "CLIENTE INATIVO A 7 DIAS"/.test(prompt(false, ["cupom cliente inativo a 7 dias"])), true);
+confere("Primeiro pedido considera só os itens elegíveis", /só sobre os itens que aceitam cupom/.test(prompt(true)), true);
+confere("Cupom citado considera só os itens elegíveis", /só sobre os itens que aceitam cupom/.test(prompt(false, ["cupom cliente inativo a 7 dias"])), true);
+confere("Todos os itens excluídos: proíbe linha de desconto no resumo", /todos os itens.*não mostre.*desconto/i.test(prompt(true)), true);
+confere("Item excluído: manda avisar o cliente", /avise.*não aceita cupons nem descontos/i.test(prompt(true)), true);
+const freteNoPrompt = cupomDesteClienteParaOPrompt({
+  doRobo: cuponsDoRobo([{ code: "ENTREGA0", type: "free_shipping", primeiroPedido: true }], {}, HOJE),
+  clienteNovo: true, citado: null, recusaDoCitado: null,
+});
+confere("Frete grátis mantém sua regra sem prometer desconto nos produtos", /frete grátis/.test(freteNoPrompt) && !/só sobre os itens que aceitam cupom/.test(freteNoPrompt), true);
 confere(
   "Citou e não vale: o motivo, sem aplicar",
   /NÃO vale para ele agora: Este cupom venceu/.test(prompt(false, ["PRIMEIROPEDIDO"], "Este cupom venceu em 27/09.")),

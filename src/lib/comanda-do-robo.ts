@@ -31,6 +31,8 @@ export type ItemDaComanda = {
 };
 
 export type DadosDaComanda = {
+  /** Resumo para conferir: ainda não é um pedido enviado à loja. */
+  rascunho?: boolean;
   numero: string | number | null;
   /** ACEITO entra direto na cozinha; NOVO espera a loja aceitar. */
   status: string;
@@ -57,6 +59,7 @@ export type DadosDaComanda = {
   cupom?: { code: string; desconto: number; freteGratis: boolean } | null;
   /** Motivo de um cupom que o cliente pediu e o sistema recusou. */
   cupomRecusado?: string | null;
+  avisoDosItensSemCupom?: string | null;
   /**
    * Desconto que não é cupom do robô nem cashback (cupom do site, desconto da
    * loja): sem esta linha, Subtotal + Taxa não fechava com o Total.
@@ -109,6 +112,7 @@ function horaNoFuso(d: Date, fuso: string | null | undefined): string {
 
 /** Título: o cliente precisa saber se o pedido já está sendo feito ou espera a loja. */
 function titulo(d: DadosDaComanda): string {
+  if (d.rascunho) return "Confira seu pedido antes de confirmar:";
   const status = String(d.status || "").toUpperCase();
   if (d.alterado) return "✏️ Pronto! Seu pedido foi *ATUALIZADO*.";
   const agendado = String(d.agendadoPara || "").trim();
@@ -204,9 +208,15 @@ export function comandaDoRobo(d: DadosDaComanda): string {
   if (!d.premioDosCarimbos && d.premioDosCarimbosGuardado) {
     linhas.push("", "🎫 O prêmio do seu Cartão de Carimbos ficou guardado para o próximo pedido.");
   }
+  if (d.rascunho && d.premioDosCarimbos) {
+    linhas.push("", "Se preferir guardar o prêmio do Cartão de Carimbos para a próxima, é só me dizer.");
+  }
   if (d.cupomRecusado) linhas.push("", `ℹ️ ${d.cupomRecusado}`);
+  if (d.avisoDosItensSemCupom) linhas.push("", `ℹ️ ${d.avisoDosItensSemCupom}`);
 
-  linhas.push("", "Obrigado pela preferência! Se precisar de algo, é só chamar 😉");
+  linhas.push("", d.rascunho
+    ? "Quer incluir mais alguma coisa ou podemos confirmar?"
+    : "Obrigado pela preferência! Se precisar de algo, é só chamar 😉");
   return linhas.join("\n");
 }
 

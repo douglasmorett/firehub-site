@@ -177,6 +177,22 @@ const reais = (n: number) => `R$ ${n.toFixed(2).replace(".", ",")}`;
  *  - no rascunho, só quando a mensagem fala de total (ou de cupom, na recusa):
  *    "anotado, mais alguma coisa?" não ganha linha a cada item.
  */
+export function avisoDosItensSemCupom(
+  itens: Array<{ menuProductId?: string | null; productName?: string | null }>,
+  produtos: Array<{ id: string; name?: string | null; semCupom?: boolean | null }>,
+): string {
+  const excluidos = new Map(produtos.filter((p) => p.semCupom === true).map((p) => [p.id, p]));
+  const nomes = [...new Set(itens.flatMap((i) => {
+    const produto = i.menuProductId ? excluidos.get(i.menuProductId) : null;
+    const nome = String(produto?.name || i.productName || "Item").split("|")[0].trim();
+    return produto ? [nome] : [];
+  }))];
+  if (!nomes.length) return "";
+  return nomes.length === 1
+    ? `O item ${nomes[0]} não aceita cupons nem descontos. O cupom só pode descontar os outros itens que aceitam.`
+    : `Os itens ${nomes.join(", ")} não aceitam cupons nem descontos. O cupom só pode descontar os outros itens que aceitam.`;
+}
+
 export function mensagemDoCupom(
   gravado: {
     total: number;
@@ -218,10 +234,10 @@ export function cupomDesteClienteParaOPrompt(opcoes: {
 
   if (primeiro && clienteNovo === true) {
     linhas.push(
-      `- ESTE CLIENTE NUNCA PEDIU NESTA LOJA: ele tem direito ao cupom de primeiro pedido ${nomeDoCupom(primeiro)}` +
+      `- ESTE CLIENTE NUNCA PEDIU NESTA LOJA: ele pode usar o cupom de primeiro pedido ${nomeDoCupom(primeiro)}` +
         (primeiro.minOrderValue > 0 ? `, em pedidos a partir de R$ ${primeiro.minOrderValue.toFixed(2).replace(".", ",")}` : "") +
-        `. Se você ainda não falou dele nesta conversa, conte na sua próxima resposta, numa frase curta e animada (ex.: "Como é seu primeiro pedido aqui, você ganha ${descreverBeneficio(primeiro)} com o cupom ${primeiro.code} 🎉"). Uma vez só — não repita a cada mensagem.` +
-        ` O desconto entra SOZINHO no pedido que você anotar: mostre a linha "Cupom ${primeiro.code}: -R$ X" no resumo e o total já com o desconto.`
+        `. Se você ainda não falou dele nesta conversa, conte na sua próxima resposta, numa frase curta e animada (ex.: "Como é seu primeiro pedido aqui, você pode usar o cupom ${primeiro.code} para ganhar ${descreverBeneficio(primeiro)}${primeiro.type === "free_shipping" ? "" : " nos itens que aceitam cupom"} 🎉"). Uma vez só — não repita a cada mensagem.` +
+        ` O sistema confere as regras do pedido antes de aplicar o cupom. Mostre a linha "Cupom ${primeiro.code}: -R$ X" no resumo e o total com o desconto somente quando ele for aplicável.`
     );
   } else if (primeiro && clienteNovo === false) {
     linhas.push(
@@ -236,11 +252,17 @@ export function cupomDesteClienteParaOPrompt(opcoes: {
       linhas.push(
         `- O cliente citou o cupom ${nomeDoCupom(citado)}` +
           (citado.minOrderValue > 0 ? `, válido a partir de R$ ${citado.minOrderValue.toFixed(2).replace(".", ",")} em itens` : "") +
-          `. Ele existe e vale: confirme e aplique — ponha "couponCode": "${citado.code}" na tag PEDIDO_IA e mostre o desconto no resumo.`
+          `. Ele existe; as regras deste cliente foram conferidas. Ponha "couponCode": "${citado.code}" na tag PEDIDO_IA; mostre o desconto no resumo somente quando as regras do pedido permitirem.`
       );
     }
   }
 
   if (linhas.length === 0) return "";
+  if ((primeiro && clienteNovo === true && primeiro.type !== "free_shipping") || (citado && !recusaDoCitado && citado.type !== "free_shipping")) {
+    linhas.push(
+      `- O desconto é calculado só sobre os itens que aceitam cupom. Se o cliente escolher um item marcado no cardápio como "não aceita cupons nem descontos", avise que esse item não aceita cupons nem descontos. ` +
+        `Se todos os itens estiverem marcados assim, não mostre linha de cupom/desconto nem reduza o total; em pedido misto, aplique o cupom apenas aos outros itens. Frete grátis continua seguindo a regra da entrega.`
+    );
+  }
   return `CUPOM DESTE CLIENTE (o sistema confere de novo ao gravar — o total que vale é o gravado):\n${linhas.join("\n")}`;
 }

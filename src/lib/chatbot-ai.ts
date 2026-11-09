@@ -24,7 +24,7 @@ import { avaliarCupom, cupomDePrimeiroPedido, cupomVenceu, descreverBeneficio, t
 import { textoDasFormasDoCupom } from "@/lib/cupom-por-forma";
 import { fatosDoCupom, hojeDaLoja, jaPediuPeloSite } from "@/lib/cupons-no-banco";
 import { cuponsComCampanha } from "@/lib/campanha-converter";
-import { codigoCompacto, cupomCitadoPeloCliente, cupomDesteClienteParaOPrompt, cuponsDoRobo, cuponsParaTentar, mensagemDoCupom } from "@/lib/cupom-do-robo";
+import { avisoDosItensSemCupom, codigoCompacto, cupomCitadoPeloCliente, cupomDesteClienteParaOPrompt, cuponsDoRobo, cuponsParaTentar, mensagemDoCupom } from "@/lib/cupom-do-robo";
 import fs from "fs";
 
 import { generateDailyOrderNumber } from "@/lib/order-number";
@@ -2277,6 +2277,7 @@ Lembre-se: conversa curta e contínua de WhatsApp, sem emoji automático nem rep
                 agendadoPara: resultadoDoSync.agendadoPara ?? null,
                 cupom: resultadoDoSync.cupom ?? null,
                 cupomRecusado: resultadoDoSync.cupomRecusado ?? null,
+                avisoDosItensSemCupom: resultadoDoSync.avisoDosItensSemCupom,
                 cashbackUsado: Number(gravado.cashbackUsed) || 0,
                 cashbackGerado: Number(gravado.cashbackEarned) || 0,
                 premioDosCarimbos: resultadoDoSync.premioDosCarimbos ?? null,
@@ -2295,8 +2296,8 @@ Lembre-se: conversa curta e contínua de WhatsApp, sem emoji automático nem rep
           // resumo e, quando a loja aceitar, o aviso de pedido recebido
           // (api/store/orders/[id]/finalizar-rascunho).
           cleanText =
-            !resultadoDoSync.repetido && comandaDoCliente
-              ? comandaDoCliente
+            !resultadoDoSync.repetido && (comandaDoCliente || resultadoDoSync.resumoComItensSemCupom)
+              ? (comandaDoCliente || resultadoDoSync.resumoComItensSemCupom)!
               : "Seu pedido já está com a loja para conferir. Quando aceitarem, você recebe a confirmação por aqui.";
           console.log(`[Chatbot AI] ⏳ Pedido ${resultadoDoSync.orderId} fechado pelo cliente, esperando a loja conferir (R$ ${resultadoDoSync.total.toFixed(2)}).`);
         } else if (gravouFinalizado && resultadoDoSync?.gravado === true && comandaDoCliente) {
@@ -2307,6 +2308,7 @@ Lembre-se: conversa curta e contínua de WhatsApp, sem emoji automático nem rep
           }
           console.log(`[Chatbot AI] ✅ Comanda enviada ao cliente: pedido ${resultadoDoSync.orderId} (nº ${resultadoDoSync.numero ?? "—"}), R$ ${resultadoDoSync.total.toFixed(2)}${resultadoDoSync.cashbackUsado ? `, cashback -R$ ${resultadoDoSync.cashbackUsado.toFixed(2)}` : ""}.`);
         } else if (gravouFinalizado && resultadoDoSync?.gravado === true) {
+          if (resultadoDoSync.resumoComItensSemCupom) cleanText = resultadoDoSync.resumoComItensSemCupom;
           // Prova de gravação: o número do pedido entra na mensagem. É o mesmo
           // número do painel — cliente e loja falam do mesmo pedido.
           const numero = resultadoDoSync.numero;
@@ -2340,47 +2342,52 @@ Lembre-se: conversa curta e contínua de WhatsApp, sem emoji automático nem rep
           }
           console.log(`[Chatbot AI] ✅ Confirmação com lastro: pedido ${resultadoDoSync.orderId} (nº ${numero ?? "—"}) gravado com ${resultadoDoSync.itens} item(ns), R$ ${resultadoDoSync.total.toFixed(2)}.`);
         } else if (resultadoDoSync?.gravado === true && !resultadoDoSync.finalizado) {
-          // Rascunho: o resumo que o cliente vai confirmar precisa do total com o
-          // cupom. Só quando a mensagem fala de total — "anotado, mais algo?"
-          // não ganha linha de cupom a cada item.
-          //
-          // Com item da conversa fora do rascunho (nome que não casou com o
-          // cardápio), o total gravado está INCOMPLETO: a linha dizia "o total
-          // fica R$ 20,39" logo depois de o robô somar R$ 38,38 com as duas
-          // marmitas (Garagem, 31/10/2026, "Bife de Carne" × "Bife de Gado").
-          // Nenhum total do sistema sai até o rascunho ter tudo; o fechamento
-          // com item perdido já chama a loja.
-          const linhaDoCupomNoRascunho = resultadoDoSync.itensDeFora ? "" : mensagemDoCupom(resultadoDoSync, cleanText, false);
-          cleanText += linhaDoCupomNoRascunho;
-          // O frete grátis da loja zerou a taxa que o modelo cobrou no resumo:
-          // o cliente lê agora, como já lia na confirmação, e não só no fim.
-          if (
-            !linhaDoCupomNoRascunho && !resultadoDoSync.itensDeFora && resultadoDoSync.ehEntrega &&
-            resultadoDoSync.freteGratisAcimaDe != null && resultadoDoSync.taxaDeEntrega === 0 &&
-            (resultadoDoSync.taxaDitaPelaIa ?? 0) > 0 && /total/i.test(cleanText)
-          ) {
-            const reais = (n: number) => `R$ ${n.toFixed(2).replace(".", ",")}`;
-            cleanText += `\n\n🎉 Seu pedido ganhou frete grátis (acima de ${reais(resultadoDoSync.freteGratisAcimaDe)}): o total fica ${reais(resultadoDoSync.total)}.`;
+          // Com item restrito, valores e desconto saem da mesma conta gravada.
+          // Substituir o resumo evita deixar o cupom inventado acima de uma correção.
+          if (resultadoDoSync.resumoComItensSemCupom && /total|(?:cupom|desconto)[^\n]*(?:R\$|%)/i.test(cleanText)) {
+            cleanText = resultadoDoSync.resumoComItensSemCupom;
+          } else {
+            // Rascunho: o resumo que o cliente vai confirmar precisa do total com o
+            // cupom. Só quando a mensagem fala de total — "anotado, mais algo?"
+            // não ganha linha de cupom a cada item.
+            //
+            // Com item da conversa fora do rascunho (nome que não casou com o
+            // cardápio), o total gravado está INCOMPLETO: a linha dizia "o total
+            // fica R$ 20,39" logo depois de o robô somar R$ 38,38 com as duas
+            // marmitas (Garagem, 31/10/2026, "Bife de Carne" × "Bife de Gado").
+            // Nenhum total do sistema sai até o rascunho ter tudo; o fechamento
+            // com item perdido já chama a loja.
+            const linhaDoCupomNoRascunho = resultadoDoSync.itensDeFora ? "" : mensagemDoCupom(resultadoDoSync, cleanText, false);
+            cleanText += linhaDoCupomNoRascunho;
+            // O frete grátis da loja zerou a taxa que o modelo cobrou no resumo:
+            // o cliente lê agora, como já lia na confirmação, e não só no fim.
+            if (
+              !linhaDoCupomNoRascunho && !resultadoDoSync.itensDeFora && resultadoDoSync.ehEntrega &&
+              resultadoDoSync.freteGratisAcimaDe != null && resultadoDoSync.taxaDeEntrega === 0 &&
+              (resultadoDoSync.taxaDitaPelaIa ?? 0) > 0 && /total/i.test(cleanText)
+            ) {
+              const reais = (n: number) => `R$ ${n.toFixed(2).replace(".", ",")}`;
+              cleanText += `\n\n🎉 Seu pedido ganhou frete grátis (acima de ${reais(resultadoDoSync.freteGratisAcimaDe)}): o total fica ${reais(resultadoDoSync.total)}.`;
+            }
+            // O modelo não calcula o cashback (o prompt proíbe): quando o resumo
+            // fala de total, o valor exato vem daqui, do que foi gravado.
+            const usado = resultadoDoSync.cashbackUsado || 0;
+            const reaisDe = (n: number) => `R$ ${n.toFixed(2).replace(".", ",")}`;
+            // O prêmio do cartão de carimbos o modelo não conhece: a linha é do sistema.
+            const doCartao = resultadoDoSync.premioDosCarimbos;
+            if (doCartao && /total/i.test(cleanText)) {
+              cleanText += doCartao.desconto > 0
+                ? `\n\n🎫 Você completou o Cartão de Carimbos! O prêmio de ${reaisDe(doCartao.desconto)} entra como desconto${usado > 0 ? "" : `: o total fica ${reaisDe(resultadoDoSync.total)}`}. Se preferir guardar para a próxima, é só me dizer.`
+                : `\n\n🎫 Você completou o Cartão de Carimbos! Seu prêmio, ${doCartao.descricao}, vai grátis neste pedido. Se preferir guardar para a próxima, é só me dizer.`;
+            } else if (resultadoDoSync.premioDosCarimbosGuardado && /total/i.test(cleanText)) {
+              cleanText += `\n\n🎫 Combinado: o prêmio do seu Cartão de Carimbos fica guardado para o próximo pedido.`;
+            }
+            if (usado > 0 && /total/i.test(cleanText)) {
+              cleanText += `\n\n💰 Seu cashback de ${reaisDe(usado)} entra como desconto: o total fica ${reaisDe(resultadoDoSync.total)}.`;
+            }
           }
-          // Horário que não vale (lib/agendamento-do-robo.ts): o rascunho foi
-          // gravado sem ele, e o cliente lê as opções antes de confirmar.
+          // Horário inválido foi retirado do rascunho: avisa em ambos os resumos.
           if (resultadoDoSync.avisoDoAgendamento) cleanText += `\n\n📅 ${resultadoDoSync.avisoDoAgendamento}`;
-          // O modelo não calcula o cashback (o prompt proíbe): quando o resumo
-          // fala de total, o valor exato vem daqui, do que foi gravado.
-          const usado = resultadoDoSync.cashbackUsado || 0;
-          const reaisDe = (n: number) => `R$ ${n.toFixed(2).replace(".", ",")}`;
-          // O prêmio do cartão de carimbos o modelo não conhece: a linha é do sistema.
-          const doCartao = resultadoDoSync.premioDosCarimbos;
-          if (doCartao && /total/i.test(cleanText)) {
-            cleanText += doCartao.desconto > 0
-              ? `\n\n🎫 Você completou o Cartão de Carimbos! O prêmio de ${reaisDe(doCartao.desconto)} entra como desconto${usado > 0 ? "" : `: o total fica ${reaisDe(resultadoDoSync.total)}`}. Se preferir guardar para a próxima, é só me dizer.`
-              : `\n\n🎫 Você completou o Cartão de Carimbos! Seu prêmio, ${doCartao.descricao}, vai grátis neste pedido. Se preferir guardar para a próxima, é só me dizer.`;
-          } else if (resultadoDoSync.premioDosCarimbosGuardado && /total/i.test(cleanText)) {
-            cleanText += `\n\n🎫 Combinado: o prêmio do seu Cartão de Carimbos fica guardado para o próximo pedido.`;
-          }
-          if (usado > 0 && /total/i.test(cleanText)) {
-            cleanText += `\n\n💰 Seu cashback de ${reaisDe(usado)} entra como desconto: o total fica ${reaisDe(resultadoDoSync.total)}.`;
-          }
         } else if ((payloadQueriaFinalizar || prometeuCozinha) && !gravouFinalizado) {
           // A IA prometeu (ou tentou finalizar) e o pedido NÃO está no banco.
           // A promessa não pode sair. Mensagem honesta + atendente humano.
@@ -2595,6 +2602,9 @@ type SyncResultado =
       cupom?: { code: string; desconto: number; freteGratis: boolean } | null;
       /** Cupom que o CLIENTE pediu e o sistema recusou — o motivo, pronto para ele. */
       cupomRecusado?: string | null;
+      avisoDosItensSemCupom?: string;
+      /** Resumo completo, com os valores conferidos, quando há item restrito. */
+      resumoComItensSemCupom?: string;
       /** O total que o modelo escreveu na tag. */
       totalDitoPelaIa?: number | null;
       /** Itens da tag que não casaram com o cardápio e ficaram fora do rascunho. */
@@ -3184,6 +3194,7 @@ async function syncAiOrderToDatabase({
   const itensComCupomSum = centavos(
     orderItemsData.reduce((sum: number, i: any) => (semCupom.has(i.menuProductId) ? sum : sum + i.price * i.quantity), 0)
   );
+  const avisoDosItensRestritos = avisoDosItensSemCupom(orderItemsData, storeProducts);
 
   // O frete aqui vem do payload que a IA monta. Mesmo piso e teto do cardápio:
   // valor negativo abateria o total do pedido, e o modelo pode alucinar número.
@@ -4124,6 +4135,7 @@ async function syncAiOrderToDatabase({
       motivo: `abaixo do pedido mínimo ${comoRecebe}: subtotal R$ ${totalItemsSum.toFixed(2).replace(".", ",")}, mínimo R$ ${minimoDaLoja.toFixed(2).replace(".", ",")} (faltam R$ ${falta.toFixed(2).replace(".", ",")})`,
       regraDeNegocio: true,
       mensagemParaOCliente:
+        (avisoDosItensRestritos ? `${avisoDosItensRestritos}\n\n` : "") +
         `Opa! 😊 Deu R$ ${totalItemsSum.toFixed(2).replace(".", ",")} em itens, e o pedido mínimo ${comoRecebe} aqui é R$ ${minimoDaLoja.toFixed(2).replace(".", ",")}. ` +
         `Faltam R$ ${falta.toFixed(2).replace(".", ",")} — quer incluir mais alguma coisa pra eu fechar pra você?`,
     };
@@ -4434,6 +4446,30 @@ async function syncAiOrderToDatabase({
     freteGratisAcimaDe,
     cupom: cupomAplicado,
     cupomRecusado,
+    avisoDosItensSemCupom: avisoDosItensRestritos,
+    ...(avisoDosItensRestritos && !perdidos.length ? {
+      resumoComItensSemCupom: comandaDoRobo({
+        rascunho: !fechaDeVerdade && !segurarParaConferir,
+        numero: fechaDeVerdade ? numeroDoPedido ?? null : null,
+        status: statusParaGravar,
+        itens: itensParaGravar,
+        formaDePagamento: payload.paymentMethod || (existingDraft as any)?.paymentMethod || null,
+        trocoPara: trocoParaGravar,
+        entrega: deliveryType === "DELIVERY",
+        taxaDeEntrega: deliveryFee,
+        freteGratisAcimaDe,
+        endereco: comBairro(payload.address || existingDraft?.customerAddress || (deliveryType === "DELIVERY" && enderecoDaLocalizacao) || null),
+        cupom: cupomAplicado,
+        cupomRecusado,
+        avisoDosItensSemCupom: avisoDosItensRestritos,
+        cashbackUsado,
+        cashbackGerado,
+        premioDosCarimbos: resgateDosCarimbos ? { descricao: resgateDosCarimbos.descricao, desconto: descontoDosCarimbos } : null,
+        premioDosCarimbosGuardado: premioGuardadoDosCarimbos,
+        agendadoPara: instanteAgendado ? textoDoAgendamento(instanteAgendado, agendamento?.timezone) : null,
+        total: totalOrderAmount,
+      }),
+    } : {}),
     totalDitoPelaIa: Number.isFinite(Number(payload?.totalAmount)) && payload?.totalAmount != null ? centavos(Number(payload.totalAmount)) : null,
     itensDeFora: perdidos.length,
     formaDePagamento: payload.paymentMethod || (existingDraft as any)?.paymentMethod || null,

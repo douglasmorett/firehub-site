@@ -322,5 +322,19 @@ console.log("\n7) Casa da Massa: \"Pizza Grande\" com o mesmo nome em Clássicas
   igual("produto repetido de verdade (mesmo nome, preço e opções) sai uma vez", vezes(texto, "Coca-Cola 2L"), 1);
 }
 
+console.log("\n8) Produto promocional sem cupom: a restrição acompanha cada oferta");
+{
+  const pizza = produto("Calabresa Rush", "Promoções", 39.99, [], { semCupom: true });
+  const bebida = produto("Guaraná", "Bebidas", 5);
+  const { texto } = cardapioParaORobo([pizza, bebida], ctx);
+  for (const titulo of ["PROMOÇÕES DE HOJE", "PROMOÇÕES DE AMANHÃ", "CRONOGRAMA", "PRODUTOS"]) {
+    const linha = secao(texto, titulo).split("\n").find((l) => l.includes("Calabresa Rush")) || "";
+    conferir(`${titulo}: Calabresa Rush avisa que não aceita cupons nem descontos`, linha.includes("não aceita cupons nem descontos"), linha);
+  }
+  conferir("produto comum continua sem restrição", texto.includes("- Guaraná · R$ 5\n"));
+  const comRegraDiferente = cardapioParaORobo([pizza, { ...pizza, id: "com-cupom", semCupom: false }], ctx);
+  igual("mesmo nome e preço com regra de cupom diferente não é deduplicado", vezes(secao(comRegraDiferente.texto, "PRODUTOS"), "- Calabresa Rush ·"), 2);
+}
+
 console.log(falhas ? `\n❌ ${falhas} falha(s)` : "\n✅ tudo certo");
 process.exit(falhas ? 1 : 0);

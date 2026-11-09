@@ -561,7 +561,7 @@ export function cardapioParaORobo(produtos: any[], ctx: ContextoDoCardapio): { t
       .flatMap((g: any) => (g?.items || []).map((i: any) => String(i?.menuProduct?.name || "").toLowerCase()))
       .sort()
       .join("|");
-    const chave = `${nome.toLowerCase()}_${p.price}_${opcoesDoProduto}`;
+    const chave = `${nome.toLowerCase()}_${p.price}_${opcoesDoProduto}_${p.semCupom === true}`;
     const dias = diasDoProduto(p.availableDays);
     const hojeVale = dias.length === 0 || dias.includes(hoje);
     const amanhaVale = dias.length === 0 || dias.includes(amanha);
@@ -570,11 +570,12 @@ export function cardapioParaORobo(produtos: any[], ctx: ContextoDoCardapio): { t
     const combo = ehCombo(p, nome);
     const horario = ctx.horarioPorId?.get(id) || "";
     const precoDe = Number(p.precoDe) > 0 ? ` (de R$ ${brl(Number(p.precoDe))})` : "";
+    const restricaoDoCupom = p.semCupom === true ? " [não aceita cupons nem descontos]" : "";
 
     if (promo) {
       for (const d of dias.length === 0 ? TODOS_OS_DIAS : dias) {
         if (!DAY_NAMES[d]) continue;
-        const item = `${nome} (R$ ${brl(Number(p.price) || 0)})`;
+        const item = `${nome} (R$ ${brl(Number(p.price) || 0)})${restricaoDoCupom}`;
         diasDaPromocao.set(item, [...(diasDaPromocao.get(item) || []), d]);
       }
     }
@@ -610,14 +611,15 @@ export function cardapioParaORobo(produtos: any[], ctx: ContextoDoCardapio): { t
         notaDeEstoque,
         horario ? ` [só ${horario}]` : "",
         dias.length > 0 && dias.length < 7 ? ` [só ${nomesDosDias(dias)}]` : "",
+        restricaoDoCupom,
       ].join("");
       const desc = descricaoCurta(p.description);
       linhas.push({ nome, categoria, combo, perguntas, cabeca: `- ${nome} · ${preco}${precoDe}${extras}${desc ? ` — ${desc}` : ""}` });
       estat.produtos++;
-      if (promo) promocoesDeHoje.push(`- ${nome} · ${preco}${precoDe}`);
+      if (promo) promocoesDeHoje.push(`- ${nome} · ${preco}${precoDe}${restricaoDoCupom}`);
     }
 
-    if (amanhaVale && promo) promocoesDeAmanha.push(`- ${rotulo} · R$ ${brl(Number(p.price) || 0)}`);
+    if (amanhaVale && promo) promocoesDeAmanha.push(`- ${rotulo} · R$ ${brl(Number(p.price) || 0)}${restricaoDoCupom}`);
   }
 
   // Matrizes antes do dedupe: a pergunta que virou "tabela T1, coluna P" é
