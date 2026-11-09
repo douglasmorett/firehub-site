@@ -5,7 +5,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { closeBillingCycle, getCurrentYearMonth, garantirCiclosDoMes } from "@/lib/billing";
+import { closeBillingCycle, getCurrentYearMonth, garantirCiclosDoMes, atualizarTaxaDosTotensNoMes } from "@/lib/billing";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { pegarVez } from "@/lib/vez";
 
@@ -106,36 +106,23 @@ export async function GET(req: NextRequest) {
     );
     for (const e of varreduraAtual.erros) log.push(`⚠️ Varredura ${currentMonth}: ${e}`);
 
-    // 4. Acumular taxa de Totem nos ciclos ativos (R$100/mês por totem ativo)
-    const allActiveTotemStores = await prisma.totemLicense.groupBy({
+    // 4. Só totem com pedido real gera taxa. Inclui pausados depois de usados
+    // e ciclos com taxa antiga, para limpar o acumulado sem uso (Mano).
+    const lojasComTotem = await prisma.totemLicense.groupBy({
       by: ["franchiseeId"],
-      where: { active: true },
-      _count: { id: true },
     });
+    const ciclosComTaxa = await prisma.franchiseeBillingCycle.findMany({
+      where: { yearMonth: currentMonth, status: "OPEN", totemFee: { gt: 0 } },
+      select: { franchiseeId: true },
+    });
+    const lojasParaConferir = new Set([...lojasComTotem, ...ciclosComTaxa].map(l => l.franchiseeId));
 
-    for (const store of allActiveTotemStores) {
+    for (const franchiseeId of lojasParaConferir) {
       try {
-        const totemFee = store._count.id * 100; // R$ 100/totem/mês
-        await prisma.franchiseeBillingCycle.upsert({
-          where: {
-            franchiseeId_yearMonth: {
-              franchiseeId: store.franchiseeId,
-              yearMonth: currentMonth,
-            },
-          },
-          create: {
-            franchiseeId: store.franchiseeId,
-            yearMonth: currentMonth,
-            totemFee,
-            status: "OPEN",
-          },
-          update: {
-            totemFee, // Substitui (não incrementa) — recalcula cada vez
-          },
-        });
-        log.push(`📲 Totem ${store.franchiseeId}: ${store._count.id} totens = R$${totemFee}`);
+        const totemFee = await atualizarTaxaDosTotensNoMes(franchiseeId, currentMonth);
+        log.push(`📲 Totem ${franchiseeId}: uso real no mês = R$${totemFee}`);
       } catch (err: any) {
-        log.push(`⚠️ Totem fee ${store.franchiseeId}: ${err.message}`);
+        log.push(`⚠️ Totem fee ${franchiseeId}: ${err.message}`);
       }
     }
 

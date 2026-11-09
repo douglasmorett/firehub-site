@@ -222,8 +222,9 @@ export default function TotemModuleClient({ store, categories }: { store: any, c
               background: "white", padding: "20px", borderRadius: "16px", 
               border: "1px solid #F1F5F9", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" 
             }}>
-              <p style={{ margin: "0 0 4px 0", color: "#64748B", fontSize: "14px", fontWeight: 500 }}>Custo Mensal (Est.)</p>
+              <p style={{ margin: "0 0 4px 0", color: "#64748B", fontSize: "14px", fontWeight: 500 }}>Se todos forem usados no mês</p>
               <p style={{ margin: 0, fontSize: "28px", fontWeight: 800 }}>R$ {totalCost},00</p>
+              <p style={{ margin: "8px 0 0", color: "#64748B", fontSize: "13px" }}>Só é cobrado o totem com pedido pago ou confirmado no mês.</p>
             </div>
           </div>
 
@@ -295,7 +296,7 @@ export default function TotemModuleClient({ store, categories }: { store: any, c
                         <span style={{ fontWeight: 600 }}>{t.lastIp || '---'}</span>
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span style={{ color: "#64748B" }}>Mensalidade:</span>
+                        <span style={{ color: "#64748B" }}>Mensalidade com uso:</span>
                         <span style={{ fontWeight: 600, color: "#C92E09" }}>R$ 100,00</span>
                       </div>
                     </div>

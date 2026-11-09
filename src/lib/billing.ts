@@ -123,6 +123,51 @@ function faturamentoBruto(soma: { totalAmount: number | null; discountTotal: num
   return (soma.totalAmount ?? 0) + (soma.discountTotal ?? 0);
 }
 
+/** Licença/heartbeat não são movimentação (Mano Burguer, 09/11/2026).
+ * R$100 por dispositivo com pedido pago/confirmado, uma vez por período,
+ * inclusive se a licença foi pausada depois de prestar o serviço. */
+export async function cobrancaDosTotensNoMes(franchiseeId: string, inicio: Date, fim: Date): Promise<number> {
+  const pedidos = await prisma.customerOrder.findMany({
+    where: {
+      franchiseeId, source: "TOTEM", totemLicenseId: { not: null },
+      createdAt: { gte: inicio, lt: fim },
+      AND: [VENDAS_QUE_CONTAM, {
+        OR: [
+          { paymentPaidAt: { not: null } },
+          { status: { in: ["ACEITO", "PREPARANDO", "PRONTO", "ENTREGUE"] } },
+        ],
+      }],
+    },
+    select: { totemLicenseId: true }, distinct: ["totemLicenseId"],
+  });
+  const ids = pedidos.map(p => p.totemLicenseId).filter((id): id is string => !!id);
+  if (ids.length === 0) return 0;
+  const usados = await prisma.totemLicense.count({ where: { franchiseeId, id: { in: ids } } });
+  return usados * 100;
+}
+
+/** Acumulador idempotente: limpa taxa sem uso e não cria ciclo vazio.
+ * Fechado/perdoado nunca é alterado ou reaberto pelo cron. */
+export async function atualizarTaxaDosTotensNoMes(franchiseeId: string, yearMonth: string): Promise<number> {
+  const loja = await prisma.user.findUnique({ where: { id: franchiseeId }, select: { storeTimezone: true } });
+  const { monthStart, monthEnd } = intervaloDoMes(yearMonth, loja?.storeTimezone || "America/Sao_Paulo");
+  const totemFee = await cobrancaDosTotensNoMes(franchiseeId, monthStart, monthEnd);
+  const ciclo = await prisma.franchiseeBillingCycle.findUnique({
+    where: { franchiseeId_yearMonth: { franchiseeId, yearMonth } }, select: { status: true },
+  });
+  if (ciclo) {
+    await prisma.franchiseeBillingCycle.updateMany({
+      where: { franchiseeId, yearMonth, status: "OPEN" }, data: { totemFee },
+    });
+  } else if (totemFee > 0) {
+    // Uma execução concorrente pode ter criado/fechado o ciclo após a leitura.
+    await prisma.franchiseeBillingCycle.createMany({
+      data: [{ franchiseeId, yearMonth, totemFee, status: "OPEN" }], skipDuplicates: true,
+    });
+  }
+  return totemFee;
+}
+
 /**
  * O lojista usou alguma funcionalidade nossa no mês?
  *
@@ -150,7 +195,7 @@ function faturamentoBruto(soma: { totalAmount: number | null; discountTotal: num
  *
  * Contam: o robô/IA trabalhou (resposta enviada ou consumo de IA no
  * UsageLog — mensagem só RECEBIDA não conta), conta a pagar, caixa aberto,
- * nota de compra, totem ativo e campanha de Meta Ads cobrada no mês. Integração
+ * nota de compra, pedido real de totem e campanha de Meta Ads cobrada no mês. Integração
  * ligada sem pedido não é uso: pedido que entrasse por ela seria venda.
  *
  * Devolve também o motivo, que fica no `notes` do ciclo — quando o lojista
@@ -174,7 +219,7 @@ export async function detectarUsoDaLoja(
     prisma.payable.count({ where: { franchiseeId, createdAt: noMes } }),
     prisma.cashSession.count({ where: { franchiseeId, createdAt: noMes } }),
     prisma.purchaseInvoice.count({ where: { franchiseeId, createdAt: noMes } }),
-    prisma.totemLicense.count({ where: { franchiseeId, active: true } }),
+    cobrancaDosTotensNoMes(franchiseeId, monthStart, monthEnd),
     prisma.franchiseeBillingCycle.count({ where: { franchiseeId, yearMonth: mesDoCiclo, metaAdsFee: { gt: 0 } } }),
   ]);
 
@@ -466,7 +511,8 @@ export async function recalcularCiclo(franchiseeId: string, yearMonth?: string) 
   // gestão que o cron do Meta Ads tinha somado ali. O fechamento recalcula tudo
   // e o boleto saía certo, mas as telas de admin que leem esta coluna mostravam
   // um valor menor do que o que a loja ia receber.
-  const taxasDoCiclo = (cycle.metaAdsFee ?? 0) + (cycle.totemFee ?? 0);
+  const totemFee = await cobrancaDosTotensNoMes(franchiseeId, monthStart, monthEnd);
+  const taxasDoCiclo = (cycle.metaAdsFee ?? 0) + totemFee;
   // "Em teste" aqui significa: ainda não há nada cobrável neste mês — ou o
   // teste cobre o mês inteiro, ou ainda não terminou (a base começa a contar
   // no fim dele; até lá `totalSales` é zero de qualquer jeito).
@@ -512,7 +558,7 @@ export async function recalcularCiclo(franchiseeId: string, yearMonth?: string) 
     where: { franchiseeId_yearMonth: { franchiseeId, yearMonth: mes } },
     // `planPercent` regravado: ciclo criado antes da troca para 2% (ou por
     // outro módulo) guardava o 1% antigo.
-    data: { totalSales, amountDue: devidoGravado, amountPending: pendingVal, planPercent: isExempt ? 0 : percentualDoMes(mes) },
+    data: { totalSales, amountDue: devidoGravado, amountPending: pendingVal, totemFee, planPercent: isExempt ? 0 : percentualDoMes(mes) },
   });
 
   console.log(
@@ -703,6 +749,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   // Recalcula valores finais (pedidos confirmados do mês)
   const tz = cycle.franchisee?.storeTimezone || "America/Sao_Paulo";
   const { monthStart, monthEnd } = intervaloDoMes(yearMonth, tz);
+  const totemFee = await cobrancaDosTotensNoMes(franchiseeId, monthStart, monthEnd);
 
   // Período de teste: a venda feita DENTRO dele não conta; a de depois conta,
   // no mesmo mês (regra do dono, ver inicioDaCobranca). Teste que cobre o mês
@@ -815,9 +862,9 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       taxasExtras += cycle.metaAdsFee;
       linhasExtras.push(`Tráfego pago R$${cycle.metaAdsFee.toFixed(2)}`);
     }
-    if (cycle.totemFee > 0) {
-      taxasExtras += cycle.totemFee;
-      linhasExtras.push(`Totem R$${cycle.totemFee.toFixed(2)}`);
+    if (totemFee > 0) {
+      taxasExtras += totemFee;
+      linhasExtras.push(`Totem R$${totemFee.toFixed(2)}`);
     }
   }
 
@@ -902,7 +949,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
     await prisma.franchiseeBillingCycle.update({
       where: { id: cycle.id },
       data: {
-        totalSales, amountDue: 0, amountPending: 0, status: "PAID", closedAt: new Date(),
+        totalSales, amountDue: 0, amountPending: 0, totemFee, status: "PAID", closedAt: new Date(),
         // Fica gravado por que não cobrou. Sem isto, "por que essa loja não foi
         // cobrada?" vira arqueologia toda vez.
         notes: isSpecialStore ? "Isento (loja oficial/própria)."
@@ -1049,6 +1096,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       amountDue: mensalidadePerdoada ? 0 : amountDue,
       amountPending,
       status: "CLOSED",
+      totemFee,
       closedAt: new Date(),
       asaasPaymentId,
       asaasBoletoUrl,
@@ -1233,6 +1281,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
   const lojasExtras = extras
     ? { lojasIfood: extras.lojasIfood, lojas99: extras.lojas99, valor: extras.total, linhas: extras.linhas }
     : semLojasExtras;
+  const totem = await cobrancaDosTotensNoMes(franchiseeId, monthStart, monthEnd);
 
   // Loja que só recebe pedido de marketplace nunca passa por `ensureCycle`, e
   // por isso pode não ter linha de ciclo no meio do mês. O valor previsto tem
@@ -1240,14 +1289,14 @@ export async function getCurrentCycleView(franchiseeId: string) {
   if (!cycle) {
     const indique = emTeste ? SEM_INDIQUE : await indiqueDoMes(devidoAgora);
     const mensalidadeDoMes = indique.isenta ? 0 : devidoAgora;
-    const total = parseFloat((mensalidadeDoMes + lojasExtras.valor).toFixed(2));
+    const total = parseFloat((mensalidadeDoMes + lojasExtras.valor + totem).toFixed(2));
     return {
       yearMonth, totalSales: vendasDoMes, vendasA1PorCento,
       amountDue: total,
       amountOffset: 0,
       amountPending: parseFloat(Math.max(0, total - indique.abate).toFixed(2)),
       mensalidadePrevista: mensalidadeDoMes,
-      taxas: { trafegoPago: 0, totem: 0, lojasExtras: lojasExtras.valor },
+      taxas: { trafegoPago: 0, totem, lojasExtras: lojasExtras.valor },
       lojasExtras,
       status: "OPEN", isExempt: false, emTeste,
       cobrancaPorUso: previsaoPorUso,
@@ -1269,7 +1318,6 @@ export async function getCurrentCycleView(franchiseeId: string) {
   // taxas (ver `taxasExtras`), então painel e fatura divergiam por construção,
   // que é justamente o que o comentário acima promete que não acontece mais.
   const trafegoPago = cycle.metaAdsFee ?? 0;
-  const totem = cycle.totemFee ?? 0;
   // Bill neste mês (ativo em algum momento = o mês inteiro) — a mesma
   // conta que o fechamento põe no boleto. Mês que o teste cobre inteiro não
   // cobra os serviços do painel (ver closeBillingCycle).
@@ -1297,7 +1345,9 @@ export async function getCurrentCycleView(franchiseeId: string) {
   const firecheck = cobraServicos ? await cobrancaDoFirecheckNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd) : 0;
   const taxasDoCiclo = trafegoPago + totem + lojasExtras.valor + assessor + aplicativo + multimarcas + tabletNaMesa + balanca + cotacao + firecheck;
 
-  const calculada = emTeste ? 0 : Math.max(cycle.amountDue, devidoAgora);
+  // No ciclo aberto vale o uso recontado, não um mínimo antigo que nasceu
+  // só de licença ativa. Fatura já fechada mantém o valor do fechamento.
+  const calculada = emTeste ? 0 : cycle.status === "OPEN" ? devidoAgora : Math.max(cycle.amountDue, devidoAgora);
   const indique = emTeste ? SEM_INDIQUE : await indiqueDoMes(Math.max(0, calculada - cycle.amountOffset));
   const mensalidadePrevista = indique.isenta ? 0 : calculada;
   // O abatimento de pagamentos online desconta a MENSALIDADE, não as taxas —
@@ -1358,16 +1408,17 @@ export async function previsaoDoFechamento(franchiseeId: string, yearMonth: stri
   const tz = user?.storeTimezone || "America/Sao_Paulo";
   const { monthStart, monthEnd } = intervaloDoMes(yearMonth, tz);
   const inicio = inicioDaCobranca(monthStart, monthEnd, user?.trialEndsAt);
+  const totem = await cobrancaDosTotensNoMes(franchiseeId, monthStart, monthEnd);
   const { cobrancaDoAssessorNoMes } = await import("@/lib/assessor/assinatura");
   const { cobrancaDoAppNoMes } = await import("@/lib/app-da-loja/plano");
   const { cobrancaDoMultimarcasNoMes } = await import("@/lib/multimarcas/assinatura");
   if (inicio === null) {
     // Teste no mês inteiro: mensalidade, lojas extras e serviços do painel
     // perdoados; tráfego e totem são serviço prestado e o fechamento cobra.
-    const outrosServicos = (cycle?.metaAdsFee ?? 0) + (cycle?.totemFee ?? 0);
+    const outrosServicos = (cycle?.metaAdsFee ?? 0) + totem;
     return { ...nada, outrosServicos, custo: parseFloat(outrosServicos.toFixed(2)) };
   }
-  const outrosServicos = (cycle?.metaAdsFee ?? 0) + (cycle?.totemFee ?? 0) + (await cobrancaDoAssessorNoMes(franchiseeId, monthStart, monthEnd))
+  const outrosServicos = (cycle?.metaAdsFee ?? 0) + totem + (await cobrancaDoAssessorNoMes(franchiseeId, monthStart, monthEnd))
     + (await cobrancaDoAppNoMes(franchiseeId, monthStart, monthEnd))
     + (await cobrancaDoMultimarcasNoMes(franchiseeId, monthStart, monthEnd))
     + (await (await import("@/lib/tablet-da-mesa/assinatura")).cobrancaDoTabletNoMes(franchiseeId, monthStart, monthEnd))
