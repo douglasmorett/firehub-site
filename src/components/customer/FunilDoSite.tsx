@@ -121,13 +121,17 @@ export function FunilDoSiteVisual({ dados, rotulo, inicioDoPeriodo }: { dados: D
         </div>
       </div>
 
-      {!funil || funil.visita === 0 ? (
+      {!funil ? (
         <div style={{ background: "#F8FAFC", border: "1px dashed #CBD5E1", borderRadius: 12, padding: "1.1rem", color: "#475569", fontSize: "0.88rem", lineHeight: 1.5 }}>
-          {desde
-            ? "Ninguém abriu o seu cardápio neste período."
-            : "A contagem começou agora: as visitas aparecem aqui conforme os clientes abrem o seu cardápio. Divulgue o link no Instagram e no WhatsApp."}
+          Os dados deste período ainda não estão disponíveis.
         </div>
       ) : (
+        <>
+        {funil.visita === 0 && (
+          <p role="status" style={{ margin: "0 0 1rem", background: "#F8FAFC", border: "1px dashed #CBD5E1", borderRadius: 12, padding: "0.75rem 0.9rem", color: "#475569", fontSize: "0.85rem", lineHeight: 1.5 }}>
+            Ainda não há visitas registradas neste período. O funil será atualizado conforme os clientes abrem o seu cardápio.
+          </p>
+        )}
         <div className="fh-funil-grade">
           {/* O FUNIL */}
           <div>
@@ -152,9 +156,11 @@ export function FunilDoSiteVisual({ dados, rotulo, inicioDoPeriodo }: { dados: D
               </div>
             )}
 
-            {(dados.periodo?.origens.length || 0) > 0 && (
-              <div style={{ border: "1px solid #E2E8F0", borderRadius: 12, padding: "0.75rem 0.9rem" }}>
+            <div style={{ border: "1px solid #E2E8F0", borderRadius: 12, padding: "0.75rem 0.9rem" }}>
                 <div style={{ fontSize: "0.72rem", fontWeight: 800, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 6 }}>De onde vieram</div>
+                {!(dados.periodo?.origens.length) && (
+                  <p style={{ margin: 0, color: "#64748B", fontSize: "0.8rem" }}>Nenhuma origem registrada neste período.</p>
+                )}
                 <div style={{ display: "grid", gap: 6 }}>
                   {dados.periodo!.origens.slice(0, 6).map((o) => (
                     <div key={o.origem} style={{ display: "grid", gridTemplateColumns: "minmax(0, 7.5rem) minmax(0, 1fr) auto", gap: 8, alignItems: "center", fontSize: "0.8rem" }}>
@@ -171,10 +177,10 @@ export function FunilDoSiteVisual({ dados, rotulo, inicioDoPeriodo }: { dados: D
                 {totalDisp > 0 && (
                   <div style={{ fontSize: "0.76rem", color: "#64748B", marginTop: 8 }}>📱 {pctCelular}% pelo celular · 💻 {100 - pctCelular}% pelo computador</div>
                 )}
-              </div>
-            )}
+            </div>
           </div>
         </div>
+        </>
       )}
     </section>
   );
