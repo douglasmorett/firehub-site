@@ -14,6 +14,7 @@ import { ehPedidoAiqfome, sincronizarAiqfome } from "@/lib/aiqfome/status";
 import { motivoDoCorpo, MENSAGEM_SEM_MOTIVO_DO_SERVIDOR } from "@/lib/motivo-do-cancelamento";
 import { empilharEdicao } from "@/lib/edicao-de-pedido";
 import { lojasDaVisao, cookieDaVisao } from "@/lib/loja-ativa";
+import { prontoVoltaParaProducao } from "@/lib/pedidos-na-cozinha";
 
 // Status que contam como venda confirmada para fins de faturamento
 // Disparado apenas em ENTREGUE para evitar contagem duplicada
@@ -216,7 +217,8 @@ export async function PUT(req: Request) {
   // disparava DE NOVO o WhatsApp "seu pedido chegou" e os efeitos da entrega.
   // Responde só o status — nenhuma tela lia o `order` que ia aqui (e ele
   // levava a linha da loja junto; ver CAMPOS_DO_PEDIDO).
-  if (order.status === status) {
+  const voltaParaProducao = prontoVoltaParaProducao(order, status);
+  if (order.status === status && !voltaParaProducao) {
     return NextResponse.json({ success: true, semMudanca: true, status: order.status });
   }
 
@@ -244,6 +246,40 @@ export async function PUT(req: Request) {
         { error: `Transição inválida: ${order.status} → ${status}` },
         { status: 400 }
       );
+    }
+  }
+
+  // Divinos, 08/11: PREPARANDO + FINISHED continua em Prontos. A volta é
+  // uma mudança da cozinha, não uma nova venda nem um novo aceite. Itens e
+  // pedido voltam juntos; só mudar o estágio deixaria os itens todos prontos
+  // e invisíveis na produção. Não reenvia pronto/aceite aos parceiros.
+  if (voltaParaProducao) {
+    try {
+      const pedido = await prisma.customerOrder.update({
+        where: {
+          id: orderId, franchiseeId: order.franchiseeId,
+          status: order.status, kdsStage: order.kdsStage,
+        },
+        data: {
+          status: "PREPARANDO", kdsStage: "PRODUCTION", kdsProductionAt: new Date(),
+          kdsStationId: null, kdsFinishingAt: null, kdsFinishedAt: null, readyAt: null,
+          kdsTelasProntas: [], kdsBaixas: [],
+          items: { updateMany: { where: {}, data: { prontoEm: null } } },
+        },
+        select: {
+          status: true, kdsStage: true, acceptedAt: true, readyAt: true,
+          kdsProductionAt: true, kdsStationId: true, kdsFinishingAt: true, kdsFinishedAt: true,
+        },
+      });
+      return NextResponse.json({ success: true, pedido });
+    } catch (err: any) {
+      if (err?.code === "P2025") {
+        return NextResponse.json(
+          { error: "O pedido mudou enquanto você voltava para produção. Atualize a lista e confira antes de tentar de novo." },
+          { status: 409 },
+        );
+      }
+      throw err;
     }
   }
 

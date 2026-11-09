@@ -19,7 +19,7 @@ import { isStoreOpen } from "@/lib/store-hours";
 import { inicioDoExpedienteDaLoja, inicioDoDiaDaLoja } from "@/lib/fuso";
 import { hojeNaLoja, somarDias } from "@/lib/relatorios/base";
 import type { ResumoDasVendas } from "@/lib/resumo-das-vendas";
-import { dataDoPedido, prontoNaCozinha, contarPedidosDoPrazo, inicioDaJanelaDoQuadro } from "@/lib/pedidos-na-cozinha";
+import { dataDoPedido, prontoNaCozinha, prontoVoltaParaProducao, contarPedidosDoPrazo, inicioDaJanelaDoQuadro } from "@/lib/pedidos-na-cozinha";
 import { chipsDasRotasAutomaticas } from "@/lib/roteirizacao-automatica/chip-da-rota";
 import { corrigirPeriodo } from "@/lib/periodo-do-quadro";
 import { tempoNaEtapa, textoDoTempo, mesmosCarimbos } from "@/lib/tempo-na-etapa";
@@ -2034,7 +2034,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       }
 
       let successCount = 0;
-      const mudaram = new Set<string>();
+      const mudaram = new Map<string, { semMudanca?: boolean; pedido?: Record<string, unknown> }>();
       // A senha do gerente (cancelar em lote) é pedida uma vez e vale para todos.
       let cabDaSenha: Record<string, string> = {};
       for (const orderId of ids) {
@@ -2052,14 +2052,23 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         };
         const res = await comSenhaDoGerente(pedir, pedirSenha);
         if (!res) break; // o gerente cancelou
-        if (res.ok) { successCount++; mudaram.add(orderId); }
+        if (res.ok) {
+          const resposta = await res.json().catch(() => ({}));
+          successCount++; mudaram.set(orderId, resposta);
+        }
       }
 
       // O carimbo local zera o relógio da etapa na hora — só em quem mudou
       // de verdade de status; o do servidor chega no poll.
-      setOrders(prev => prev.map(o => mudaram.has(o.id)
-        ? { ...o, status: bulkTargetStatus, ...(o.status !== bulkTargetStatus ? carimboDeStatus(bulkTargetStatus) : null) }
-        : o));
+      setOrders(prev => prev.map(o => {
+        const resposta = mudaram.get(o.id);
+        if (!resposta) return o;
+        return {
+          ...o, status: bulkTargetStatus,
+          ...(!resposta.semMudanca && o.status !== bulkTargetStatus ? carimboDeStatus(bulkTargetStatus) : null),
+          ...(resposta.pedido || {}),
+        };
+      }));
       showToast(`${successCount} pedido(s) atualizados com sucesso!`, "#0F766E");
       setSelectedOrderIds(new Set());
       setBulkTargetStatus("");
@@ -3831,7 +3840,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     if (columnId === "col-preparo") newStatus = "PREPARANDO";
     if (columnId === "col-transporte") newStatus = "SAIU_ENTREGA";
 
-    if (order.status === newStatus) return;
+    if (order.status === newStatus && !prontoVoltaParaProducao(order, newStatus)) return;
 
     // Cancelado arrastado para Entregue (Douglas, 17/10/2026): a loja tem
     // autonomia para trocar, mas antes a pergunta — "tinha sido cancelado,
@@ -3944,7 +3953,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         let newStatus: string | null = null;
         if (droppedColumn === "col-preparo") newStatus = "PREPARANDO";
         if (droppedColumn === "col-transporte") newStatus = "SAIU_ENTREGA";
-        if (newStatus && order.status !== newStatus) {
+        if (newStatus && (order.status !== newStatus || prontoVoltaParaProducao(order, newStatus))) {
           updateStatus(order.id, newStatus);
         }
       }

@@ -55,6 +55,18 @@ export function prontoNaCozinha(o: Pick<PedidoDaContagem, "status" | "deliveryTy
   return o.kdsStage === "FINISHED" || o.kdsStage === "READY" || (o.deliveryType === "DELIVERY" && o.status === "PRONTO");
 }
 
+/** Voltar de Prontos é desfazer o pronto da cozinha, mesmo com status já PREPARANDO. */
+export function prontoVoltaParaProducao(
+  o: Pick<PedidoDaContagem, "status" | "deliveryType" | "kdsStage">,
+  novoStatus: unknown,
+): boolean {
+  if (novoStatus !== "PREPARANDO" || !prontoNaCozinha(o)) return false;
+  if (["ACEITO", "PREPARANDO", "EM_PREPARO", "EM_ANDAMENTO", "PRONTO"].includes(o.status)) return true;
+  // Retirada pronta espera o cliente no balcão com este status. Delivery já
+  // despachado e pedido encerrado seguem pelas regras próprias de reabertura.
+  return o.deliveryType !== "DELIVERY" && o.status === "SAIU_ENTREGA";
+}
+
 /**
  * Pedido aceito que ainda não saiu — na chapa ou pronto esperando o motoboy.
  * A retirada pronta já é Finalizado no quadro (não espera motoboy) e não
