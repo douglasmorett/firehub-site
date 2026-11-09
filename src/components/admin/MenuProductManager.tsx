@@ -3609,11 +3609,11 @@ export default function MenuProductManager({
                   const obrigatorio = minimoDoGrupo > 0;
                   const formularioAberto = novaOpcao?.gIdx === gIdx;
                   const seletorDesteGrupo = seletorAberto === gIdx;
+                  // A pergunta pode reutilizar um complemento de outro produto,
+                  // inclusive num combo: o mesmo id mantém a pausa compartilhada,
+                  // e o acréscimo continua próprio de cada pergunta.
                   const candidatos = catalogoDeOpcoes
                     .filter(item => item.id !== editingId)
-                    // No combo a opção é um item do cardápio: é ele que imprime
-                    // na categoria certa e que, pausado, sai da escolha.
-                    .filter(item => !isCombo || !ehOpcaoDeCombo(item))
                     .filter(item => !group.items.some((it: any) => it.id === item.id))
                     .filter(item => (item.name || "").toLowerCase().includes(buscaOpcao.trim().toLowerCase()));
 
@@ -3962,7 +3962,7 @@ export default function MenuProductManager({
                             ))}
                             {candidatos.length === 0 && (
                               <p style={{ fontSize: "0.78rem", color: "#94A3B8", margin: "4px 2px", fontStyle: "italic" }}>
-                                Nada com esse nome. Use &quot;Cadastrar item novo&quot; ao lado.
+                                Nada com esse nome.{!isCombo && <> Use &quot;Cadastrar item novo&quot; ao lado.</>}
                               </p>
                             )}
                           </div>
