@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { novoIdDaTela } from "@/lib/kds-telas";
 import { chaveDaTela } from "@/lib/kds-link-curto";
+import GuiaDoTeclado from "@/components/kds/GuiaDoTeclado";
 import { AvisoNoTopo, type Aviso } from "@/components/mesas/SelecionarItensParaImpressao";
 
 interface KDSScreenConfig {
@@ -209,6 +210,8 @@ export default function KDSHubClient() {
       <p style={{ fontSize: "0.9rem", color: "#94a3b8", marginBottom: "2rem", maxWidth: "600px" }}>
         Adicione telas e abra cada uma em um monitor ou TV diferente. Dentro da tela, você pode mudar o filtro a qualquer momento.
       </p>
+
+      <GuiaDoTeclado />
 
       {/* Empty state */}
       {screens.length === 0 && (
@@ -439,15 +442,6 @@ export default function KDSHubClient() {
           })}
         </div>
       )}
-
-      {/* Tip */}
-      <div style={{
-        background: "#1C1917", border: "1px solid #292524", borderRadius: "12px",
-        padding: "1rem 1.5rem", color: "#94a3b8", fontSize: "0.85rem",
-        marginTop: "2rem", display: "flex", alignItems: "center", gap: "0.5rem",
-      }}>
-        💡 <strong>Dica:</strong>&nbsp;Na tela do KDS, use um teclado numérico USB para dar baixa nos pedidos. Aperte o número do pedido na tela para marcá-lo como pronto.
-      </div>
 
       {/* Form Modal */}
       {showForm && (

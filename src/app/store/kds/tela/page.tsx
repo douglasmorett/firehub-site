@@ -17,6 +17,7 @@ import {
   type KdsConfig,
 } from "@/lib/kds-telas";
 import { CHAVE_DA_ULTIMA_TELA, destinoDaTelaSemEtapa, ultimaTelaParaGuardar } from "@/lib/kds-ultima-tela";
+import { controleDoTecladoNumerico, focoProtegidoNoKds } from "@/lib/kds-teclado";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -291,7 +292,7 @@ export default function KDSTelaPage() {
       setZoom(salvo >= ZOOM_MIN && salvo <= ZOOM_MAX ? salvo : 1);
     } catch {}
   }, [chaveDoZoom]);
-  const mudarZoom = (passo: number) => {
+  const mudarZoom = useCallback((passo: number) => {
     setZoom((atual) => {
       const novo = Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, atual + passo)) * 10) / 10;
       try {
@@ -300,7 +301,7 @@ export default function KDSTelaPage() {
       } catch {}
       return novo;
     });
-  };
+  }, [chaveDoZoom]);
   // ── 🔔 AVISO SONORO DE PEDIDO NOVO ───────────────────────────────────────
   // A tela do KDS era muda: o pedido novo só aparecia, e a cozinha de costas
   // para a TV não via (Ragnar Burger, 13/10/2026: "tem como colocar um aviso
@@ -600,6 +601,11 @@ export default function KDSTelaPage() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (!stage || e.ctrlKey || e.altKey || e.metaKey || e.shiftKey ||
+        focoProtegidoNoKds(e, !!document.querySelector('dialog[open], [aria-modal="true"], [data-kds-menu-aberto="true"]'))) return;
+      // Num Lock desligado manda ArrowUp/Down no 8/2: esses números já são
+      // tratados pela baixa, não podem rolar a tela no mesmo toque.
+      if (/^Numpad[0-9]$/.test(e.code || "")) return;
       const key = e.key;
       const code = e.keyCode;
 
@@ -631,7 +637,7 @@ export default function KDSTelaPage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [scrollDown, scrollUp]);
+  }, [stage, scrollDown, scrollUp]);
 
   // ─── Redirect if no stage ───────────────────────────────────────────────────
   //
@@ -1275,16 +1281,19 @@ export default function KDSTelaPage() {
       // repetição dava baixa no pedido que escorregava para aquela posição:
       // um toque demorado no "1" levava a fila (NIK, 26/09/2026). Quem digita
       // num campo também não está dando baixa.
-      if (e.repeat) return;
-      const alvo = e.target as HTMLElement | null;
-      if (
-        alvo &&
-        (alvo.isContentEditable ||
-          alvo.tagName === "TEXTAREA" ||
-          alvo.tagName === "SELECT" ||
-          (alvo.tagName === "INPUT" &&
-            !/^(checkbox|radio|button|submit|reset)$/i.test((alvo as HTMLInputElement).type)))
-      ) {
+      if (!stage || e.repeat || focoProtegidoNoKds(e,
+        !!document.querySelector('dialog[open], [aria-modal="true"], [data-kds-menu-aberto="true"]'))) return;
+
+      const controle = controleDoTecladoNumerico(e);
+      if (controle) {
+        if (controle === "aumentar" || controle === "diminuir") {
+          mudarZoom(controle === "aumentar" ? 0.1 : -0.1);
+          e.preventDefault();
+        } else if (scrollContainerRef.current) {
+          if (controle === "subir") scrollUp();
+          else scrollDown();
+          e.preventDefault();
+        }
         return;
       }
 
@@ -1305,7 +1314,7 @@ export default function KDSTelaPage() {
       }
 
       // Ctrl+1, Alt+2… são atalhos do navegador, não baixa.
-      if (e.ctrlKey || e.altKey || e.metaKey) return;
+      if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return;
 
       // Numpad 0-9 codes: Numpad0-Numpad9, Digit0-Digit9
       let num: number | null = null;
@@ -1356,10 +1365,14 @@ export default function KDSTelaPage() {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [
+    stage,
     filteredOrders,
     markAsPronto,
     lastCompletedOrder,
     undoLastCompletedOrder,
+    mudarZoom,
+    scrollUp,
+    scrollDown,
   ]);
 
   // ─── Accent color for stage ─────────────────────────────────────────────────
@@ -1420,6 +1433,7 @@ export default function KDSTelaPage() {
           elementos `fixed` de dentro (rodapé, avisos) giram junto, porque o
           `transform` vira o referencial deles. */}
       <div
+        data-kds-menu-aberto={showCategoryPopup || showGirar || showPrioridade ? "true" : undefined}
         style={{
           position: "fixed",
           ...(rotacao === 0
