@@ -638,7 +638,7 @@ export async function processChatbotAI(
   // para esticar — e nem a ÁGIL, que já pedia "respostas curtas", escrevia menos
   // de 200 caracteres, porque o resto do prompt puxava para o outro lado.
   const personalityMap: Record<string, string> = {
-    SIMPATICO: "simpático e acolhedor, com carinho na medida (um emoji aqui e ali, como 😊, 🥰 ou 👏). Carinho não é mensagem comprida nem pergunta a mais: com quem quer fechar, vá direto ao pedido. NUNCA use emoji de comida que a loja não vende.",
+    SIMPATICO: "simpático e acolhedor, com atenção ao que o cliente já disse e sem enfeites automáticos. Carinho não é mensagem comprida nem pergunta a mais: com quem quer fechar, vá direto ao pedido.",
     AGIL: "rápido e objetivo, mas sempre como uma pessoa normal no whatsapp. Respostas curtas.",
     FORMAL: "educado e cortês, mas sem parecer um robô.",
     DIVERTIDO: "divertido, descontraído e alto astral, com humor leve — sem esticar a mensagem nem fazer pergunta a mais por causa da piada.",
@@ -1585,7 +1585,7 @@ DADOS DO CLIENTE CONVERSANDO AGORA:
 - Telefone: ${clientPhoneDigits || "Não informado"}
 
 REGRAS CRÍTICAS DE NOME E IDENTIFICAÇÃO DO CLIENTE:
-1. ${customerFirstName ? `O nome confirmado deste cliente no cadastro da loja é "${customerFirstName}". Use-o só na PRIMEIRA resposta da conversa: se o histórico já tem uma saudação pelo nome, não repita o nome nem a saudação.` : `O nome deste cliente NÃO FOI INFORMADO e NÃO CONSTA no cadastro. Você está RIGOROSAMENTE PROIBIDO de inventar, supor ou usar qualquer nome! Cumprimente SEMPRE usando apenas "Oi!", "Olá!", "Boa noite!", "Tudo bem?". NUNCA chame por nenhum nome se ele não estiver confirmado!`}
+1. ${customerFirstName ? `O nome confirmado deste cliente no cadastro da loja é "${customerFirstName}". Pode usá-lo na PRIMEIRA resposta; depois siga o assunto sem repetir nome nem saudação.` : `O nome deste cliente não foi informado e não consta no cadastro. Não invente nem suponha um nome. Se for a primeira resposta, cumprimente sem nome; se a conversa já começou, responda direto ao assunto, sem nova saudação.`}
 2. PROIBIÇÃO ABSOLUTA DE ATRIBUIR PEDIDOS DE OUTROS: Se o cliente veio de um anúncio (ex: "Olá! Posso ter mais informações sobre isso?"), pergunta "quero fazer pedido" ou se não possui pedido cadastrado no seu número de telefone hoje, NUNCA diga que ele tem um pedido em preparação ou em entrega! Acolha a pessoa com simpatia, ofereça ajuda e ENVIE O LINK DO CARDÁPIO DIGITAL DA LOJA: ${storeLink}
 ${phoneInstruction ? `\n${phoneInstruction}\n` : ""}${wasInactivityCancelled ? `
 RETORNO APÓS INATIVIDADE DE 20 MINUTOS (MUITO IMPORTANTE!):
@@ -1597,7 +1597,7 @@ PEDIDOS RECENTES DESTE CLIENTE NO SEU NÚMERO:
 ${recentOrdersSummary}
 ${cupomDesteCliente ? `\n${cupomDesteCliente}\n` : ""}${cashbackDesteCliente ? `\n${cashbackDesteCliente}\n` : ""}${carimbosDesteCliente ? `\n${carimbosDesteCliente}\n` : ""}${memoriaDoPedido ? `\n${memoriaDoPedido}\n` : ""}${addressValidationText}
 
-Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma ideia só, até uns 150 caracteres, sem repetir o que já foi dito e sem oferta de ajuda no final. Só o resumo do pedido e a lista de preços que o cliente pediu podem ser maiores.`;
+Lembre-se: conversa curta e contínua de WhatsApp, sem emoji automático nem repetir saudação, nome ou dados recebidos. Responda o que foi perguntado e peça só o que falta. Até uns 150 caracteres é referência, nunca corte informação necessária. Resumo do pedido e lista de preços solicitada podem ser maiores.`;
 
       const ai = new GoogleGenAI({ apiKey });
 
@@ -2297,7 +2297,7 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
           cleanText =
             !resultadoDoSync.repetido && comandaDoCliente
               ? comandaDoCliente
-              : "Seu pedido já está com a loja para conferir ✅ Assim que aceitarem, você recebe a confirmação por aqui! 😉";
+              : "Seu pedido já está com a loja para conferir. Quando aceitarem, você recebe a confirmação por aqui.";
           console.log(`[Chatbot AI] ⏳ Pedido ${resultadoDoSync.orderId} fechado pelo cliente, esperando a loja conferir (R$ ${resultadoDoSync.total.toFixed(2)}).`);
         } else if (gravouFinalizado && resultadoDoSync?.gravado === true && comandaDoCliente) {
           cleanText = comandaDoCliente;
@@ -2429,8 +2429,7 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
           } else {
             console.error(`[Chatbot AI] 🚨 CONFIRMAÇÃO SEM LASTRO bloqueada. Loja=${targetFranchiseeId} motivo="${motivo}". A resposta foi trocada e o atendente foi acionado.`);
             cleanText =
-              `Poxa${customerFirstName ? `, ${customerFirstName}` : ""}, tive um probleminha técnico para registrar seu pedido no sistema agora! 😖 ` +
-              `Já chamei nossa equipe aqui — em instantes alguém confirma tudo com você por esta conversa mesmo, tá bom? Não precisa repetir nada!` +
+              `Não consegui registrar seu pedido. Vou chamar a equipe para conferir por esta conversa. Não precisa repetir os dados.` +
               `
 [[CHAMAR_ATENDENTE]]`;
           }

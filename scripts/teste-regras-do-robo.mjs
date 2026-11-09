@@ -138,16 +138,17 @@ const camposDoPedido = [
   '"neighborhood"', '"deliveryType": "DELIVERY"', '"deliveryType": "RETIRADA"',
   '"alteraPedido"', '"couponCode"', '"customerName"', '"address"', '"paymentMethod"', '"deliveryFee"', '"totalAmount"',
 ];
-// Frases do original que os verificadores pediram de volta (09/10/2026).
+// Contratos do original; frases de atendimento atualizadas em 09/11/2026
+// para não obrigar emojis, identidade humana ou promessa de posição exata.
 const frases = [
   "Subtotal dos itens: R$ X,XX", "Taxa de entrega: R$ X,XX (ou Frete Grátis)", "Valor Total a pagar: R$ X,XX",
-  "Recebido! Seu pedido já deu entrada na nossa cozinha 🚀",
-  "Desculpe, não conseguimos atender ligações por aqui! 😅 Como posso te ajudar?",
+  "Recebido. Seu pedido já deu entrada na cozinha.",
+  "Não conseguimos atender ligações por aqui. Pode me dizer o que precisa por mensagem?",
   "TRAIN OF THOUGHT:", "150 caracteres", "Saiu para entrega com o motoboy",
-  "Nunca diga que é IA, robô, assistente virtual ou modelo de linguagem",
-  "Me confirma que eu já te passo a posição exata!",
+  "Se perguntarem se é robô ou IA, responda com transparência",
+  "É o pedido no nome de [Nome] pelo Jotajá/iFood?",
   "não tem o telefone dele", '"consegui falar com ele"', '"estou verificando a posição"',
-  "nada de enfeite", "endereço não quer dizer estacionamento",
+  "sem emoji por padrão", "endereço não quer dizer estacionamento",
   "(recuperação de cliente inativo, por exemplo)", "proibido divulgar, citar ou confirmar",
   "cidade, áudio", "a loja prefere vender pelo site",
   "procure nas OPÇÕES do produto", '"camarão" é opção da pizza',
@@ -155,7 +156,7 @@ const frases = [
   "taxa do bairro na tabela, taxa fixa, frete grátis",
 ];
 const frasesDoPedidoLigado = [
-  '"E vai pagar como: Pix, cartão ou dinheiro?"',
+  '"Vai pagar por Pix, cartão ou dinheiro?"',
   '"fechado"', // prometeuCozinha também barra "pedido fechado"
   "a cozinha não fica sabendo",
   "Só a taxa cadastrada para aquele bairro/faixa",
@@ -211,14 +212,14 @@ for (const [nome, c] of Object.entries(cenarios)) {
   const regrasDoLink = novo.split("\n").filter((l) => /^\d+\. /.test(l)).length;
   confere("regras numeradas em sequência", regrasDoLink === 20 && novo.includes("\n20. "), `${regrasDoLink} regras`);
   confere("títulos em uma linha (cada regra numerada tem título na própria linha)", novo.split("\n").filter((l) => /^\d+\. $/.test(l)).length === 0);
-  confere("a regra 2 abre exceção para a frase fixa da regra 19", novo.includes("exceção: a frase fixa da regra 19") && /\n19\. LIGAÇÃO DE VOZ/.test(novo));
+  confere("a regra 2 abre exceção para a orientação de ligação da regra 19", novo.includes("exceção: regra 19") && /\n19\. LIGAÇÃO DE VOZ/.test(novo));
 
   if (c.novo.anotaPedido) {
     temTodos(novo, secoesDoPedido, "seções citadas pelo pedido");
     temTodos(novo, camposDoPedido, "campos do JSON do pedido");
     temTodos(novo, frasesDoPedidoLigado, "frases repostas no pedido ligado");
     temTodos(novo, [`${REGRA_DO_PEDIDO}. ANOTAR PEDIDO`, regraDoMinimo, lembrete, "Quer CPF ou CNPJ na nota?", formas, "Pizza Tradicional Frango I", "RESERVA DE MESA — a loja faz", "Temos loja física sim", "Rua das Flores, 10 - Centro", "percurso da moto", "localização pelo WhatsApp", "6x Sabor A", "1/2 PIZZA", "mitad"], "regra do pedido, nota, reserva, loja física, rota");
-    confere("sem a frase de confirmação solta: 'enviado pra cozinha' só junto da marca", /finalized": true}]]\n\s+e \(b\) a frase "Perfeito! Pedido confirmado e enviado pra cozinha 🚀"/.test(novo));
+    confere("sem a frase de confirmação solta: 'enviado pra cozinha' só junto da marca", /finalized": true}]]\n\s+e \(b\) a frase "Pedido confirmado e enviado pra cozinha\."/.test(novo));
     confere("não lista 'reserva de mesa' entre o que não sabe (a loja disse)", !novo.includes("reserva de mesa, estacionamento"));
     const fraseDaReserva = novo.match(/RESERVA DE MESA — a loja faz:[^\n]*?"(Fazemos sim![^"]+)"/)?.[1] || "";
     confere("a frase-modelo da reserva passa pela rede servicosSemFonte sem a fonte", fraseDaReserva !== "" && servicosSemFonte(fraseDaReserva, "", { soDelivery: false }).length === 0, fraseDaReserva);

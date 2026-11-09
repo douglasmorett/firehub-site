@@ -50,6 +50,52 @@ export type RespostaEnxuta = {
   cortes: string[];
 };
 
+const ENFEITE_DE_CONVERSA = '[👋😊🥰👏😅😉😕😖😍😋🙏👍🙌🤗][\\uFE0F\\u{1F3FB}-\\u{1F3FF}]*';
+
+/** Só enfeites de conversa isolados. Não é um apagador geral de Unicode:
+ * pratos/opções (🍕, 🔥), ícones informativos, URLs e marcas ficam intactos. */
+function semEnfeitesDeConversa(texto: string): string {
+  const partes = texto.split(/(\[\[[\s\S]*?\]\]|https?:\/\/\S+|"[^"\n]+"|“[^”\n]+”)/gu);
+  const enfeite = ENFEITE_DE_CONVERSA;
+  return partes.map((parte, i) => {
+    if (i % 2) return parte;
+    return parte.split("\n").map(linha => {
+      // Preços, quantidades, campos de resumo/listas e nomes entre aspas
+      // não são decoração. Os exemplos/prompt cuidam do tom dessas linhas.
+      if (/R\$|\d|:\s|\b(op[cç][oõ]es|sabores)\b/iu.test(linha)) return linha;
+      let limpa = linha.replace(new RegExp(`^(${enfeite})+[ \\t]+(?=(?:oi|ol[aá]|bom dia|boa tarde|boa noite)(?!\\p{L}))`, 'iu'), '');
+      // Só no fim do balão: nunca remove o emoji no meio de um nome/frase.
+      if (i === partes.length - 1) limpa = limpa.replace(new RegExp(`[ \\t]+(?:${enfeite})+[ \\t]*$`, 'u'), '');
+      return limpa.replace(/[ \t]{2,}/gu, " ");
+    }).join("\n");
+  }).join("").trim();
+}
+
+function tomNatural(
+  texto: string,
+  o: { historico: MensagemDaConversaCurta[]; mensagemDoCliente: string },
+): RespostaEnxuta {
+  const cortes: string[] = [];
+  // Menção a emoji não é autorização: "não use emojis" mantém a limpeza.
+  const pedeEmoji = /\b(use|usar|mande|envie|quero|coloque|inclua|responda com|responde com)\b[^.!?\n]{0,30}\bemojis?\b/iu.test(o.mensagemDoCliente);
+  const rejeitaEmoji = /\b(n[aã]o|sem|evite|pare|chega)\b[^.!?\n]{0,30}\bemojis?\b/iu.test(o.mensagemDoCliente);
+  let natural = pedeEmoji && !rejeitaEmoji ? texto : semEnfeitesDeConversa(texto);
+  if (!natural.trim()) return { texto, cortes }; // não criar silêncio num cumprimento/ack sozinho
+  if (natural !== texto) cortes.push("enfeite de conversa");
+  if ((o.historico || []).some(m => m?.sender === "bot" && String(m.text || "").trim())) {
+    // Não adivinha nome, não corta uma frase informativa depois de vírgula.
+    // Só a saudação isolada, com conteúdo concreto que continua depois dela.
+    const enfeites = `(?:${ENFEITE_DE_CONVERSA}[ \\t]*)*`;
+    const saudacao = new RegExp(`^(?:oi|ol[aá]|bom dia|boa tarde|boa noite)[!.]\\s*${enfeites}(?:(?:tudo bem|tudo bom|tudo certo)\\?\\s*${enfeites})?`, 'iu');
+    const semSaudacao = natural.replace(saudacao, "").trim();
+    if (semSaudacao && semSaudacao !== natural) {
+      natural = semSaudacao;
+      cortes.push("saudação repetida");
+    }
+  }
+  return { texto: natural, cortes };
+}
+
 const L = "\\p{L}";
 const palavra = (alternativas: string) => new RegExp(`(?<!${L})(?:${alternativas})(?!${L})`, "iu");
 
@@ -158,7 +204,7 @@ function semPedacos(frase: string, pedacos: RegExp[], assunto: RegExp): string {
 
 export function enxugarResposta(
   resposta: string,
-  o: { historico: MensagemDaConversaCurta[]; mensagemDoCliente: string },
+  o: { historico: MensagemDaConversaCurta[]; mensagemDoCliente: string; tomNatural?: boolean },
 ): RespostaEnxuta {
   const cortes: string[] = [];
   const doCliente = [
@@ -278,5 +324,8 @@ export function enxugarResposta(
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  return { texto: cortes.length ? texto : String(resposta || ""), cortes };
+  const base = cortes.length ? texto : String(resposta || "");
+  if (!o.tomNatural) return { texto: base, cortes };
+  const natural = tomNatural(base, o);
+  return { texto: natural.texto, cortes: [...cortes, ...natural.cortes] };
 }

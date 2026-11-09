@@ -1793,7 +1793,10 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
       const temAnexo = Boolean(aiResponse.chavePix) || enviarCardapio ||
         (Array.isArray(aiResponse.respostasProntas) && aiResponse.respostasProntas.length > 0);
       if (!falhaDaIa && !donoNaQueda && !callHuman && !ehODono) {
-        const enxuta = enxugarResposta(replyText, { historico: history, mensagemDoCliente: transcription || textMessage });
+        const enxuta = enxugarResposta(replyText, {
+          historico: history, mensagemDoCliente: transcription || textMessage,
+          tomNatural: chatbotConfig?.modeloDoRobo === "claude-haiku-5-5",
+        });
         if (enxuta.cortes.length) {
           console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] ✂️ Resposta enxugada para ${remoteJid}: ${[...new Set(enxuta.cortes)].join(", ")}.`);
           const vazia = !enxuta.texto.trim();
@@ -1802,7 +1805,7 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
           // "bora pedir?": silêncio. Com chave Pix/arquivo/foto para mandar, a
           // resposta original fica (o anexo precisa do texto).
           if (!vazia) replyText = enxuta.texto;
-          else if (!temAnexo) replyText = enxuta.cortes.some((c) => c.endsWith("já dito")) ? "Anotado 👍" : "";
+          else if (!temAnexo) replyText = enxuta.cortes.some((c) => c.endsWith("já dito")) ? "Certo." : "";
         }
       }
       if (!replyText.trim()) {
