@@ -14,6 +14,7 @@ import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
 import { calcularContaDaMesa, sanearTaxa } from "@/lib/conta-da-mesa";
 import { normalizarConfigFiscal } from "@/lib/fiscal-config";
 import { documentoNoPedido } from "@/lib/fiscal-modo";
+import { contextoPagoDaMesa } from "@/lib/saldo-da-mesa";
 
 export const dynamic = "force-dynamic";
 
@@ -69,19 +70,24 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   // O fallback da taxa é 0, não `mesa.serviceFee`: o fechamento grava ali o
   // VALOR em reais da taxa, não o percentual. Ler aquele campo como "%"
   // transformaria uma taxa de R$ 24 em 24% e inflaria a conta inteira.
-  const taxaPct = sanearTaxa(req.nextUrl.searchParams.get("taxa"), 0);
+  // O APK atual envia só a taxa padrão; depois de uma baixa parcial usa os
+  // parâmetros já confirmados naquela conta. O formulário web envia gorjeta
+  // explicitamente, inclusive zero, e mantém a simulação que o caixa escolheu.
+  const contexto = req.nextUrl.searchParams.has("gorjeta") ? null : contextoPagoDaMesa(mesa.paymentMethods);
+  const taxaPct = contexto?.taxa ?? sanearTaxa(req.nextUrl.searchParams.get("taxa"), 0);
   const gorjetaParam = req.nextUrl.searchParams.get("gorjeta");
-  const gorjeta =
-    gorjetaParam !== null && gorjetaParam !== "" ? Math.max(0, Number(gorjetaParam) || 0) : null;
+  const gorjeta = contexto?.gorjeta ?? (
+    gorjetaParam !== null && gorjetaParam !== "" ? Math.max(0, Number(gorjetaParam) || 0) : null
+  );
 
   // O desconto vem por querystring para a conta por pessoa bater com o
   // fechamento: sem ele aqui, a tela dividiria o valor CHEIO e o servidor
   // recusaria o fechamento por sobra.
   const tipoDesconto = req.nextUrl.searchParams.get("descontoTipo") === "valor" ? "valor" : "percent";
   const valorDesconto = Number(req.nextUrl.searchParams.get("descontoValor")) || 0;
-  const desconto = valorDesconto > 0
+  const desconto = contexto?.desconto ?? (valorDesconto > 0
     ? { tipo: tipoDesconto as "percent" | "valor", valor: valorDesconto, motivo: req.nextUrl.searchParams.get("descontoMotivo") || "" }
-    : null;
+    : null);
 
   // "CPF na nota?" no fechamento (lib/fiscal-modo): só a regra, lida da loja —
   // o garçom pelo link também fecha conta, e a pergunta vale para ele.

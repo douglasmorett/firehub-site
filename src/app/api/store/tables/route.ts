@@ -5,6 +5,7 @@ import { lerAndares } from "@/lib/andares-da-mesa";
 import { contaPedidaEm } from "@/lib/mesa-em-fechamento";
 import { chamadosDaLoja } from "@/lib/tablet-da-mesa/tablets";
 import { TIPO_COMANDA, faixaDeComandas } from "@/lib/comanda";
+import { saldoDaMesaDoQuadro, contextoPagoDaMesa } from "@/lib/saldo-da-mesa";
 
 export async function GET(req: NextRequest) {
   try {
@@ -47,6 +48,10 @@ export async function GET(req: NextRequest) {
 
     const chamadoPorMesa = new Map((await chamadosDaLoja(targetFranchiseeId)).map((c) => [c.tableId, { motivo: c.motivo, em: c.em }]));
 
+    const loja = await prisma.user.findUnique({
+      where: { id: targetFranchiseeId },
+      select: { taxaServicoPadrao: true, printerConfig: true },
+    });
     const formattedTables = tables.map((table: any) => {
       const activeSession = table.sessions[0] || null;
       let openSession = null;
@@ -70,6 +75,9 @@ export async function GET(req: NextRequest) {
           waiterId: activeSession.waiterId,
           openedAt: activeSession.openedAt,
           totalAmount,
+          saldo: saldoDaMesaDoQuadro({ ...activeSession, table: { ...table, franchisee: loja } }),
+          paymentMethods: activeSession.paymentMethods,
+          conta: contextoPagoDaMesa(activeSession.paymentMethods),
           orderCount: vivos.length,
           // Conta pedida e nada lançado depois: a mesa fica roxa na grade.
           contaPedidaEm: contaPedidaEm(contaImpressaPorSessao.get(activeSession.id), activeSession.orders),
@@ -93,11 +101,6 @@ export async function GET(req: NextRequest) {
     // A taxa de serviço cadastrada acompanha a lista: a tela da mesa precisa
     // dela para mostrar o total COM taxa antes de o garçom abrir o fechamento.
     // Nulo = 10, que é o costume da casa.
-    const loja = await prisma.user.findUnique({
-      where: { id: targetFranchiseeId },
-      select: { taxaServicoPadrao: true, printerConfig: true },
-    });
-
     return NextResponse.json({
       tables: formattedTables,
       taxaServicoPadrao: loja?.taxaServicoPadrao ?? 10,

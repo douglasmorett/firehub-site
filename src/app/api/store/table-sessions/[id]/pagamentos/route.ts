@@ -75,13 +75,17 @@ async function abrirContexto(req: NextRequest, id: string) {
 }
 
 /** Grava a lista e mantém `totalPaid` igual à soma — os dois nunca divergem. */
-async function gravar(id: string, lista: PagamentoDaMesa[]) {
-  const total = somarPagamentos(lista);
-  await prisma.tableSession.update({
-    where: { id },
-    data: { paymentMethods: lista as any, totalPaid: total },
+async function gravar(id: string, lojaId: string, mudar: (atuais: PagamentoDaMesa[]) => PagamentoDaMesa[]) {
+  return prisma.$transaction(async tx => {
+    const mesas = await tx.$queryRawUnsafe<{ status: string; paymentMethods: unknown }[]>(
+      'SELECT s."status", s."paymentMethods" FROM "TableSession" s JOIN "Table" t ON t."id" = s."tableId" WHERE s."id" = $1 AND t."franchiseeId" = $2 FOR UPDATE OF s', id, lojaId,
+    );
+    if (mesas[0]?.status !== "OPEN") return NextResponse.json({ error: "mesa_fechada", mensagem: "Esta mesa acabou de ser fechada." }, { status: 409 });
+    const lista = mudar(lerPagamentos(mesas[0].paymentMethods));
+    const total = somarPagamentos(lista);
+    await tx.tableSession.update({ where: { id }, data: { paymentMethods: lista as any, totalPaid: total } });
+    return NextResponse.json({ pagamentos: lista, totalPago: total });
   });
-  return { pagamentos: lista, totalPago: total };
 }
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -122,7 +126,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const corpo = await req.json().catch(() => ({}));
   const valor = Number(corpo?.valor ?? corpo?.amount) || 0;
-  if (valor <= 0) {
+  if (!Number.isFinite(valor) || emCentavos(valor) <= 0) {
     return NextResponse.json(
       { error: "valor_invalido", mensagem: "Informe um valor maior que zero." },
       { status: 400 }
@@ -168,8 +172,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     guestName = pessoa.name;
   }
 
-  const lista = lerPagamentos(ctx.mesa!.paymentMethods);
-  lista.push({
+  const nova: PagamentoDaMesa = {
     uid: crypto.randomUUID(),
     method: metodo,
     amount: emReais(emCentavos(valor)),
@@ -178,9 +181,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     at: new Date().toISOString(),
     // Com o módulo aberto ao garçom pelo link, cada baixa precisa ter dono.
     por: rotuloDoOperador(ctx.operador!),
-  });
+  };
 
-  return NextResponse.json(await gravar(id, lista));
+  return gravar(id, ctx.lojaId!, atuais => [...atuais, nova]);
 }
 
 /**
@@ -203,6 +206,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!uid) {
     return NextResponse.json({ error: "uid_obrigatorio" }, { status: 400 });
   }
+  if (uid.startsWith("maquininha-")) return NextResponse.json({ error: "pagamento_da_maquininha", mensagem: "Pagamento aprovado na maquininha só pode ser desfeito por estorno na adquirente." }, { status: 409 });
 
   const antes = lerPagamentos(ctx.mesa!.paymentMethods);
   const apagado = antes.find((p) => p.uid === uid);
@@ -214,5 +218,5 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       (apagado.guestName ? ` (${apagado.guestName})` : "") + (apagado.por ? ` — registrado por ${apagado.por}` : "")
     );
   }
-  return NextResponse.json(await gravar(id, lista));
+  return gravar(id, ctx.lojaId!, atuais => atuais.filter(p => p.uid !== uid));
 }

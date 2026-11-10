@@ -14,6 +14,8 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { lerContextoDaConta } from "@/lib/contexto-da-conta-da-mesa";
+import { sanearTaxa } from "@/lib/conta-da-mesa";
 import { resolverOperadorDaMesa, rotuloDoOperador } from "@/lib/garcom-auth";
 import { recusaSeCaixaFechado } from "@/lib/caixa-aberto-servidor";
 import { PROVEDORES_COM_APP, NOME_DO_PROVEDOR } from "@/lib/terminal-app";
@@ -121,6 +123,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (semCaixa) return semCaixa;
 
   const corpo = await req.json().catch(() => ({}));
+  const conta = lerContextoDaConta(corpo?.conta);
+  if (corpo?.conta != null && !conta) return NextResponse.json({ error: "CONTA_INVALIDA" }, { status: 400 });
+  if (conta && ctx.operador?.tipo === "garcom") {
+    if (!ctx.operador.garcom.podeDarDesconto && (conta.desconto?.valor ?? 0) > 0) {
+      return NextResponse.json({ error: "Este garçom não dá desconto." }, { status: 403 });
+    }
+    if (!ctx.operador.garcom.podeTirarTaxa) {
+      const loja = await prisma.user.findUnique({ where: { id: ctx.lojaId! }, select: { taxaServicoPadrao: true } });
+      if (conta.taxa < sanearTaxa(loja?.taxaServicoPadrao, 10)) return NextResponse.json({ error: "Este garçom não tira a taxa de serviço." }, { status: 403 });
+    }
+  }
   const valor = Number(corpo?.valor) || 0;
   const r = await criarCobrancaDaMesa({
     lojaId: ctx.lojaId!,
@@ -129,6 +142,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     terminalId: String(corpo?.terminalId || ""),
     guestId: typeof corpo?.guestId === "string" && corpo.guestId ? corpo.guestId : null,
     por: rotuloDoOperador(ctx.operador!),
+    ...(conta ? { conta } : {}),
   });
   if (!r.ok) return NextResponse.json({ error: r.codigo, mensagem: r.mensagem }, { status: r.status });
   return NextResponse.json({ success: true, cobranca: resumo(r.cobranca) });

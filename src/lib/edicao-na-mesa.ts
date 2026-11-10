@@ -63,6 +63,7 @@ export type ItemDaRodada = {
 
 export type RodadaDaMesa = {
   id: string;
+  tableSessionId?: string | null;
   totalAmount: number | null;
   deliveryFee: number | null;
   discountTotal: number | null;
@@ -257,6 +258,7 @@ export async function carregarRodadaDaMesa(
   return {
     rodada: {
       id: order.id,
+      tableSessionId: order.tableSessionId,
       totalAmount: order.totalAmount,
       deliveryFee: order.deliveryFee,
       discountTotal: order.discountTotal,
@@ -308,7 +310,13 @@ export async function editarRodadaDaMesa(entrada: {
     ...(plano.retirados.length > 0 ? { itensRetirados: plano.retirados } : {}),
   };
 
-  await prisma.$transaction(async (tx) => {
+  const editada = await prisma.$transaction(async (tx) => {
+    const sessaoId = rodada.tableSessionId ?? (await tx.customerOrder.findUnique({ where: { id: rodada.id }, select: { tableSessionId: true } }))?.tableSessionId;
+    if (!sessaoId) return false;
+    const mesa = await tx.$queryRawUnsafe<{ status: string }[]>(
+      'SELECT "status" FROM "TableSession" WHERE "id" = $1 AND "franchiseeId" = $2 FOR UPDATE', sessaoId, lojaId,
+    );
+    if (mesa[0]?.status !== "OPEN") return false;
     for (const rid of plano.remover) {
       await tx.customerOrderItem.delete({ where: { id: rid } });
     }
@@ -322,7 +330,9 @@ export async function editarRodadaDaMesa(entrada: {
         editHistory: empilharEdicao(rodada.editHistory, registro) as any,
       },
     });
+    return true;
   });
+  if (!editada) return { status: 409, corpo: { error: "Esta mesa acabou de ser fechada. Peça ao caixa para conferir." } };
 
   console.log(
     `[Mesa Editar] pedido ${rodada.id}: ${plano.descricao}, total ${rodada.totalAmount} → ${plano.novoTotal}, por ${quem}`
@@ -348,7 +358,14 @@ export async function cancelarRodadaDaMesa(entrada: { rodada: RodadaDaMesa; quem
 
   // A grafia é CANCELADO — a que o resto do sistema grava e filtra. O motivo
   // é o que a pessoa escreveu: é ele que sai no fechamento do caixa.
-  await prisma.customerOrder.update({
+  const cancelada = await prisma.$transaction(async tx => {
+    const pedido = await tx.customerOrder.findUnique({ where: { id: rodada.id }, select: { tableSessionId: true } });
+    if (!pedido?.tableSessionId) return false;
+    const mesa = await tx.$queryRawUnsafe<{ status: string }[]>(
+      'SELECT "status" FROM "TableSession" WHERE "id" = $1 FOR UPDATE', pedido.tableSessionId,
+    );
+    if (mesa[0]?.status !== "OPEN") return false;
+    await tx.customerOrder.update({
     where: { id: rodada.id },
     data: {
       status: "CANCELADO",
@@ -356,7 +373,10 @@ export async function cancelarRodadaDaMesa(entrada: { rodada: RodadaDaMesa; quem
       cancelReason: motivo,
       editHistory: empilharEdicao(rodada.editHistory, registro) as any,
     },
+    });
+    return true;
   });
+  if (!cancelada) return { status: 409, corpo: { error: "Esta mesa acabou de ser fechada. Peça ao caixa para conferir." } };
 
   // O estoque do lançamento cancelado (devolver o insumo, ou desperdício se a
   // cozinha já tinha feito) é da extensão do Prisma em lib/prisma.ts, pelas

@@ -9,6 +9,7 @@ import { coordenadasDoIfood } from "@/lib/ifood-coordenadas";
 import { pontoEDistanciaDoParceiro } from "@/lib/distancia-da-entrega";
 import { ehEventoDeCodigo, marcarExigeCodigo } from "@/lib/ifood-logistics";
 import { MESA_DO_QUADRO } from "@/lib/mesa-na-comanda";
+import { anexarSaldoDasMesas } from "@/lib/saldo-da-mesa";
 import { COOKIE_DA_LOJA_ATIVA, lojasDaVisao } from "@/lib/loja-ativa";
 import { DIAS_ATIVO_SEM_PERIODO, filtroDoFeed, idsQueMudaram, soOQueMudou } from "@/lib/filtro-do-feed";
 import { marcarPainelAberto } from "@/lib/sinais-da-loja";
@@ -1114,7 +1115,7 @@ export async function GET(req: NextRequest) {
     // O que mudou na loja desde `desde` (lib/filtro-do-feed.ts). Mudança em
     // massa volta como lista completa, por segurança.
     const mudados = desde
-      ? await withRetry(() => idsQueMudaram(prisma, { validFranchiseeIds, from, ATIVO_SEM_PERIODO_DESDE, desde }))
+      ? await withRetry(() => idsQueMudaram(prisma, { validFranchiseeIds, from, ATIVO_SEM_PERIODO_DESDE, desde, incluirMesasAbertas: true }))
       : null;
     const modoDelta = desde !== null && mudados !== null;
 
@@ -1132,7 +1133,7 @@ export async function GET(req: NextRequest) {
     const filtro = filtroDoFeed({ validFranchiseeIds, from, to, ATIVO_SEM_PERIODO_DESDE });
 
     const orders = await withRetry(() => prisma.customerOrder.findMany({
-      where: modoDelta ? soOQueMudou(filtro, desde!) : filtro,
+      where: modoDelta ? soOQueMudou(filtro, desde!, true) : filtro,
       // `include` puxava as 87 colunas do pedido — nota fiscal, dados da
       // maquininha, QR do Pix, tokens de gateway — e o painel usa 41 delas.
       // No JSON o custo não é só o valor: cada chave nula ainda viaja com o
@@ -1277,6 +1278,7 @@ export async function GET(req: NextRequest) {
 
     // A conta da mesa só existe no pedido de mesa: nos outros a chave viajaria
     // como `"tableSession":null` em cada um dos 200, a cada rodada.
+    anexarSaldoDasMesas(orders);
     for (const o of orders as any[]) {
       if (o.tableSession == null) delete o.tableSession;
     }

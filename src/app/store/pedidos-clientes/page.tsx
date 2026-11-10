@@ -12,6 +12,7 @@ import { lojasDeOrigemDaConta } from "@/lib/lojas-de-origem-da-conta";
 import { resolverLojaNoMapa } from "@/lib/ponto-da-loja-servidor";
 import type { LojaDeOrigem } from "@/lib/loja-de-origem";
 import { MESA_DO_QUADRO } from "@/lib/mesa-na-comanda";
+import { anexarSaldoDasMesas } from "@/lib/saldo-da-mesa";
 import { DIAS_ATIVO_SEM_PERIODO, filtroDoFeed } from "@/lib/filtro-do-feed";
 import { lojasDaVisao } from "@/lib/loja-ativa";
 import { zonasDeBairro, type ZonaComApelidos } from "@/lib/bairro-pelo-endereco";
@@ -223,7 +224,7 @@ export default async function FranchiseeCustomerOrdersPage() {
       }),
     ]);
 
-    orders = ordersRes;
+    orders = anexarSaldoDasMesas(ordersRes);
 
     motoboys = motoboysRes;
     if (cashSessionRes?.openedAt) {

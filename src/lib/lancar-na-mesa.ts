@@ -104,7 +104,13 @@ export async function lancarNaMesa(opcoes: {
   const nomeQueVeio = String(opcoes.customerName ?? "").trim().slice(0, 80);
   const defaultName = nomeQueVeio || tableSession.customerName || nomeDaMesa(tableSession.table);
 
-  const order = await prisma.customerOrder.create({
+  const order = await prisma.$transaction(async tx => {
+    const aberta = await tx.$queryRawUnsafe<{ status: string }[]>(
+      'SELECT s."status" FROM "TableSession" s JOIN "Table" t ON t."id" = s."tableId" WHERE s."id" = $1 AND t."franchiseeId" = $2 FOR UPDATE OF s',
+      id, targetFranchiseeId,
+    );
+    if (aberta[0]?.status !== "OPEN") return null;
+    return tx.customerOrder.create({
     data: {
       franchiseeId: targetFranchiseeId,
       dailyOrderNumber,
@@ -139,7 +145,9 @@ export async function lancarNaMesa(opcoes: {
         })),
       },
     },
+    });
   });
+  if (!order) return { ok: false, status: 409, error: "Esta mesa acabou de ser fechada. Abra uma nova conta antes de lançar." };
 
   // Realiza a baixa imediata no estoque do pedido
   const { deductStockForOrder } = await import("@/lib/stock");

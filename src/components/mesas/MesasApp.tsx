@@ -12,6 +12,8 @@ import SelecionarItensParaImpressao, { AvisoNoTopo, type Aviso } from "@/compone
 import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
 import { montarCardapioDaMesa, gruposDoProduto } from "@/lib/cardapio-da-mesa";
 import type { PagamentoDaMesa } from "@/lib/pagamentos-da-mesa";
+import { saldoDaContaDaMesa, saldoDaMesa, type SaldoDaMesa } from "@/lib/saldo-da-mesa";
+import type { ContextoDaContaDaMesa } from "@/lib/contexto-da-conta-da-mesa";
 import { printOrder } from "@/lib/print";
 import { impressorasDaContaDaMesa } from "@/lib/impressao-da-conta";
 import { impressorasDaContaNoAndar, lerAndares, numerosDaFaixa, type AndarDaMesa } from "@/lib/andares-da-mesa";
@@ -52,6 +54,9 @@ interface TableItem {
     waiterId?: string | null;
     openedAt: string;
     totalAmount: number;
+    saldo?: SaldoDaMesa;
+    paymentMethods?: unknown;
+    conta?: ContextoDaContaDaMesa | null;
     orderCount: number;
     /** Conta impressa e nada lançado depois: mesa em fechamento (lib/mesa-em-fechamento.ts). */
     contaPedidaEm?: string | null;
@@ -567,9 +572,12 @@ export default function MesasApp({
   // acabou de digitar.
   const sessaoDaConta = selectedTable?.openSession?.id ?? null;
   useEffect(() => {
-    setDesconto(SEM_DESCONTO);
-    setMostrarDesconto(false);
-    setWaiterTip(0);
+    const contexto = selectedTable?.openSession?.conta;
+    setDesconto(contexto?.desconto ?? SEM_DESCONTO);
+    setMostrarDesconto(Boolean(contexto?.desconto));
+    setWaiterTip(contexto?.gorjeta ?? 0);
+    setServiceFee(contexto?.taxa ?? taxaSalvaRef.current);
+    setUseServiceFee((contexto?.taxa ?? taxaSalvaRef.current) > 0);
   }, [sessaoDaConta]);
 
   // New table
@@ -588,6 +596,11 @@ export default function MesasApp({
       if (res.ok) {
         const data = await res.json();
         setTables(data.tables || []);
+        setSelectedTable(atual => {
+          if (!atual) return atual;
+          const nova = (data.tables || []).find((t: TableItem) => t.id === atual.id);
+          return nova?.openSession?.id === atual.openSession?.id ? nova : null;
+        });
         if (Array.isArray(data.andares)) setAndares(lerAndares({ andares: data.andares }));
         if (typeof data.taxaServicoPadrao === "number") {
           setTaxaSalva(data.taxaServicoPadrao);
@@ -1340,7 +1353,8 @@ export default function MesasApp({
       const res = await chamar(`/api/store/table-sessions/${sessionId}/maquininha`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ valor, terminalId: maquininhaEscolhida, guestId: donoPagamento }),
+        body: JSON.stringify({ valor, terminalId: maquininhaEscolhida, guestId: donoPagamento,
+          conta: { taxa: useServiceFee ? serviceFee : 0, gorjeta: Number(waiterTip) || 0, desconto: descontoDaMesa > 0 ? desconto : null } }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
@@ -1726,7 +1740,12 @@ export default function MesasApp({
   const descontoDaMesa = valorDoDesconto(desconto, consumoFechamento);
   const consumoCobrado = Math.max(0, consumoFechamento - descontoDaMesa);
   const taxaFechamento = useServiceFee ? consumoCobrado * serviceFee / 100 : 0;
-  const totalFechamento = consumoCobrado + taxaFechamento + (Number(waiterTip) || 0);
+  const contaAtual = saldoDaContaDaMesa({
+    table: { number: selectedTable?.number ?? 0, label: selectedTable?.label ?? null },
+    orders: [{ status: "ACEITO", totalAmount: consumoFechamento, dailyOrderNumber: null, items: [] }],
+    waiterTip: Number(waiterTip) || 0, paymentMethods: pagamentosDaMesa,
+  }, useServiceFee ? serviceFee : 0, Number(waiterTip) || 0, desconto);
+  const totalFechamento = contaAtual.total;
 
   // O rodapé do painel da mesa, com a mesma regra: desconto primeiro, taxa
   // sobre o que sobrou. Ele fazia os 10% sobre o consumo cheio e ignorava o
@@ -1738,9 +1757,9 @@ export default function MesasApp({
   // O placar sai do que está GRAVADO, não do que está digitado na tela. É a
   // mesma lista que o servidor confere no fechamento, então a tela nunca
   // mostra a mesa zerada com o fechamento recusando por diferença.
-  const totalRecebido = pagamentosDaMesa.reduce((soma, p) => soma + (Number(p.amount) || 0), 0);
-  const faltaPagar = Math.max(0, totalFechamento - totalRecebido);
-  const troco = Math.max(0, totalRecebido - totalFechamento);
+  const totalRecebido = contaAtual.recebido;
+  const faltaPagar = contaAtual.falta;
+  const troco = contaAtual.troco;
   // Mesa sem consumo (aberta por engano) fecha sem pagamento nenhum — exigir
   // uma baixa de R$ 0,00 só sujaria o relatório do caixa.
   const podeFechar = faltaPagar <= 0.01 &&
@@ -2297,6 +2316,12 @@ export default function MesasApp({
               {table.openSession!.orderCount} ped. · {elapsed(table.openSession!.openedAt)}
               {useServiceFee && serviceFee > 0 ? ` · +${serviceFee}%` : ""}
             </span>
+            {table.openSession?.saldo && table.openSession.saldo.recebido > 0 && (
+              <span style={{ fontSize: 11, fontWeight: 800, color: isSelected ? "#A7F3D0" : "#047857" }}>
+                {table.openSession.saldo.quitada ? "✅ Conta paga" : "Pagamento parcial"}
+                <br />Recebido {fmt(table.openSession.saldo.recebido)} · Falta {fmt(table.openSession.saldo.falta)}
+              </span>
+            )}
             {observacao && (
               <span className="mesa-cartao-obs" title={observacao} style={{
                 fontSize: 11, fontWeight: 700, lineHeight: 1.25,
@@ -3132,9 +3157,17 @@ export default function MesasApp({
               }}>
                 <span>Total</span>
                 <span style={{ color: "#475569" }}>
-                  {fmt(consumoCobradoNoPainel + taxaNoPainel)}
+                  {fmt(saldoDaMesa(consumoCobradoNoPainel + taxaNoPainel + (Number(waiterTip) || 0), []).total)}
                 </span>
               </div>
+              {selectedTable.openSession.saldo && selectedTable.openSession.saldo.recebido > 0 && (() => {
+                const saldo = saldoDaMesa(consumoCobradoNoPainel + taxaNoPainel + (Number(waiterTip) || 0), selectedTable.openSession.paymentMethods);
+                return <div style={{ marginTop: 8, padding: 10, background: "#ECFDF5", borderRadius: 8, color: "#065F46", fontSize: 13 }}>
+                  <strong>{saldo.quitada ? "✅ Conta da mesa paga" : "Pagamento parcial da mesa"}</strong>
+                  <div>Recebido {fmt(saldo.recebido)} · Falta {fmt(saldo.falta)}</div>
+                  <div style={{ fontSize: 11, marginTop: 3 }}>Pagamentos parciais ou com recebimento manual são conferidos no fechamento. A produção segue separada.</div>
+                </div>;
+              })()}
               <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 2 }}>
                 {selectedTable.openSession.orderCount} pedido{selectedTable.openSession.orderCount !== 1 ? "s" : ""} · Aberta há {elapsed(selectedTable.openSession.openedAt)}
               </div>

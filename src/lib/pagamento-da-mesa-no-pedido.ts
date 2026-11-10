@@ -36,6 +36,7 @@
  * (scripts/teste-historico-de-mesas.ts).
  */
 import { emCentavos, emReais, lerPagamentos } from "@/lib/pagamentos-da-mesa";
+import type { SaldoDaMesa } from "@/lib/saldo-da-mesa";
 
 /** O pedaço da conta da mesa que chega com o pedido no quadro. */
 export type ContaNoPedido = {
@@ -43,6 +44,7 @@ export type ContaNoPedido = {
   paymentMethods?: unknown;
   totalPaid?: number | null;
   closedAt?: Date | string | null;
+  saldo?: SaldoDaMesa;
 };
 
 export type PedidoComContaDaMesa = {
@@ -55,8 +57,9 @@ export type FormaDaMesa = { forma: string; valor: number };
 export type PagamentoDaMesaNoPedido =
   /** Conta ainda aberta (ou o feed não trouxe a sessão): a rodada se paga no fechamento. */
   | { situacao: "naConta"; resumo: string; texto: string }
+  | { situacao: "parcial"; resumo: string; texto: string; formas: FormaDaMesa[]; recebido: number; saldo?: SaldoDaMesa }
   /** Conta fechada com as baixas gravadas. */
-  | { situacao: "paga"; resumo: string; texto: string; formas: FormaDaMesa[]; recebido: number }
+  | { situacao: "paga"; resumo: string; texto: string; formas: FormaDaMesa[]; recebido: number; saldo?: SaldoDaMesa }
   /** Conta fechada antiga, com total pago e sem as baixas: entrou dinheiro, não se sabe por onde. */
   | { situacao: "semForma"; resumo: string; texto: string; recebido: number }
   /** Conta fechada sem pagamento nenhum: mesa liberada sem consumo (ou com tudo cancelado). */
@@ -94,14 +97,26 @@ export function formasDasBaixas(bruto: unknown): FormaDaMesa[] {
 export function pagamentoDaMesaNoPedido(p: PedidoComContaDaMesa | null | undefined): PagamentoDaMesaNoPedido | null {
   if (!p?.tableSessionId) return null;
   const conta = p.tableSession;
+  const formas = formasDasBaixas(conta?.paymentMethods);
+  const recebido = emReais(formas.reduce((s, f) => s + emCentavos(f.valor), 0));
   // Sem a sessão no feed não dá para saber se fechou; "na conta da mesa"
   // nunca é mentira — e nunca "cobrar na entrega".
   if (String(conta?.status || "").toUpperCase() !== "CLOSED") {
+    if (recebido > 0) {
+      const saldo = conta?.saldo;
+      // O saldo e a lista devem ser do mesmo snapshot do servidor. Na dúvida,
+      // informa o recebido sem declarar a conta quitada.
+      const quitada = saldo?.quitada && emCentavos(saldo.recebido) === emCentavos(recebido);
+      return {
+        situacao: quitada ? "paga" : "parcial", formas, recebido, saldo,
+        resumo: quitada ? `Mesa paga: ${formas.map(f => f.forma).join(" + ")}`
+          : `Mesa: recebido ${brl(recebido)}${saldo ? ` · falta ${brl(saldo.falta)}` : " · saldo em Mesas"}`,
+        texto: formas.map(f => `${f.forma} ${brl(f.valor)}`).join(" + "),
+      };
+    }
     return { situacao: "naConta", resumo: "Na conta da mesa", texto: "Na conta da mesa (paga no fechamento)" };
   }
-  const formas = formasDasBaixas(conta?.paymentMethods);
   if (formas.length > 0) {
-    const recebido = emReais(formas.reduce((s, f) => s + emCentavos(f.valor), 0));
     return {
       situacao: "paga",
       resumo: `Mesa paga: ${formas.map((f) => f.forma).join(" + ")}`,
@@ -143,7 +158,7 @@ export function camposDoPagamentoDaMesaParaImpressao(
 ): { paymentMethod?: string; notes?: string } {
   const pg = pagamentoDaMesaNoPedido(p);
   if (!pg || pg.situacao === "naConta") return {};
-  const linha = `📝 ${pg.situacao === "paga" ? `Mesa paga: ${pg.texto}` : pg.texto}`;
+  const linha = `📝 ${pg.situacao === "paga" ? `Mesa paga: ${pg.texto}` : pg.situacao === "parcial" ? `${pg.resumo} (${pg.texto})` : pg.texto}`;
   const recado = String(p.notes || "").trim();
   return { paymentMethod: pg.texto, notes: recado ? `${linha}\n${recado}` : linha };
 }

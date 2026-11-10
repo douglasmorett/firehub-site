@@ -44,6 +44,10 @@ import {
   type PedidoStone,
 } from "@/lib/stone-connect";
 import { credencialStone } from "@/lib/stone-connect-loja";
+import { encerrarMesaQuitadaPorPos } from "@/lib/fechamento-pos-da-mesa";
+import { lerContextoDaConta, type ContextoDaContaDaMesa } from "@/lib/contexto-da-conta-da-mesa";
+import { calcularContaDaMesa, sanearTaxa } from "@/lib/conta-da-mesa";
+import { contextoPagoDaMesa } from "@/lib/saldo-da-mesa";
 
 export const PREFIXO_DA_MESA = "mesa:";
 
@@ -163,6 +167,7 @@ export async function criarCobrancaDaMesa(params: {
   terminalId: string;
   guestId?: string | null;
   por: string;
+  conta?: ContextoDaContaDaMesa;
 }): Promise<{ ok: true; cobranca: CobrancaDaMesa } | ErroDeCobranca> {
   const { lojaId, tableSessionId, valorCentavos, terminalId, por } = params;
   await garantirTabela();
@@ -185,6 +190,12 @@ export async function criarCobrancaDaMesa(params: {
   if (mesa.status !== "OPEN") {
     return { ok: false, status: 400, codigo: "MESA_FECHADA", mensagem: "Esta mesa já foi fechada." };
   }
+  const lojaDaConta = await prisma.user.findUnique({ where: { id: lojaId }, select: { taxaServicoPadrao: true } });
+  const contextoDaConta = params.conta ?? contextoPagoDaMesa(mesa.paymentMethods) ?? { taxa: sanearTaxa(lojaDaConta?.taxaServicoPadrao, 10), gorjeta: Number(mesa.waiterTip) || 0, desconto: null };
+  const contaCanonica = calcularContaDaMesa({
+    table: { number: mesa.table.number, label: null }, waiterTip: mesa.waiterTip,
+    orders: mesa.orders.filter(o => !["CANCELADO", "CANCELED", "CANCELLED"].includes(o.status)).map(o => ({ ...o, dailyOrderNumber: null, items: [] })),
+  }, [], contextoDaConta.taxa, contextoDaConta.gorjeta, contextoDaConta.desconto);
 
   const terminal = await prisma.posTerminal.findFirst({
     where: { id: terminalId, franchiseeId: lojaId, active: true },
@@ -208,17 +219,10 @@ export async function criarCobrancaDaMesa(params: {
     };
   }
 
-  // Teto de sanidade. O total exato da conta só existe no fechamento (a taxa
-  // de serviço e a gorjeta são escolhidas lá), então aqui o limite é o consumo
-  // com até 30% de taxa, mais a gorjeta gravada, menos o que já foi pago. Pega
-  // o erro que importa — R$ 4.590 digitado no lugar de R$ 45,90 — sem travar
-  // a mesa que paga a taxa cheia.
-  const consumoCentavos = mesa.orders
-    .filter((o) => o.status !== "CANCELADO")
-    .reduce((s, o) => s + Math.round((Number(o.totalAmount) || 0) * 100), 0);
+  // A mesma conta do fechamento, com os parâmetros validados desta cobrança.
+  // O app anterior manda só valor/terminal e usa a taxa padrão da loja.
   const pagoCentavos = Math.round(somarPagamentos(lerPagamentos(mesa.paymentMethods)) * 100);
-  const tetoCentavos =
-    Math.round(consumoCentavos * 1.3) + Math.round((Number(mesa.waiterTip) || 0) * 100) - pagoCentavos;
+  const tetoCentavos = Math.round(contaCanonica.total * 100) - pagoCentavos;
   if (valorCentavos > tetoCentavos) {
     return {
       ok: false, status: 400, codigo: "VALOR_ACIMA_DA_CONTA",
@@ -272,7 +276,7 @@ export async function criarCobrancaDaMesa(params: {
     id, lojaId, tableSessionId, valorCentavos,
     naNuvem ? ESTADOS_DA_COBRANCA.noTerminal : ESTADOS_DA_COBRANCA.aguardando,
     terminal.id, terminal.provider, guestId, guestName, por.slice(0, 120),
-    JSON.stringify({ mesa: mesa.table?.number ?? null }),
+    JSON.stringify({ mesa: mesa.table?.number ?? null, conta: contextoDaConta }),
     );
   } catch (e: any) {
     if (/unique|duplicate|23505/i.test(String(e?.message || e?.code || ""))) {
@@ -487,16 +491,23 @@ export type DadosDaTransacao = {
  * mesa travada: o garçom lançando dinheiro no mesmo instante não pode apagar a
  * baixa do cartão (ler-somar-gravar sem trava perde uma das duas).
  */
-async function darBaixaNaMesa(c: CobrancaDaMesa, dados: DadosDaTransacao, por: string): Promise<void> {
+async function darBaixaNaMesa(c: CobrancaDaMesa, dados: DadosDaTransacao, por: string): Promise<boolean> {
   const uid = `maquininha-${c.id}`;
-  await prisma.$transaction(async (tx) => {
+  const fechou = await prisma.$transaction(async (tx) => {
     const travada = await tx.$queryRawUnsafe<any[]>(
-      `SELECT "paymentMethods", "status" FROM "TableSession" WHERE "id" = $1 FOR UPDATE`,
-      c.tableSessionId,
+      `SELECT s."paymentMethods", s."status" FROM "TableSession" s JOIN "Table" t ON t."id" = s."tableId"
+       WHERE s."id" = $1 AND s."franchiseeId" = $2 AND t."franchiseeId" = $2 FOR UPDATE OF s`,
+      c.tableSessionId, c.franchiseeId,
     );
     if (!travada[0]) throw new Error(`Mesa ${c.tableSessionId} sumiu`);
+    const cobrancaAtual = await tx.$queryRawUnsafe<{ status: string }[]>(
+      'SELECT "status" FROM "CobrancaDaMesaNaMaquininha" WHERE "id" = $1 AND "franchiseeId" = $2 AND "tableSessionId" = $3 FOR UPDATE',
+      c.id, c.franchiseeId, c.tableSessionId,
+    );
+    if (!cobrancaAtual[0]) throw new Error("Cobrança da mesa não encontrada");
     const lista = lerPagamentos(travada[0].paymentMethods);
-    if (!lista.some((p) => p.uid === uid)) {
+    const novaBaixa = !lista.some((p) => p.uid === uid);
+    if (novaBaixa) {
       if (travada[0].status !== "OPEN") {
         // Dinheiro que já saiu do cartão não pode sumir porque alguém fechou a
         // mesa no meio. A baixa entra assim mesmo e fica no log para o caixa.
@@ -510,6 +521,7 @@ async function darBaixaNaMesa(c: CobrancaDaMesa, dados: DadosDaTransacao, por: s
         guestName: c.guestName,
         at: new Date().toISOString(),
         por,
+        ...(lerContextoDaConta(c.dados?.conta) ? { conta: lerContextoDaConta(c.dados.conta)! } : {}),
       });
       await tx.tableSession.update({
         where: { id: c.tableSessionId },
@@ -522,7 +534,17 @@ async function darBaixaNaMesa(c: CobrancaDaMesa, dados: DadosDaTransacao, por: s
        WHERE "id" = $1`,
       c.id, ESTADOS_DA_COBRANCA.pago, uid, JSON.stringify({ ...dados, aprovado: true, em: new Date().toISOString() }),
     );
-  });
+    // Só o evento novo pode fechar. Reenvio não reconcilia retroativamente
+    // contas já pagas nem toca na sessão nova aberta na mesma mesa.
+    return novaBaixa && travada[0].status === "OPEN" && cobrancaAtual[0].status !== ESTADOS_DA_COBRANCA.cancelado
+      ? encerrarMesaQuitadaPorPos(tx, c, por) : null;
+  }, { maxWait: 10000, timeout: 20000 });
+  if (fechou) {
+    import("@/lib/fiscal-automatico")
+      .then(({ emitirNfceDaMesa }) => emitirNfceDaMesa(c.tableSessionId, { desconto: fechou.desconto }))
+      .catch(err => console.error("[Mesa POS] Erro ao disparar NFC-e da conta:", err?.message));
+  }
+  return Boolean(fechou);
 }
 
 /**
@@ -573,8 +595,8 @@ export async function registrarResultadoDaMesa(params: {
     };
   }
 
-  await darBaixaNaMesa(c, dados, terminal.label ? `Maquininha ${terminal.label}` : "Maquininha");
-  return { status: 200, corpo: { success: true, aprovado: true, pedidoId: `${PREFIXO_DA_MESA}${c.id}` } };
+  const mesaFechada = await darBaixaNaMesa(c, dados, terminal.label ? `Maquininha ${terminal.label}` : "Maquininha");
+  return { status: 200, corpo: { success: true, aprovado: true, mesaFechada, pedidoId: `${PREFIXO_DA_MESA}${c.id}` } };
 }
 
 /**

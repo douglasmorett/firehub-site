@@ -292,6 +292,12 @@ export async function POST(
     let fiadoGravado: { id: string; employeeId: string } | null = null;
     // Wrap in transaction
     await prisma.$transaction(async (tx) => {
+      const travadas = await tx.$queryRawUnsafe<{ status: string; paymentMethods: unknown }[]>(
+        'SELECT s."status", s."paymentMethods" FROM "TableSession" s JOIN "Table" t ON t."id" = s."tableId" WHERE s."id" = $1 AND t."franchiseeId" = $2 FOR UPDATE OF s', id, targetFranchiseeId,
+      );
+      if (travadas[0]?.status !== "OPEN" || JSON.stringify(lerPagamentos(travadas[0].paymentMethods)) !== JSON.stringify(jaGravados)) throw new Error("MESA_MUDOU_NO_FECHAMENTO");
+      const atuais = await tx.customerOrder.findMany({ where: { tableSessionId: id, status: { not: "CANCELADO" } }, select: { totalAmount: true } });
+      if (centavos(atuais.reduce((s, o) => s + (o.totalAmount || 0), 0)) !== centavos(subtotal)) throw new Error("MESA_MUDOU_NO_FECHAMENTO");
       // 0. A dívida do fiado, junto com o fechamento: ou os dois, ou nenhum.
       if (fiado) {
         let employeeId = fiado.employeeId;
@@ -403,6 +409,7 @@ export async function POST(
       ...(fiado ? { fiado: { cliente: fiado.nome, valor: fiado.valor, ...(fiadoGravado ?? {}) } } : {}),
     });
   } catch (error: any) {
+    if (error?.message === "MESA_MUDOU_NO_FECHAMENTO") return NextResponse.json({ error: "mesa_alterada", mensagem: "A conta mudou ou já foi fechada. Atualize a mesa e confira os pagamentos." }, { status: 409 });
     console.error("[Table Sessions Close POST]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }

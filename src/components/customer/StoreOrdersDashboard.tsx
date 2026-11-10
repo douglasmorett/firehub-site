@@ -5734,15 +5734,18 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                         <div style={{ fontWeight: "bold", fontSize: "13px", color: "#000" }}>
                           Forma de Pagamento: {daMesa.situacao === "naConta" ? "na conta da mesa" : daMesa.situacao === "paga" ? daMesa.formas.map((f) => f.forma).join(" + ") : daMesa.resumo}
                         </div>
-                        {daMesa.situacao === "paga" && (
+                        {(daMesa.situacao === "paga" || daMesa.situacao === "parcial") && (
                           <div style={{ marginTop: "6px", padding: "6px 8px", border: "1.5px solid #000", borderRadius: "4px", fontSize: "12px" }}>
-                            <div style={{ fontWeight: 900, marginBottom: "3px" }}>✅ Mesa paga no fechamento da conta</div>
+                            <div style={{ fontWeight: 900, marginBottom: "3px" }}>{daMesa.situacao === "paga" ? "✅ Conta da mesa paga" : "Pagamento parcial da conta da mesa"}</div>
                             {daMesa.formas.map((f) => (
                               <div key={f.forma} style={{ display: "flex", justifyContent: "space-between" }}>
                                 <span>{f.forma}</span>
                                 <span>R$ {f.valor.toFixed(2).replace('.', ',')}</span>
                               </div>
                             ))}
+                            {daMesa.saldo && <div style={{ fontWeight: 800, marginTop: 5 }}>
+                              Total R$ {daMesa.saldo.total.toFixed(2).replace('.', ',')} · Recebido R$ {daMesa.recebido.toFixed(2).replace('.', ',')} · Falta R$ {daMesa.saldo.falta.toFixed(2).replace('.', ',')}
+                            </div>}
                             <div style={{ fontSize: "11px", marginTop: "4px", color: "#334155" }}>
                               Valores da conta inteira da mesa (todas as rodadas, taxa e gorjeta), como o caixa recebeu — em dinheiro, a nota entregue, antes do troco.
                             </div>

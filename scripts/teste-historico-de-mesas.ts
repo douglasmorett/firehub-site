@@ -42,7 +42,7 @@ confere("pedido de delivery: não é com esta régua (null)", pagamentoDaMesaNoP
 confere("\"Mesa 20\" do PDV sem conta: segue com a forma dele (null)", pagamentoDaMesaNoPedido({ tableSessionId: undefined, tableSession: null }), null);
 
 const aberta = pagamentoDaMesaNoPedido({ tableSessionId: "s1", tableSession: { status: "OPEN", paymentMethods: [{ uid: "a", method: "Pix", amount: 10 }] } });
-confere("conta aberta (mesmo com baixa parcial): na conta da mesa", aberta && [aberta.situacao, aberta.resumo], ["naConta", "Na conta da mesa"]);
+confere("conta aberta com baixa e sem total no feed: recebido, sem declarar paga", aberta && [aberta.situacao, aberta.resumo], ["parcial", "Mesa: recebido R$ 10,00 · saldo em Mesas"]);
 const semSessao = pagamentoDaMesaNoPedido({ tableSessionId: "s1" });
 confere("feed sem a sessão: na conta da mesa — nunca \"cobrar na entrega\"", semSessao?.situacao, "naConta");
 

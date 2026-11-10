@@ -10,6 +10,7 @@
  * ninguém entender de onde saiu o centavo.
  */
 
+import { lerContextoDaConta, type ContextoDaContaDaMesa } from "@/lib/contexto-da-conta-da-mesa";
 /** Uma baixa registrada na mesa. */
 export type PagamentoDaMesa = {
   uid: string;
@@ -25,6 +26,8 @@ export type PagamentoDaMesa = {
   at: string;
   /** Quem registrou: nome do usuário do painel ou "Garçom X". Nulo em baixa antiga. */
   por: string | null;
+  /** Regra da conta usada na cobrança POS, sem mudar o contrato antigo. */
+  conta?: ContextoDaContaDaMesa;
 };
 
 export const emCentavos = (v: number) => Math.round((Number(v) || 0) * 100);
@@ -50,6 +53,7 @@ export function lerPagamentos(bruto: unknown): PagamentoDaMesa[] {
       guestName: typeof p?.guestName === "string" ? p.guestName : null,
       at: typeof p?.at === "string" ? p.at : "",
       por: typeof p?.por === "string" ? p.por : null,
+      ...(lerContextoDaConta(p?.conta) ? { conta: lerContextoDaConta(p.conta)! } : {}),
     }))
     .filter((p) => p.amount > 0);
 }

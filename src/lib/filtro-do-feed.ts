@@ -129,13 +129,13 @@ export const LIMITE_DE_MUDANCAS = 150;
  */
 export async function idsQueMudaram(
   db: { customerOrder: { findMany: (args: any) => Promise<Array<{ id: string }>> } },
-  { validFranchiseeIds, from, ATIVO_SEM_PERIODO_DESDE, desde }: { validFranchiseeIds: string[]; from: Date; ATIVO_SEM_PERIODO_DESDE: Date; desde: Date },
+  { validFranchiseeIds, from, ATIVO_SEM_PERIODO_DESDE, desde, incluirMesasAbertas = false }: { validFranchiseeIds: string[]; from: Date; ATIVO_SEM_PERIODO_DESDE: Date; desde: Date; incluirMesasAbertas?: boolean },
 ): Promise<string[] | null> {
   const desdeDaJanela = new Date(Math.min(from.getTime(), ATIVO_SEM_PERIODO_DESDE.getTime()));
   const rows = await db.customerOrder.findMany({
     where: {
       franchiseeId: { in: validFranchiseeIds },
-      updatedAt: { gte: desde },
+      ...(incluirMesasAbertas ? mudancaOuContaAberta(desde) : { updatedAt: { gte: desde } }),
       OR: [{ createdAt: { gte: desdeDaJanela } }, { scheduledDatetime: { gte: desdeDaJanela } }],
     },
     select: { id: true },
@@ -145,6 +145,12 @@ export async function idsQueMudaram(
 }
 
 /** O filtro do feed restrito ao que mudou depois de `desde`. */
-export function soOQueMudou(filtro: Prisma.CustomerOrderWhereInput, desde: Date): Prisma.CustomerOrderWhereInput {
-  return { AND: [filtro, { updatedAt: { gte: desde } }] };
+export function soOQueMudou(filtro: Prisma.CustomerOrderWhereInput, desde: Date, incluirMesasAbertas = false): Prisma.CustomerOrderWhereInput {
+  return { AND: [filtro, incluirMesasAbertas ? mudancaOuContaAberta(desde) : { updatedAt: { gte: desde } }] };
+}
+
+// A baixa da mesa não atualiza cada rodada. TableSession não tem updatedAt:
+// reler suas rodadas abertas no delta mantém o pagamento vivo sem gravá-las.
+function mudancaOuContaAberta(desde: Date): Prisma.CustomerOrderWhereInput {
+  return { AND: [{ OR: [{ updatedAt: { gte: desde } }, { tableSession: { status: "OPEN" } }] }] };
 }
