@@ -176,7 +176,6 @@ for (const cat of cardapio) {
 
   for (const p of vendaveis) {
     const bebida = EH_BEBIDA.test(cat.nome) || EH_BEBIDA.test(p.nome);
-    const temGrupo = p.adicionais.length > 0;
     const jaExiste = porNomeCat.get(chave(p.nome) + "|" + chave(cat.nome));
     let produtoId = jaExiste?.id;
 
@@ -187,7 +186,7 @@ for (const cat of cardapio) {
           UPDATE "MenuProduct"
           SET "description" = ${p.descricao}, "price" = ${p.preco}, "promoPrice" = ${p.promo},
               "imageUrl" = COALESCE(${p.foto}, "imageUrl"), "sortOrder" = ${p.ordem},
-              "active" = true, "isCombo" = ${temGrupo}, "isBeverage" = ${bebida}, "updatedAt" = NOW()
+              "active" = true, "isBeverage" = ${bebida}, "updatedAt" = NOW()
           WHERE "id" = ${jaExiste.id}`;
       }
     } else {
@@ -199,7 +198,7 @@ for (const cat of cardapio) {
             ("id","franchiseeId","name","description","price","promoPrice","imageUrl","category","sortOrder",
              "active","isCombo","isBeverage","apenasEmCombo","createdAt","updatedAt")
           VALUES (${produtoId}, ${franchiseeId}, ${p.nome}, ${p.descricao}, ${p.preco}, ${p.promo}, ${p.foto},
-                  ${cat.nome}, ${p.ordem}, true, ${temGrupo}, ${bebida}, false, NOW(), NOW())`;
+                  ${cat.nome}, ${p.ordem}, true, false, ${bebida}, false, NOW(), NOW())`;
       }
       porNomeCat.set(chave(p.nome) + "|" + chave(cat.nome), { id: produtoId, name: p.nome });
     }

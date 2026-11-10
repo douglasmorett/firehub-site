@@ -188,7 +188,7 @@ if (GRAVAR && erros.length === 0) {
         VALUES (${grupoId}, ${p.id}, ${TITULO}, 1, 0, NULL, 0)`);
     }
     ordem.forEach((g, i) => comandos.push(sql`UPDATE "ComboGroup" SET "sortOrder" = ${i} WHERE "id" = ${g.id}`));
-    comandos.push(sql`UPDATE "MenuProduct" SET "isCombo" = true, "updatedAt" = NOW() WHERE "id" = ${p.id}`);
+    // Acrescentar o meio a meio não muda a pizza para combo.
 
     for (const [ordemDaOpcao, { q, meia }] of meias.entries()) {
       let opcao = opcoes.get(meia.nome);

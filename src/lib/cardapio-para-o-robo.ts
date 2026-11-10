@@ -137,13 +137,10 @@ function diasDoProduto(val: unknown): string[] {
 const nomesDosDias = (dias: string[]) =>
   dias.length === 7 ? "todos os dias" : TODOS_OS_DIAS.filter((d) => dias.includes(d)).map((d) => DAY_NAMES[d] || d).join(", ");
 
-// As mesmas regras do chatbot-ai.ts para combo e promoção, para o robô não
-// mudar de ideia sobre o que é o quê só porque o texto ficou menor. Uma
-// diferença: "kit" e "pack" só no COMEÇO da palavra — "Sukita Uva 2L" entrava
-// como combo por conter "kit".
+// Promoção continua independente do tipo de cadastro. Combo é a marcação
+// explícita da montagem; nome, categoria e perguntas não atribuem esse tipo.
 const ehImportadoDeCanal = (p: any) => /jotaja|ifood|online/i.test(String(p?.category || ""));
-const ehCombo = (p: any, nome: string) =>
-  p?.isCombo === true || /\b(combo|kit|pack)/i.test(nome) || /combo|oferta/i.test(String(p?.category || ""));
+const ehCombo = (p: any) => p?.isCombo === true;
 function ehPromocao(p: any, nome: string, tags: string[]): boolean {
   if (ehImportadoDeCanal(p)) return false;
   return (
@@ -567,7 +564,7 @@ export function cardapioParaORobo(produtos: any[], ctx: ContextoDoCardapio): { t
     const amanhaVale = dias.length === 0 || dias.includes(amanha);
     const tags = tagsDoProduto(p);
     const promo = ehPromocao(p, nome, tags);
-    const combo = ehCombo(p, nome);
+    const combo = ehCombo(p);
     const horario = ctx.horarioPorId?.get(id) || "";
     const precoDe = Number(p.precoDe) > 0 ? ` (de R$ ${brl(Number(p.precoDe))})` : "";
     const restricaoDoCupom = p.semCupom === true ? " [não aceita cupons nem descontos]" : "";

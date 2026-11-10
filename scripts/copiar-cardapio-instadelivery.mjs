@@ -271,9 +271,10 @@ for (const cat of cardapio) {
     }
   }
 
+  // Perguntas/adicionais não são composição de combo. Novos itens são produtos;
+  // o tipo de um cadastro já existente é preservado. Combo se monta no painel.
   for (const p of cat.produtos) {
     const bebida = EH_BEBIDA.test(cat.nome) || EH_BEBIDA.test(p.nome);
-    const temGrupo = p.grupos.length > 0;
     const dias = p.dias ? JSON.stringify(p.dias) : null;
     const tags = p.tags.length ? JSON.stringify(p.tags) : null;
     const jaExiste = porNomeCat.get(chave(p.nome) + "|" + chave(cat.nome));
@@ -286,7 +287,7 @@ for (const cat of cardapio) {
           UPDATE "MenuProduct"
           SET "description" = ${p.descricao}, "price" = ${p.preco},
               "imageUrl" = COALESCE(${p.foto}, "imageUrl"), "sortOrder" = ${p.ordem},
-              "active" = ${p.ativo}, "isCombo" = ${temGrupo}, "isBeverage" = ${bebida},
+              "active" = ${p.ativo}, "isBeverage" = ${bebida},
               "availableDays" = ${dias}, "tags" = COALESCE(${tags}, "tags"), "updatedAt" = NOW()
           WHERE "id" = ${jaExiste.id}`;
       }
@@ -299,7 +300,7 @@ for (const cat of cardapio) {
             ("id","franchiseeId","name","description","price","imageUrl","category","sortOrder",
              "active","isCombo","isBeverage","apenasEmCombo","availableDays","tags","createdAt","updatedAt")
           VALUES (${produtoId}, ${franchiseeId}, ${p.nome}, ${p.descricao}, ${p.preco}, ${p.foto},
-                  ${cat.nome}, ${p.ordem}, ${p.ativo}, ${temGrupo}, ${bebida}, false, ${dias}, ${tags}, NOW(), NOW())`;
+                  ${cat.nome}, ${p.ordem}, ${p.ativo}, false, ${bebida}, false, ${dias}, ${tags}, NOW(), NOW())`;
       }
       porNomeCat.set(chave(p.nome) + "|" + chave(cat.nome), { id: produtoId, name: p.nome });
     }

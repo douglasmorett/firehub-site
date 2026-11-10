@@ -336,5 +336,24 @@ console.log("\n8) Produto promocional sem cupom: a restrição acompanha cada of
   igual("mesmo nome e preço com regra de cupom diferente não é deduplicado", vezes(secao(comRegraDiferente.texto, "PRODUTOS"), "- Calabresa Rush ·"), 2);
 }
 
+console.log("\n9) Combo é classificação explícita, não nome/categoria/perguntas");
+{
+  const produtos = [
+    produto("Combo no nome", "Combos", 20, [grupo("Adicionais", 0, 3, [opcao("Bacon", 3)])]),
+    produto("Kit especial", "Ofertas", 25),
+    produto("Pizza por sabores", "Combos", 30, [grupo("Sabores", 1, 2, [opcao("Calabresa"), opcao("Mussarela")])]),
+    produto("Montagem de dois itens", "Lanches", 35, [grupo("Lanche", 1, 1, [opcao("X-Salada")]), grupo("Bebida", 1, 1, [opcao("Refri")])], { isCombo: true }),
+  ];
+  const { texto } = cardapioParaORobo(produtos, ctx);
+  const combos = secao(texto, "COMBOS");
+  conferir("montagem marcada continua na lista de combos", combos.includes("Montagem de dois itens"));
+  for (const nome of ["Combo no nome", "Kit especial", "Pizza por sabores"]) {
+    conferir(`${nome}: não vira combo por nome/categoria/perguntas`, !combos.includes(nome));
+    conferir(`${nome}: continua no cardápio`, secao(texto, "PRODUTOS").includes(nome));
+  }
+  conferir("adicional continua no texto", texto.includes("Bacon"));
+  conferir("sabores continuam no texto", texto.includes("Calabresa") && texto.includes("Mussarela"));
+}
+
 console.log(falhas ? `\n❌ ${falhas} falha(s)` : "\n✅ tudo certo");
 process.exit(falhas ? 1 : 0);

@@ -151,6 +151,7 @@ for (const cat of cardapio) {
     }
   }
 
+  // Pergunta não transforma produto em combo; preservar tipo existente.
   for (const p of cat.produtos) {
     if (p.oculto) {
       conta.ocultos++;
@@ -180,7 +181,7 @@ for (const cat of cardapio) {
           SET "price" = ${preco}, "description" = ${p.descricao || existente.description || ""},
               "imageUrl" = COALESCE(${p.foto}, "imageUrl"), "sortOrder" = ${ordem},
               "active" = ${p.ativo}, "isBeverage" = ${bebida},
-              "isCombo" = ${p.grupos.length > 0 || existente.isCombo === true}, "updatedAt" = NOW()
+              "updatedAt" = NOW()
           WHERE "id" = ${existente.id}`;
       }
     } else {
@@ -192,7 +193,7 @@ for (const cat of cardapio) {
             ("id","franchiseeId","name","description","price","imageUrl","category","sortOrder",
              "active","isCombo","isBeverage","apenasEmCombo","createdAt","updatedAt")
           VALUES (${produtoId}, ${franchiseeId}, ${p.nome}, ${p.descricao || ""}, ${preco}, ${p.foto},
-                  ${cat.nome}, ${ordem}, ${p.ativo}, ${p.grupos.length > 0}, ${bebida}, false, NOW(), NOW())`;
+                  ${cat.nome}, ${ordem}, ${p.ativo}, false, ${bebida}, false, NOW(), NOW())`;
       }
       porNomeCat.set(chave(p.nome) + "|" + chave(cat.nome), { id: produtoId, name: p.nome });
     }

@@ -109,7 +109,7 @@ for (const c of origem) {
 
     const gOrigem = (p.variations || []).slice().sort((a, b) => (a.position || 0) - (b.position || 0)).filter((g) => Number(g.max) > 0);
     const gFire = gruposDoProduto.get(f.id) || [];
-    if (f.isCombo !== (gOrigem.length > 0)) erro(onde, "isCombo", gOrigem.length > 0, f.isCombo);
+    // Ter perguntas não define isCombo: o tipo existente é preservado pelo copiador.
     if (gOrigem.length !== gFire.length) {
       erro(onde, "quantidade de grupos", gOrigem.map((g) => limpo(g.name)), gFire.map((g) => limpo(g.title)));
       return;

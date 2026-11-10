@@ -304,6 +304,8 @@ if (paradas.length) {
 
 /* Produto de preço zero com todas as perguntas opcionais sai DE GRAÇA. */
 for (const cat of cardapio) {
+  // Perguntas/adicionais não são composição de combo. Novos itens são produtos;
+  // o tipo de um cadastro já existente é preservado. Combo se monta no painel.
   for (const p of cat.produtos) {
     const base = p.promo ?? p.preco;
     const exige = p.grupos.some((g) => g.min > 0 && g.opcoes.some((o) => o.precoExtra > 0));
@@ -374,7 +376,6 @@ for (const cat of cardapio) {
 
   for (const p of cat.produtos) {
     const bebida = CATEGORIA_DE_BEBIDA.test(cat.nome);
-    const temGrupo = p.grupos.length > 0;
     const dias = p.dias ? JSON.stringify(p.dias) : null;
     const tags = p.tags.length ? JSON.stringify(p.tags) : null;
     const jaExiste = porNomeCat.get(chave(p.nome) + "|" + chave(cat.nome));
@@ -387,7 +388,7 @@ for (const cat of cardapio) {
           UPDATE "MenuProduct"
           SET "description" = ${p.descricao}, "price" = ${p.preco}, "promoPrice" = ${p.promo},
               "imageUrl" = COALESCE(${p.foto}, "imageUrl"), "sortOrder" = ${p.ordem},
-              "active" = ${p.ativo}, "isCombo" = ${temGrupo}, "isBeverage" = ${bebida},
+              "active" = ${p.ativo}, "isBeverage" = ${bebida},
               "activeDelivery" = ${p.canais.delivery}, "activePDV" = ${p.canais.pdv},
               "activeTotem" = ${p.canais.totem}, "activeGarcom" = ${p.canais.garcom},
               "availableDays" = ${dias}, "tags" = ${tags}, "updatedAt" = NOW()
@@ -403,7 +404,7 @@ for (const cat of cardapio) {
              "active","isCombo","isBeverage","apenasEmCombo","availableDays","tags",
              "activeDelivery","activePDV","activeTotem","activeGarcom","createdAt","updatedAt")
           VALUES (${produtoId}, ${franchiseeId}, ${p.nome}, ${p.descricao}, ${p.preco}, ${p.promo}, ${p.foto},
-                  ${cat.nome}, ${p.ordem}, ${p.ativo}, ${temGrupo}, ${bebida}, false, ${dias}, ${tags},
+                  ${cat.nome}, ${p.ordem}, ${p.ativo}, false, ${bebida}, false, ${dias}, ${tags},
                   ${p.canais.delivery}, ${p.canais.pdv}, ${p.canais.totem}, ${p.canais.garcom}, NOW(), NOW())`;
       }
       porNomeCat.set(chave(p.nome) + "|" + chave(cat.nome), { id: produtoId, name: p.nome });

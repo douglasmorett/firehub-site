@@ -56,6 +56,33 @@ export function temPerguntas(produto: { comboGroups?: unknown[] | null } | null 
 }
 
 /**
+ * Validação da montagem NOVA, feita pelo botão Criar combo. Não reclassifica
+ * cadastros antigos: eles podem ter representações legítimas anteriores.
+ * Conta os itens avulsos que obrigatoriamente compõem cada unidade vendida,
+ * sejam fixos (2× lanche) ou escolhas entre itens existentes (1 lanche + 1 bebida).
+ * Adicionais opcionais e opções que só existem dentro de perguntas não contam.
+ * Nome, categoria e quantidade de perguntas não determinam o tipo do produto.
+ */
+export function quantidadeDeItensNaComposicao(
+  grupos: readonly any[] | null | undefined,
+  produtos: readonly { id: string; apenasEmCombo?: boolean | null }[],
+): number {
+  const porId = new Map(produtos.map(p => [p.id, p]));
+  return (grupos || []).reduce((total, g) => {
+    const itens = Array.isArray(g?.items) ? g.items : [];
+    if (!itens.length || !itens.every((i: any) => {
+      const id = typeof i === "string" ? i : i?.menuProductId || i?.menuProduct?.id || i?.id;
+      const p = porId.get(String(id || ""));
+      return p && p.apenasEmCombo !== true;
+    })) return total;
+    const minimo = minimoExigidoDoGrupo(g);
+    return Number.isInteger(minimo) && minimo > 0 ? total + minimo : total;
+  }, 0);
+}
+
+export const ERRO_COMBO_SEM_COMPOSICAO = "Para criar um combo, selecione os itens do cardápio que o compõem: pelo menos 2 itens por unidade. Perguntas e adicionais podem ser cadastrados em um produto normal.";
+
+/**
  * O item que o combo SEMPRE leva: uma opção só, mínimo = máximo, e o teto da
  * opção não segura a quantidade. É a forma que o cadastro grava "4× X-Salada"
  * e a que o ComboModal já preenche sozinho.

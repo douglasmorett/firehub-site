@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { resolveScope, canTouch } from "@/lib/escopo-do-cardapio";
 import { comboItemId, dadosDoGrupo } from "@/lib/grupo-do-combo";
+import { quantidadeDeItensNaComposicao, ERRO_COMBO_SEM_COMPOSICAO } from "@/lib/combo-e-pergunta";
 import { isDataUrl, saveDataUrl } from "@/lib/storage";
 import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo, CATEGORIAS_DE_INTEGRACAO, PREFIXOS_DE_ESPELHO, lerHorarioDoProduto, comDisponibilidadeAnotada } from "@/lib/cardapio-interno";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
@@ -57,6 +58,17 @@ async function keepOwnComboItems(comboGroups: any, ownerStoreId: string | null):
       return !!id && owned.has(id);
     }),
   }));
+}
+
+/** Não permite recriar a marcação antiga "tem pergunta = combo". */
+async function erroDaNovaComposicao(grupos: any, loja: string, pai?: string): Promise<string | null> {
+  const ids = Array.from(new Set((Array.isArray(grupos) ? grupos : [])
+    .flatMap((g: any) => Array.isArray(g?.items) ? g.items : []).map(comboItemId).filter(Boolean))) as string[];
+  const itens = ids.length ? await prisma.menuProduct.findMany({
+    where: { franchiseeId: loja, id: { in: ids, ...(pai ? { not: pai } : {}) } },
+    select: { id: true, apenasEmCombo: true },
+  }) : [];
+  return quantidadeDeItensNaComposicao(grupos, itens) >= 2 ? null : ERRO_COMBO_SEM_COMPOSICAO;
 }
 
 export async function GET(req: NextRequest) {
@@ -367,7 +379,7 @@ export async function POST(req: NextRequest) {
         where: { id: String(duplicadoDe), franchiseeId },
         select: {
           ncm: true, cest: true, cfop: true, origem: true, csosn: true, pis: true, cofins: true,
-          fiscalBreakdown: true, comboConfig: true, apenasEmCombo: true, sortOrder: true,
+          fiscalBreakdown: true, comboConfig: true, apenasEmCombo: true, sortOrder: true, isCombo: true,
           recipeItems: { select: { stockItemId: true, quantityConsumed: true } },
         },
       })
@@ -383,6 +395,12 @@ export async function POST(req: NextRequest) {
   await normalizarImagem(rest);
   soColunasDoProduto(rest);
   const safeComboGroups = await keepOwnComboItems(comboGroups, franchiseeId);
+  // Duplicar um combo legado mantém seu tipo e sua representação. Uma nova
+  // marcação, porém, exige composição real da própria loja, nunca só perguntas.
+  if (rest.isCombo === true && original?.isCombo !== true) {
+    const erro = await erroDaNovaComposicao(safeComboGroups, franchiseeId);
+    if (erro) return NextResponse.json({ error: erro }, { status: 400 });
+  }
 
   const { recipeItems: fichaDoOriginal, fiscalBreakdown, comboConfig, ...copiaDoOriginal } = original || { recipeItems: [] };
 
@@ -473,11 +491,21 @@ export async function PUT(req: NextRequest) {
     // `price` entra para a conferência da promoção: o PUT que muda só o preço
     // promocional não manda o preço de venda no corpo, e sem ele não há com o
     // que comparar.
-    select: { id: true, franchiseeId: true, price: true },
+    select: { id: true, franchiseeId: true, price: true, isCombo: true },
   });
   if (!existing) return NextResponse.json({ error: "Produto não encontrado" }, { status: 404 });
   if (!canTouch(scope, existing.franchiseeId)) {
     return NextResponse.json({ error: "Sem permissão para alterar este produto" }, { status: 403 });
+  }
+
+  // Um formulário antigo aberto antes da correção não pode promover de novo
+  // um produto normal só porque ainda manda isCombo=true com seus adicionais.
+  if (updateData.isCombo === true && existing.isCombo !== true) {
+    const grupos = comboGroups === undefined
+      ? (await prisma.menuProduct.findUnique({ where: { id }, select: { comboGroups: { include: { items: true } } } }))?.comboGroups
+      : comboGroups;
+    const erro = await erroDaNovaComposicao(grupos, existing.franchiseeId || "", id);
+    if (erro) return NextResponse.json({ error: erro }, { status: 400 });
   }
 
   // "Aplicar este valor em todos os produtos que oferecem esta opção?"

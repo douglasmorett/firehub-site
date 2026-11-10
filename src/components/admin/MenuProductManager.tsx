@@ -2,7 +2,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { ehProdutoDeIntegracao, espelhosRepetidos, idsSoDeOpcaoDeCombo, combosQueUsamOpcao, lerHorarioDoProduto } from "@/lib/cardapio-interno";
 import { perguntaTravadaPelaPausa } from "@/lib/opcao-pausada";
-import { combosQueDependemDoItem, combosParaReativar, itemFixoDoGrupo } from "@/lib/combo-e-pergunta";
+import { combosQueDependemDoItem, combosParaReativar, itemFixoDoGrupo, quantidadeDeItensNaComposicao, ERRO_COMBO_SEM_COMPOSICAO } from "@/lib/combo-e-pergunta";
 import { pizzasJaMontadas } from "@/lib/pizza-por-tamanho";
 import { precoMinimoDoProduto } from "@/lib/preco-combo";
 import { ondeAOpcaoAparece, type OpcaoEmOutroProduto } from "@/lib/preco-da-opcao-em-todas";
@@ -1409,6 +1409,9 @@ export default function MenuProductManager({
 
   /** `opcoesConfirmadas`: a resposta da pergunta do preço nas opções (vazio = não mudar). */
   const handleSubmit = async (opcoesConfirmadas?: string[]) => {
+    if (isCombo && !editingId && !duplicandoDe && quantidadeDeItensNaComposicao(comboGroups, products) < 2) {
+      setAbaForm("perguntas"); alert(ERRO_COMBO_SEM_COMPOSICAO); return;
+    }
     if (!name || !description) { setAbaForm("sobre"); alert("Preencha nome e descrição."); return; }
     if (!price) { setAbaForm("preco"); alert("Preencha o preço de venda."); return; }
     // O servidor recusa isto com 400 de qualquer jeito (api/admin/menu-products);

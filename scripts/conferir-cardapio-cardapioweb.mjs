@@ -211,7 +211,7 @@ for (const { c, itens } of origem) {
     const gs = gruposDoProduto.get(f.id) || [];
     const gsOrigem = p.add_ons.filter((g) => g.status === "ACTIVE" && g.subitems.length);
     if (gs.length !== gsOrigem.length) d(onde, "nº de perguntas", gsOrigem.length, gs.length);
-    if (f.isCombo !== gsOrigem.length > 0) d(onde, "isCombo", gsOrigem.length > 0, f.isCombo);
+    // Ter perguntas não define isCombo: o tipo existente é preservado pelo copiador.
 
     for (const [gi, go] of gsOrigem.entries()) {
       stats.grupos++;
