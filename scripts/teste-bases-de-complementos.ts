@@ -19,7 +19,7 @@ const db: any = {
   comboGroup: {
     findUnique: async ({ where }: any) => { const v = grupos().find(v => v.g.id === where.id); return v ? { ...structuredClone(v.g), menuProduct: { franchiseeId: v.p.franchiseeId } } : null; },
     update: async ({ where, data }: any) => { if (falhar && ++gravacoes === 3) throw new Error("falha simulada"); Object.assign(grupos().find(v => v.g.id === where.id)!.g, data); },
-    delete: async ({ where }: any) => { const v = grupos().find(v => v.g.id === where.id)!; v.p.comboGroups = v.p.comboGroups.filter((g: any) => g.id !== where.id); },
+    delete: async ({ where }: any) => { if (falhar && ++gravacoes === 3) throw new Error("falha simulada"); const v = grupos().find(v => v.g.id === where.id)!; v.p.comboGroups = v.p.comboGroups.filter((g: any) => g.id !== where.id); },
     create: async ({ data }: any) => { const { items, ...g } = data; produtos.find(p => p.id === data.menuProductId).comboGroups.push({ ...g, id: `nova-${data.menuProductId}`, items: items.create.map((i: any, n: number) => ({ ...i, id: `novo-link-${n}` })) }); },
   },
   comboGroupItem: {
@@ -40,8 +40,9 @@ const carregar = (Module as any)._load;
 };
 
 async function main() {
-  const { POST } = await import("../src/app/api/admin/menu-products/base-de-complementos/route");
+  const { POST, DELETE } = await import("../src/app/api/admin/menu-products/base-de-complementos/route");
   const enviar = (body: any) => POST(new Request("http://fixture.local/api/admin/menu-products/base-de-complementos", { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } }) as any);
+  const excluir = (body: any) => DELETE(new Request("http://fixture.local/api/admin/menu-products/base-de-complementos", { method: "DELETE", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } }) as any);
   reset();
   const base = basesDeComplementos(produtos).find(b => b.membros.length === 16)!;
   assert.equal(base.membros.length, 16, "mesmos IDs e preços, regras por produto diferentes: uma base");
@@ -74,6 +75,30 @@ async function main() {
   falhar = true; assert.equal((await enviar(payload)).status, 500);
   assert.equal(JSON.stringify(produtos), original, "falha no terceiro produto reverte toda a operação");
   reset();
+  const apagar = { grupoId: "g0", revisao: base.revisao, confirmarExclusao: true };
+  assert.equal((await excluir({ ...apagar, confirmarExclusao: false })).status, 400);
+  assert.equal(JSON.stringify(produtos), original, "sem confirmação explícita não exclui");
+  tenant = "loja-B"; assert.equal((await excluir(apagar)).status, 403); tenant = "loja-A";
+  assert.equal((await excluir({ ...apagar, revisao: "antiga" })).status, 409);
+  assert.equal(JSON.stringify(produtos), original);
+  falhar = true; assert.equal((await excluir(apagar)).status, 500);
+  assert.equal(JSON.stringify(produtos), original, "falha no terceiro delete reverte todos os vínculos");
+  reset();
+  const cadastroAntes = produtos.map(({ comboGroups, ...p }) => p);
+  const deletada = await excluir(apagar); assert.equal(deletada.status, 200, await deletada.clone().text());
+  assert.equal((await deletada.json()).produtosAfetados, 16);
+  assert.equal(produtos.filter(p => p.franchiseeId === "loja-A").flatMap(p => p.comboGroups).length, 0);
+  assert.equal(produtos.at(-1).comboGroups.length, 1, "grupo de outra loja preservado");
+  assert.deepEqual(produtos.map(({ comboGroups, ...p }) => p), cadastroAntes, "todos os produtos e opções preservados");
+  reset();
+  produtos.find(p => p.id === "novo").comboGroups = [{ ...grupo("isolado"), items: [opcao("bacon")] }];
+  const isolada = basesDeComplementos(produtos).find(b => b.membros.some(m => m.grupo.id === "isolado"))!;
+  assert.equal((await excluir({ grupoId: "isolado", revisao: isolada.revisao, confirmarExclusao: true })).status, 200);
+  assert.equal(produtos.find(p => p.id === "novo").comboGroups.length, 0);
+  assert.equal(produtos.slice(0, 16).filter(p => p.comboGroups.length === 1).length, 16, "versão dos outros produtos não é excluída");
+  assert.equal((await enviar({ ...payload, produtoIds: [...payload.produtoIds, "novo"] })).status, 200, "depois de excluir a versão isolada pode usar a outra base");
+  assert.equal(produtos.find(p => p.id === "novo").comboGroups[0].items.length, 2);
+  reset();
   if (process.env.CATALOGO_SNAPSHOT) {
     const s = JSON.parse(fs.readFileSync(process.env.CATALOGO_SNAPSHOT, "utf8")).tables;
     const catalogo = s.MenuProduct.map((p: any) => ({ ...p, comboGroups: s.ComboGroup.filter((g: any) => g.menuProductId === p.id).map((g: any) => ({ ...g, items: s.ComboGroupItem.filter((i: any) => i.comboGroupId === g.id) })) }));
@@ -87,8 +112,9 @@ async function main() {
   assert.equal((cards.match(/<h4[^>]*>🧩 Turbinar/g) || []).length, 2, "uma base por loja, não 17 cards");
   const editor = renderToStaticMarkup(React.createElement(Editor, { base, produtos, catalogo: produtos, onFechar() {}, onEditarOpcao() {}, onFeito() {} }));
   assert.equal((editor.match(/type="checkbox" checked/g) || []).length, 16);
+  assert.match(editor, /Excluir grupo/); assert.doesNotMatch(editor, /Confirmar exclusão do grupo/, "exclusão tem uma segunda etapa");
   fs.mkdirSync("work", { recursive: true });
   fs.writeFileSync("work/preview-bases.html", `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font:15px Arial;background:#f6f8fa;padding:20px}*{box-sizing:border-box}</style>${cards}${editor}`);
-  console.log("PASS bases: edição16, regras, vínculos, preço/canal/promo0, tenant, drift, validações, rollback, SSR e prévia real");
+  console.log("PASS bases: edição16, regras, vínculos, preços, tenant, drift, rollback, exclusão confirmada/preservação de opções, excluir uma versão e usar outra, SSR");
 }
 main().catch(e => { console.error(e); process.exitCode = 1; });

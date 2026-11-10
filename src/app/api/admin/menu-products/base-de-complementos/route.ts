@@ -94,3 +94,35 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Não foi possível salvar. Nenhum produto foi alterado parcialmente." }, { status: 500 });
   }
 }
+
+/** Retira esta base dos produtos; conserva os produtos de opção e o histórico. */
+export async function DELETE(req: NextRequest) {
+  const { scope, error } = await resolveScope(req, true);
+  if (!scope) return error;
+  const body = await req.json().catch(() => null);
+  if (typeof body?.grupoId !== "string" || body?.confirmarExclusao !== true) {
+    return NextResponse.json({ error: "Confirme a exclusão do grupo e dos seus vínculos." }, { status: 400 });
+  }
+  const origem = await prisma.comboGroup.findUnique({ where: { id: body.grupoId }, select: { menuProduct: { select: { franchiseeId: true } } } });
+  const lojaId = origem?.menuProduct.franchiseeId;
+  if (!lojaId || !canTouch(scope, lojaId)) return NextResponse.json({ error: "Pergunta não encontrada nesta loja." }, { status: 403 });
+  try {
+    const resultado = await prisma.$transaction(async tx => {
+      const catalogo = await tx.menuProduct.findMany({ where: { franchiseeId: lojaId }, include: { comboGroups: { include: { items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] } } } } });
+      const base = basesDeComplementos(catalogo).find(b => b.membros.some(m => m.grupo.id === body.grupoId));
+      if (!base || !base.editavel || base.revisao !== body.revisao) throw new Error("CADASTRO_ALTERADO");
+      for (const membro of base.membros) await tx.comboGroup.delete({ where: { id: membro.grupo.id } });
+      return { removidos: base.membros.length, produtosAfetados: new Set(base.membros.map(m => m.produto.id)).size };
+    }, { isolationLevel: "Serializable", timeout: 30000 });
+    await refazerMeiasDaLoja(lojaId).catch(e => console.error("[excluir base] meias:", e?.message));
+    const loja = await prisma.user.findUnique({ where: { id: lojaId }, select: { slug: true } }).catch(() => null);
+    if (loja?.slug) { try { revalidatePath(`/loja/${loja.slug}`); } catch {} }
+    return NextResponse.json({ success: true, ...resultado });
+  } catch (e: any) {
+    if (e.message === "CADASTRO_ALTERADO" || ["P2034", "P2025"].includes(e.code)) {
+      return NextResponse.json({ error: "O grupo mudou enquanto você editava. Reabra-o para conferir antes de excluir." }, { status: 409 });
+    }
+    console.error("[excluir base] falha:", e?.code || e?.name);
+    return NextResponse.json({ error: "Não foi possível excluir. Nenhum produto foi alterado parcialmente." }, { status: 500 });
+  }
+}

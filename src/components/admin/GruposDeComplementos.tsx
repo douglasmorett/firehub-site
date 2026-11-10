@@ -47,24 +47,26 @@ export function Editor({ base, produtos, catalogo, onFechar, onEditarOpcao, onFe
   const [novaOpcao, setNovaOpcao] = useState("");
   const [erro, setErro] = useState("");
   const [gravando, setGravando] = useState(false);
+  const [confirmarExclusao, setConfirmarExclusao] = useState(false);
+  const afetados = [...new Map(base.membros.map(m => [m.produto.id, m.produto])).values()];
   const destinos = destinosDaPergunta(produtos, anchor.produto, anchor.grupo);
   const candidatos = [...new Map([...base.membros.map(m => m.produto), ...destinos.mesmaCategoria.map(d => d.produto), ...destinos.outras.map(d => d.produto)].map(p => [p.id, p])).values()];
   const existentes = new Set(base.membros.map(m => m.produto.id));
   const opcoesPorId = new Map(catalogo.map(p => [p.id, p]));
   const mudarOpcao = (id: string, patch: Partial<OpcaoDaBase>) => setOpcoes(antes => antes.map(i => i.menuProductId === id ? { ...i, ...patch } : i));
   const regra = (id: string) => regras[id] ?? { minQty: anchor.grupo.minQty ?? null, maxQty: anchor.grupo.maxQty || 1 };
-  const salvar = async () => {
+  const salvar = async (excluir = false) => {
     if (gravando) return;
-    if (!titulo.trim() || !marcados.size || !opcoes.length) { setErro("Informe o nome, as opções e pelo menos um produto."); return; }
+    if (!excluir && (!titulo.trim() || !marcados.size || !opcoes.length)) { setErro("Informe o nome, as opções e pelo menos um produto."); return; }
     setGravando(true); setErro("");
     try {
-      const r = await fetch("/api/admin/menu-products/base-de-complementos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-        grupoId: anchor.grupo.id, revisao: base.revisao, titulo, opcoes,
+      const r = await fetch("/api/admin/menu-products/base-de-complementos", { method: excluir ? "DELETE" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+        grupoId: anchor.grupo.id, revisao: base.revisao, confirmarExclusao: excluir, titulo, opcoes,
         produtoIds: [...marcados], regras: [...marcados].map(produtoId => ({ produtoId, ...regra(produtoId) })),
       }) });
       const dados = await r.json().catch(() => null);
       if (!r.ok) { setErro(dados?.error || "Não foi possível salvar."); return; }
-      onFeito(`✅ Grupo salvo em ${marcados.size} produtos${dados.removidos ? ` · removido de ${dados.removidos}` : ""}`);
+      onFeito(excluir ? `✅ Grupo excluído de ${dados.produtosAfetados} produtos` : `✅ Grupo salvo em ${marcados.size} produtos${dados.removidos ? ` · removido de ${dados.removidos}` : ""}`);
     } catch { setErro("Sem conexão. Confira antes de tentar novamente."); }
     finally { setGravando(false); }
   };
@@ -101,7 +103,23 @@ export function Editor({ base, produtos, catalogo, onFechar, onEditarOpcao, onFe
           </div>;
         })}
       </div>
-      <div style={{ padding: 16, borderTop: "1px solid #E2E8F0", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", justifyContent: "flex-end" }}>{erro && <div role="alert" style={{ flex: "1 1 100%", color: "#B91C1C", fontSize: 13 }}>{erro}</div>}<span style={{ fontSize: 12 }}>{opcoes.length} opções · {marcados.size} produtos</span><button type="button" style={botao} disabled={gravando} onClick={onFechar}>Cancelar</button><button type="button" style={{ ...botao, color: "white", background: "#0F766E" }} disabled={gravando} onClick={salvar}>{gravando ? "Salvando…" : "Salvar grupo e vínculos"}</button></div>
+      <div style={{ padding: 16, borderTop: "1px solid #E2E8F0", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", justifyContent: "flex-end" }}>
+        {erro && <div role="alert" style={{ flex: "1 1 100%", color: "#B91C1C", fontSize: 13 }}>{erro}</div>}
+        {confirmarExclusao ? <>
+          <div role="alert" style={{ width: "100%", padding: 12, borderRadius: 10, background: "#FEF2F2", color: "#991B1B", fontSize: 13 }}>
+            <strong>Excluir “{base.titulo}” de {afetados.length} {afetados.length === 1 ? "produto" : "produtos"}?</strong>
+            <div style={{ maxHeight: 100, overflowY: "auto", margin: "6px 0" }}>{afetados.map(p => p.name).join(", ")}</div>
+            As opções continuam cadastradas. Os pedidos anteriores não mudam.
+          </div>
+          <button type="button" style={botao} disabled={gravando} onClick={() => { setConfirmarExclusao(false); setErro(""); }}>Voltar sem excluir</button>
+          <button type="button" style={{ ...botao, color: "white", background: "#B91C1C" }} disabled={gravando} onClick={() => salvar(true)}>{gravando ? "Excluindo…" : "Confirmar exclusão do grupo"}</button>
+        </> : <>
+          <button type="button" style={{ ...botao, marginRight: "auto", color: "#B91C1C" }} disabled={gravando} onClick={() => { setConfirmarExclusao(true); setErro(""); }}>Excluir grupo</button>
+          <span style={{ fontSize: 12 }}>{opcoes.length} opções · {marcados.size} produtos</span>
+          <button type="button" style={botao} disabled={gravando} onClick={onFechar}>Cancelar</button>
+          <button type="button" style={{ ...botao, color: "white", background: "#0F766E" }} disabled={gravando} onClick={() => salvar()}>{gravando ? "Salvando…" : "Salvar grupo e vínculos"}</button>
+        </>}
+      </div>
     </div>
   </div>;
 }
