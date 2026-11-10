@@ -13,6 +13,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Plus, Trash2, Edit3, X, Image as ImageIcon, Pause, Play, Package, Monitor, Truck, Tablet, UtensilsCrossed, Search, ClipboardList, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, ChevronUp, ChevronsUp, ChevronsDown, Eye, Layers, Check, Sparkles, Copy, MoreVertical, Tag, CalendarClock } from "lucide-react";
 import CriarGrupoDeComplementos from "@/components/admin/CriarGrupoDeComplementos";
+import GruposDeComplementos from "@/components/admin/GruposDeComplementos";
+import { basesDeComplementos } from "@/lib/bases-de-complementos";
 import EscolhaDePergunta from "@/components/admin/EscolhaDePergunta";
 
 type AbaForm = "sobre" | "preco" | "perguntas" | "disponivel";
@@ -2326,7 +2328,7 @@ export default function MenuProductManager({
             <Package size={16} style={{ marginRight: "4px" }} /> Combos ({comboProducts.length})
           </button>
           <button onClick={() => setTab("complementos")} className={`btn ${tab === "complementos" ? "btn-primary" : "btn-outline"}`} style={{ fontSize: "0.88rem", fontWeight: 700 }} title="Só os produtos que têm perguntas, com as perguntas e opções abertas">
-            🧩 Complementos ({produtosComPerguntas.reduce((s, p) => s + (p.comboGroups?.length || 0), 0)})
+            🧩 Complementos ({basesDeComplementos(produtosComPerguntas).length})
           </button>
           <Link href="/store/cardapio/pdv" className="btn btn-outline" style={{ fontSize: "0.88rem", fontWeight: 700, textDecoration: "none" }} title="O número de cada item, para digitar no Código PDV do iFood">
             🔢 PDV
@@ -4126,54 +4128,12 @@ export default function MenuProductManager({
         // de criar grupo em 3 passos. Clicar no cartão abre o produto na aba
         // Perguntas; "Usar em outros" copia a pergunta.
         if (tab === "complementos") {
-          const termo = searchTerm.trim().toLowerCase();
-          const cartoes = produtosComPerguntas.flatMap(p => (p.comboGroups || []).map((g: any) => ({ p, g })))
-            .filter(({ p, g }) => !termo || String(g.title || "").toLowerCase().includes(termo) || String(p.name || "").toLowerCase().includes(termo))
-            .filter(({ p }) => selectedCategoryFilter === "TODAS" || (p.category || "").toLowerCase().trim() === selectedCategoryFilter.toLowerCase().trim());
-          return (
-            <div style={{ background: "#FFF", borderRadius: "16px", border: "1px solid #E2E8F0", padding: "1.25rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: "1rem" }}>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 800, color: "#0F172A" }}>Grupos de complementos</h3>
-                  <p style={{ margin: "4px 0 0", fontSize: "0.82rem", color: "#64748B" }}>Faça ajustes nas perguntas do seu cardápio: ingredientes, adicionais, tamanhos, molhos. Cada grupo mostra em qual produto está.</p>
-                </div>
-                <button type="button" onClick={() => setCriandoGrupo(true)} className="btn btn-primary" style={{ fontSize: "0.85rem" }}>
-                  <Plus size={16} style={{ marginRight: 4 }} /> Criar grupo de complementos
-                </button>
-              </div>
-              {cartoes.length === 0 ? (
-                <div style={{ textAlign: "center", padding: "2.5rem 1rem", color: "#94A3B8", fontSize: "0.85rem", border: "1px dashed #CBD5E1", borderRadius: 12 }}>
-                  {termo ? `Nenhum grupo com "${searchTerm}".` : "Nenhum produto tem pergunta ainda. Crie o primeiro grupo acima."}
-                </div>
-              ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
-                  {cartoes.map(({ p, g }) => {
-                    const nOpcoes = (g.items || []).length;
-                    const fixo = p.isCombo && itemFixoDoGrupo(g);
-                    const regra = fixo ? "Sempre vai no combo" : `${Number(g.minQty) > 0 ? "Obrigatória" : "Opcional"} · ${Number(g.maxQty) <= 1 ? "1 escolha" : `até ${g.maxQty}`}`;
-                    return (
-                      <div key={g.id} style={{ border: "1px solid #E2E8F0", borderRadius: 14, padding: "14px 16px", background: "#FFF", display: "flex", flexDirection: "column", gap: 8, cursor: "pointer", transition: "box-shadow 0.15s" }}
-                        onClick={() => { openEdit(p); setAbaForm("perguntas"); }}
-                        title="Abrir o produto na aba Perguntas">
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: "1.1rem" }}>🧩</span>
-                          <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.title}</span>
-                        </div>
-                        <span style={{ fontSize: "0.76rem", color: "#64748B" }}>Disponível em: <strong style={{ color: "#334155" }}>{p.name}</strong></span>
-                        <span style={{ fontSize: "0.72rem", color: "#94A3B8" }}>{regra} · {nOpcoes} {nOpcoes === 1 ? "complemento" : "complementos"}</span>
-                        <div style={{ display: "flex", gap: 6, marginTop: 2 }} onClick={e => e.stopPropagation()}>
-                          <button type="button" onClick={() => { openEdit(p); setAbaForm("perguntas"); }} style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #CBD5E1", background: "#FFF", fontSize: "0.74rem", fontWeight: 700, color: "#334155", cursor: "pointer", fontFamily: "inherit" }}>✏️ Editar</button>
-                          {!fixo && (
-                            <button type="button" onClick={() => setUsandoPergunta({ grupo: g, produto: p })} style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #E7DDD3", background: "#FAF6F2", fontSize: "0.74rem", fontWeight: 700, color: "#1C1917", cursor: "pointer", fontFamily: "inherit" }}>📋 Usar em outros</button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
+          return <GruposDeComplementos produtos={[...itemProducts, ...comboProducts]} catalogo={catalogoDeOpcoes}
+            busca={searchTerm} categoria={selectedCategoryFilter}
+            onCriar={() => setCriandoGrupo(true)}
+            onEditarProduto={p => { openEdit(p); setAbaForm("perguntas"); }}
+            onEditarOpcao={p => openEdit(p)}
+            onFeito={texto => { showToast(texto); router.refresh(); }} />;
         }
 
         if (displayedProducts.length === 0) {
