@@ -10,11 +10,12 @@
  */
 import { useMemo, useState } from "react";
 import { Check, Plus, Search, Trash2, X } from "lucide-react";
+import EscolhaDePergunta from "./EscolhaDePergunta";
 
 type Opcao = { id: string; nome: string; acrescimo: string };
 const PASSOS = ["Sobre o grupo", "Complementos", "Disponível em"];
 
-export default function CriarGrupoDeComplementos({ produtos, catalogo, categorias, onFechar, onFeito }: {
+export default function CriarGrupoDeComplementos({ produtos, catalogo, categorias, onFechar, onFeito, onUsarExistente }: {
   /** Produtos de venda (itens e combos) onde a pergunta pode entrar. */
   produtos: any[];
   /** Cardápio inteiro (com as opções de combo), para escolher os complementos. */
@@ -22,7 +23,9 @@ export default function CriarGrupoDeComplementos({ produtos, catalogo, categoria
   categorias: { name: string }[];
   onFechar: () => void;
   onFeito: (texto: string) => void;
+  onUsarExistente: () => void;
 }) {
+  const [criandoDoZero, setCriandoDoZero] = useState(false);
   const [passo, setPasso] = useState(0);
   const [titulo, setTitulo] = useState("");
   const [obrigatoria, setObrigatoria] = useState(false);
@@ -105,6 +108,18 @@ export default function CriarGrupoDeComplementos({ produtos, catalogo, categoria
 
   const campo: React.CSSProperties = { width: "100%", padding: "10px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontFamily: "inherit", boxSizing: "border-box" };
   const chip = (ativo: boolean): React.CSSProperties => ({ flex: 1, padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${ativo ? "#E8360C" : "#CBD5E1"}`, background: ativo ? "#FFF4EF" : "#FFF", color: ativo ? "#C92E09" : "#64748B", fontWeight: 800, fontSize: "0.85rem", cursor: "pointer", fontFamily: "inherit", textAlign: "left" });
+
+  if (!criandoDoZero) return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 100000, background: "rgba(15,23,42,0.75)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div role="dialog" aria-modal="true" aria-label="Adicionar pergunta" style={{ background: "#FFF", borderRadius: 20, width: "100%", maxWidth: 640, maxHeight: "90vh", overflowY: "auto", padding: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 16 }}>
+          <h2 style={{ margin: 0, fontSize: "1.2rem", color: "#0F172A" }}>Perguntas do cardápio</h2>
+          <button type="button" onClick={onFechar} aria-label="Fechar" style={{ border: "none", background: "#F1F5F9", borderRadius: "50%", width: 36, height: 36, cursor: "pointer" }}><X size={18} /></button>
+        </div>
+        <EscolhaDePergunta onUsarExistente={onUsarExistente} onCriarNova={() => setCriandoDoZero(true)} />
+      </div>
+    </div>
+  );
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 100000, background: "rgba(15, 23, 42, 0.75)", backdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>

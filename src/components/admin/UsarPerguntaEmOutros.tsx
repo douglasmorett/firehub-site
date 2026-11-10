@@ -268,15 +268,16 @@ export default function UsarPerguntaEmOutros({ grupo, origem, produtos, onFechar
  * (copiaDoGrupo) e a entrega; quem grava é o "Salvar" do formulário, pelo PUT
  * de sempre — o lojista ainda pode mudar a pergunta antes.
  */
-export function TrazerPerguntaDeOutro({ produtos, produtoAtualId, franchiseeId, titulosJaUsados, onEscolher, onFechar }: {
+export function TrazerPerguntaDeOutro({ produtos, produtoAtualId, franchiseeId, titulosJaUsados, onEscolher, onFechar, escolherDestinosDepois = false }: {
   produtos: ProdutoParaCopiar[];
   /** O produto aberto no formulário (nulo no cadastro novo): não oferece as próprias perguntas. */
   produtoAtualId: string | null;
   /** Loja do produto aberto, quando se sabe: o ADMIN em "todas" vê o cardápio de todas. */
   franchiseeId?: string | null;
   titulosJaUsados: string[];
-  onEscolher: (copia: CopiaDaPergunta) => void;
+  onEscolher: (copia: CopiaDaPergunta, fonte: { produto: ProdutoParaCopiar; grupo: PerguntaParaCopiar }) => void;
   onFechar: () => void;
+  escolherDestinosDepois?: boolean;
 }) {
   const [busca, setBusca] = useState("");
   const usados = useMemo(() => new Set(titulosJaUsados.map(tituloNormalizado)), [titulosJaUsados]);
@@ -299,11 +300,15 @@ export function TrazerPerguntaDeOutro({ produtos, produtoAtualId, franchiseeId, 
   return (
     // Acima do formulário do produto (zIndex 99999).
     <div style={{ ...fundo, zIndex: 100001 }} onClick={onFechar}>
-      <div style={caixa} onClick={(e) => e.stopPropagation()}>
+      <div style={caixa} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Usar pergunta existente">
         <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", padding: "16px 18px 12px", borderBottom: "1px solid #F1F5F9" }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h3 style={{ margin: 0, fontSize: "1.02rem", fontWeight: 800, color: "#0F172A" }}>Trazer pergunta de outro produto</h3>
-            <p style={{ margin: "3px 0 0", fontSize: "0.76rem", color: "#64748B" }}>Vem com as mesmas opções e preços. Você ainda pode mudar antes de salvar.</p>
+            <h3 style={{ margin: 0, fontSize: "1.02rem", fontWeight: 800, color: "#0F172A" }}>Usar pergunta existente</h3>
+            <p style={{ margin: "3px 0 0", fontSize: "0.76rem", color: "#64748B", lineHeight: 1.5 }}>
+              {escolherDestinosDepois
+                ? "Escolha uma pergunta pronta. Depois, marque os produtos em que ela vai entrar."
+                : "As opções já cadastradas são reutilizadas. Confira as regras e os valores para este produto antes de salvar."}
+            </p>
           </div>
           <button type="button" onClick={onFechar} aria-label="Fechar" style={botaoFechar}><X size={16} /></button>
         </div>
@@ -314,6 +319,7 @@ export function TrazerPerguntaDeOutro({ produtos, produtoAtualId, franchiseeId, 
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
             placeholder="Buscar pela pergunta ou pelo produto"
+            aria-label="Buscar pergunta existente"
           />
         </div>
         <div style={{ padding: "8px 18px 16px", overflowY: "auto", flex: 1, display: "grid", gap: "5px", alignContent: "start" }}>
@@ -323,11 +329,9 @@ export function TrazerPerguntaDeOutro({ produtos, produtoAtualId, franchiseeId, 
             </p>
           )}
           {lista.map(({ produto, grupo }) => (
-            <button
+            <article
               key={`${produto.id}-${grupo.id}`}
-              type="button"
-              onClick={() => onEscolher(copiaDoGrupo(grupo))}
-              style={{ textAlign: "left", padding: "8px 12px", borderRadius: "10px", border: "1px solid #E2E8F0", background: "#F8FAFC", cursor: "pointer", display: "grid", gap: "2px" }}
+              style={{ textAlign: "left", padding: "12px", borderRadius: "10px", border: "1px solid #E2E8F0", background: "#F8FAFC", display: "grid", gap: "6px" }}
             >
               <span style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
                 <span style={{ fontSize: "0.86rem", fontWeight: 800, color: "#0F172A" }}>{grupo.title}</span>
@@ -336,7 +340,35 @@ export function TrazerPerguntaDeOutro({ produtos, produtoAtualId, franchiseeId, 
               <span style={{ fontSize: "0.72rem", color: "#64748B" }}>
                 {produto.name} · {regraDaPergunta(grupo)} · {opcoes((grupo.items || []).length)}
               </span>
-            </button>
+              <details style={{ fontSize: "0.76rem", color: "#475569" }}>
+                <summary style={{ cursor: "pointer", fontWeight: 700 }}>Ver opções e valores</summary>
+                <ul style={{ margin: "8px 0", paddingLeft: 18, display: "grid", gap: 7 }}>
+                  {(grupo.items || []).map((item, i) => {
+                    const moeda = (valor: unknown) => Number(valor || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+                    return (
+                      <li key={`${item.menuProductId || item.menuProduct?.id || i}-${i}`}>
+                        <strong>{item.menuProduct?.name || "Opção sem nome"}</strong>{" · "}{moeda(item.additionalPrice)}
+                        {item.menuProduct?.active === false && <span style={{ color: "#B45309" }}> · Pausada</span>}
+                        {Number(item.maxPerItem) > 0 && <span> · máximo {item.maxPerItem}</span>}
+                        {Number(item.additionalPriceSalao) > 0 && <div>Mesa/balcão: {moeda(item.additionalPriceSalao)}</div>}
+                        {Number(item.additionalPriceDelivery) > 0 && <div>Delivery: {moeda(item.additionalPriceDelivery)}</div>}
+                        {Number(item.additionalPriceTotem) > 0 && <div>Totem: {moeda(item.additionalPriceTotem)}</div>}
+                        {item.promoAdditionalPrice != null && <div>Promocional: {moeda(item.promoAdditionalPrice)}</div>}
+                        {item.optionNote && <div>{item.optionNote}</div>}
+                      </li>
+                    );
+                  })}
+                </ul>
+                <p style={{ margin: "6px 0 0", fontSize: "0.72rem", lineHeight: 1.5 }}>
+                  As opções são as mesmas: nome, foto e pausa valem nos seus usos. As regras e os acréscimos ficam em cada produto.
+                </p>
+              </details>
+              <button type="button" onClick={() => onEscolher(copiaDoGrupo(grupo), { produto, grupo })}
+                aria-label={`Usar pergunta ${grupo.title} de ${produto.name}`}
+                style={{ marginTop: 3, padding: "9px 12px", borderRadius: 9, border: "none", background: "#0F766E", color: "#FFF", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+                {escolherDestinosDepois ? "Escolher produtos para esta pergunta" : "Usar esta pergunta"}
+              </button>
+            </article>
           ))}
         </div>
       </div>

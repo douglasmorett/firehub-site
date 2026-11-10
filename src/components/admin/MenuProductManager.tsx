@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Plus, Trash2, Edit3, X, Image as ImageIcon, Pause, Play, Package, Monitor, Truck, Tablet, UtensilsCrossed, Search, ClipboardList, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, ChevronUp, ChevronsUp, ChevronsDown, Eye, Layers, Check, Sparkles, Copy, MoreVertical, Tag, CalendarClock } from "lucide-react";
 import CriarGrupoDeComplementos from "@/components/admin/CriarGrupoDeComplementos";
+import EscolhaDePergunta from "@/components/admin/EscolhaDePergunta";
 
 type AbaForm = "sobre" | "preco" | "perguntas" | "disponivel";
 
@@ -398,6 +399,7 @@ export default function MenuProductManager({
   const [usandoPergunta, setUsandoPergunta] = useState<{ grupo: any; produto: any } | null>(null);
   /** "Criar grupo de complementos" da aba Complementos (3 passos, como no iFood). */
   const [criandoGrupo, setCriandoGrupo] = useState(false);
+  const [escolhendoPerguntaParaOutros, setEscolhendoPerguntaParaOutros] = useState(false);
   /** O menu ⋮ aberto (id do produto ou "cat:<id>" da categoria), como na lista do iFood. */
   const [menuAberto, setMenuAberto] = useState<string | null>(null);
   // O menu abre "por cima de tudo" (position fixed): dentro da linha ele era
@@ -1272,6 +1274,7 @@ export default function MenuProductManager({
     setHorarioMode("all"); setHorarioDe("09:00"); setHorarioAte("14:00");
     setNovaOpcao(null); setSeletorAberto(null); setBuscaOpcao("");
     setShowForm(false); setEditingId(null); setDuplicandoDe(null);
+    setTrazendoPergunta(false); setEscolhendoPerguntaParaOutros(false);
     setAbaForm("sobre");
   };
 
@@ -1889,8 +1892,7 @@ export default function MenuProductManager({
     : [
       { id: "sobre", rotulo: "Sobre o produto" },
       { id: "preco", rotulo: "Preço" },
-      // Como no iFood, as perguntas do item entram depois de cadastrar; o combo precisa delas já no cadastro.
-      ...((modoPassos && !isCombo) ? [] : [{ id: "perguntas" as AbaForm, rotulo: isCombo ? "O que o combo leva" : "Perguntas" }]),
+      { id: "perguntas", rotulo: isCombo ? "O que o combo leva" : "Perguntas" },
       { id: "disponivel", rotulo: "Disponível em" },
     ];
   const idxAba = Math.max(0, abasDoForm.findIndex(a => a.id === abaForm));
@@ -2124,6 +2126,7 @@ export default function MenuProductManager({
       {/* 📋 USAR PERGUNTA EM OUTROS PRODUTOS (painel 🧩 Complementos) */}
       {criandoGrupo && (
         <CriarGrupoDeComplementos
+          onUsarExistente={() => { setCriandoGrupo(false); setEscolhendoPerguntaParaOutros(true); }}
           produtos={[...itemProducts, ...comboProducts]}
           catalogo={catalogoDeOpcoes}
           categorias={dynCategories}
@@ -2145,14 +2148,21 @@ export default function MenuProductManager({
       {/* "Trazer pergunta de outro produto" (formulário): fica fora do
           formulário, por cima dele (zIndex maior), para não ser cortado pela
           rolagem dele. */}
-      {showForm && trazendoPergunta && (
+      {((showForm && trazendoPergunta) || escolhendoPerguntaParaOutros) && (
         <TrazerPerguntaDeOutro
           produtos={products || []}
-          produtoAtualId={editingId}
-          franchiseeId={editingId ? produtosPorId.get(editingId)?.franchiseeId ?? null : null}
-          titulosJaUsados={comboGroups.map(g => g.title)}
-          onEscolher={trazerPergunta}
-          onFechar={() => setTrazendoPergunta(false)}
+          produtoAtualId={escolhendoPerguntaParaOutros ? null : editingId}
+          franchiseeId={!escolhendoPerguntaParaOutros && editingId ? produtosPorId.get(editingId)?.franchiseeId ?? null : null}
+          titulosJaUsados={escolhendoPerguntaParaOutros ? [] : comboGroups.map(g => g.title)}
+          escolherDestinosDepois={escolhendoPerguntaParaOutros}
+          onEscolher={(copia, fonte) => {
+            if (escolhendoPerguntaParaOutros) {
+              if (!fonte.grupo.id) return;
+              setEscolhendoPerguntaParaOutros(false);
+              setUsandoPergunta({ grupo: fonte.grupo, produto: fonte.produto });
+            } else trazerPergunta(copia);
+          }}
+          onFechar={() => { setTrazendoPergunta(false); setEscolhendoPerguntaParaOutros(false); }}
         />
       )}
 
@@ -3530,6 +3540,11 @@ export default function MenuProductManager({
                   </p>
                 </div>
 
+                <EscolhaDePergunta
+                  onUsarExistente={() => setTrazendoPergunta(true)}
+                  onCriarNova={addGroup}
+                />
+
                 {/* ─── PREÇO POR CANAL NAS OPÇÕES ────────────────────────────
                     O campo "Preços por canal" lá de cima vale para o preço do
                     PRODUTO. Só que num cardápio no molde iFood/Anota AI o
@@ -4024,15 +4039,6 @@ export default function MenuProductManager({
                   );
                 })}
 
-                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                  <button type="button" onClick={addGroup} className="btn btn-outline" style={{ flex: "1 1 200px", fontSize: "0.85rem", borderRadius: "10px" }}>
-                    <Plus size={14} style={{ marginRight: "4px" }} /> Adicionar pergunta
-                  </button>
-                  <button type="button" onClick={() => setTrazendoPergunta(true)} className="btn btn-outline" style={{ flex: "1 1 200px", fontSize: "0.85rem", borderRadius: "10px" }}
-                    title="Copiar uma pergunta que outro produto já tem, com as mesmas opções e preços">
-                    <Copy size={14} style={{ marginRight: "4px" }} /> Trazer pergunta de outro produto
-                  </button>
-                </div>
               </div>
             )}
 
