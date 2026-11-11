@@ -51,6 +51,12 @@ export const ACOES_PROTEGIDAS = [
     ajuda: "Cancelar qualquer pedido pelo painel (no card, no Editar, arrastando para Cancelados ou em lote).",
   },
   {
+    // Lucas, Frangoso Trindade (aprovado pelo Douglas, 11/11/2026).
+    chave: "darDesconto",
+    rotulo: "Dar desconto",
+    ajuda: "Desconto no Balcão/PDV, no Editar do pedido (dar ou aumentar o desconto, cortesia de item) e no fechamento da mesa (inclusive na maquininha). Cupom do cliente no site não pede.",
+  },
+  {
     chave: "verDadosSensiveis",
     rotulo: "Abrir Dados sensíveis",
     ajuda: "A tela Dados sensíveis (CMV, custo da equipe e metas). Pede a senha ao abrir a tela.",
@@ -77,6 +83,31 @@ export function lerExigeSenha(bruto: unknown): ExigeSenha {
 }
 
 export const algumaLigada = (exige: ExigeSenha) => ACOES_PROTEGIDAS.some((a) => exige[a.chave]);
+
+// ── O FECHAMENTO CEGO ───────────────────────────────────────────────────────
+//
+// Lucas, Frangoso Trindade (aprovado pelo Douglas, 11/11/2026): "o atendente
+// não pode ver o valor que tem em dinheiro no caixa, só depois de fechar,
+// porque ele consegue ficar alterando até o valor bater". Ligado, quem NÃO é o
+// dono não recebe do servidor o esperado do caixa aberto: conta a gaveta,
+// fecha e só então vê a diferença. Não é ação protegida (não pede senha):
+// mora no mesmo JSON `exige` da SenhaDoGerente porque é o lugar que só o dono
+// grava — e, com senha cadastrada, só com ela. Desligado em toda loja até o
+// dono ligar.
+export const CHAVE_DO_FECHAMENTO_CEGO = "fechamentoCego";
+
+/** Lê o interruptor do mesmo JSON do `exige`. Só `true` liga. */
+export function lerFechamentoCego(bruto: unknown): boolean {
+  const obj = bruto && typeof bruto === "object" && !Array.isArray(bruto) ? (bruto as Record<string, unknown>) : {};
+  return obj[CHAVE_DO_FECHAMENTO_CEGO] === true;
+}
+
+/** Dono da loja (conta sem ownerId, não STAFF) ou ADMIN do FireHub: vê o caixa sempre. */
+export function ehDonoDaLoja(u: { role?: string | null; ownerId?: string | null } | null | undefined): boolean {
+  if (!u) return false;
+  const papel = String(u.role || "").toUpperCase();
+  return papel === "ADMIN" || (papel !== "STAFF" && !u.ownerId);
+}
 
 /** A senha nova é aceitável? Devolve o problema, ou null. */
 export function problemaDaNovaSenha(senha: unknown): string | null {

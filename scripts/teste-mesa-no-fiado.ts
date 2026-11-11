@@ -23,6 +23,10 @@
  *       • POST   /api/store/employees/[id]/debt (dívida à mão);
  *       • POST   /api/store/orders/presencial com "Conta Funcionário".
  *  4. A baixa "Fiado" solta numa mesa é recusada (só entra pelo "Lançar no fiado").
+ *  5. FECHAMENTO CEGO e "DAR DESCONTO" (Lucas, Frangoso Trindade, 11/11/2026):
+ *     o interruptor é do dono e sobrevive à senha apagada; o GET do caixa
+ *     aberto não manda o esperado ao funcionário (o dono recebe); o balcão
+ *     com desconto pede a senha do gerente.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -31,6 +35,7 @@ import bcrypt from "bcryptjs";
 import {
   ACOES_PROTEGIDAS, FreioDaSenha, conferirSenhaDoGerenteCom, decisaoDaSenha, lerExigeSenha, problemaDaNovaSenha,
   senhaDoCabecalho, CODIGO_SENHA_ERRADA, CODIGO_SENHA_PEDIDA, CODIGO_SENHA_TRANCADA, type ConfigDaSenha,
+  ehDonoDaLoja, lerFechamentoCego,
 } from "../src/lib/senha-do-gerente-regras";
 import {
   FORMA_DO_FIADO_NA_MESA, descricaoDaMesaNoFiado, lerClienteDoFiado, saldoDoFiado, valorParaOFiado,
@@ -57,6 +62,12 @@ async function provarARegraDaSenha() {
   exigir("toda ação nasce desligada", ACOES_PROTEGIDAS.every((a) => nada[a.chave] === false), nada);
   exigir("só true liga (\"sim\" e 1 não)", lerExigeSenha({ fiado: "sim", excluirPendenciaDoMotoboy: 1 }).fiado === false);
   exigir("senha curta é recusada", problemaDaNovaSenha("12") !== null && problemaDaNovaSenha("1234") === null);
+  exigir("\"Dar desconto\" existe e nasce desligado", ACOES_PROTEGIDAS.some((a) => a.chave === "darDesconto") && nada.darDesconto === false);
+  exigir("fechamento cego: só true liga", !lerFechamentoCego(null) && !lerFechamentoCego({ fechamentoCego: "sim" }) && lerFechamentoCego({ fechamentoCego: true }));
+  exigir("fechamento cego não vira ação protegida", !("fechamentoCego" in lerExigeSenha({ fechamentoCego: true })));
+  exigir("dono = conta sem ownerId (ou ADMIN); STAFF nunca",
+    ehDonoDaLoja({ role: "FRANCHISEE", ownerId: null }) && ehDonoDaLoja({ role: "ADMIN", ownerId: null })
+      && !ehDonoDaLoja({ role: "STAFF", ownerId: "loja-1" }) && !ehDonoDaLoja({ role: "STAFF", ownerId: null }) && !ehDonoDaLoja({ role: "FRANCHISEE", ownerId: "loja-1" }));
 
   const hash = await bcrypt.hash("1234", 4);
   const ligada: ConfigDaSenha = { hash, exige: lerExigeSenha({ fiado: true }) };
@@ -134,7 +145,7 @@ function provarQueAVendaNaoContaDuasVezes() {
 
 /** O banco de mentira: o que as rotas leem, e o que elas gravaram. */
 type Bd = {
-  usuarios: any[]; caixaAberto: boolean; senha: { hash: string; exige: any } | null;
+  usuarios: any[]; caixaAberto: boolean; senha: { hash: string; exige: any } | null; caixaDoGet?: any;
   mesa: any; itens: any[]; clientes: any[];
   gravado: { sql: string; valores: unknown[] }[];
   chamadas: string[];
@@ -162,7 +173,8 @@ function prismaFalso(): any {
         return bd.usuarios.filter((u) => ids.includes(u.id) || ids.includes(u.accountGroupId)).map((u) => ({ id: u.id }));
       },
     },
-    cashSession: { findFirst: async () => (bd.caixaAberto ? { id: "caixa-1" } : null) },
+    // `caixaDoGet`: o caixa aberto inteiro, para o GET /api/cash-session (fechamento cego).
+    cashSession: { findFirst: async () => (bd.caixaAberto ? (bd.caixaDoGet ?? { id: "caixa-1" }) : null) },
     tableSession: {
       findUnique: async () => (bd.mesa ? JSON.parse(JSON.stringify(bd.mesa)) : null),
       update: async (args: any) => { bd.chamadas.push("tableSession.update"); bd.gravado.push({ sql: "tableSession.update", valores: [args.data] }); bd.mesa.status = args.data.status; return bd.mesa; },
@@ -278,6 +290,20 @@ async function provarAsRotas() {
   r = await lerJson(await salvar({ exige: { fiado: true, excluirPendenciaDoMotoboy: true }, senhaAtual: "4321", novaSenha: "4321" }));
   exigir("config: trocar a senha regrava o hash", r.status === 200 && gravada()?.hash !== hashAntes, r);
   const hash = gravada()!.hash; // "4321", gravada pela rota
+
+  // ── 5. Fechamento cego: o interruptor ──
+  r = await lerJson(await salvar({ exige: { fiado: true, excluirPendenciaDoMotoboy: true }, fechamentoCego: true }));
+  exigir("5. fechamento cego: com senha cadastrada, ligar sem a senha atual → 403", r.status === 403 && gravada()?.exige.fechamentoCego !== true, r);
+  r = await lerJson(await salvar({ exige: { fiado: true, excluirPendenciaDoMotoboy: true }, fechamentoCego: true, senhaAtual: "4321" }));
+  exigir("5. fechamento cego: o dono liga (vai no JSON do exige)", r.status === 200 && r.corpo.fechamentoCego === true && gravada()?.exige.fechamentoCego === true, r);
+  r = await lerJson(await salvar({ exige: { fiado: true, excluirPendenciaDoMotoboy: false }, senhaAtual: "4321" }));
+  exigir("5. fechamento cego: salvar sem mandar o campo (tela antiga) não desliga", r.status === 200 && gravada()?.exige.fechamentoCego === true, r);
+  const salvaHash = gravada()!.hash;
+  r = await lerJson(await salvar({ removerSenha: true, senhaAtual: "4321" }));
+  exigir("5. fechamento cego: apagar a senha desliga as ações, mas NÃO o fechamento cego", r.status === 200 && r.corpo.temSenha === false && r.corpo.exige.fiado === false && r.corpo.fechamentoCego === true, r);
+  r = await lerJson(await salvar({ exige: {}, fechamentoCego: false }));
+  exigir("5. fechamento cego: loja sem senha desliga (e liga) sem cadastrar senha", r.status === 200 && r.corpo.fechamentoCego === false, r);
+  bd.senha = { hash: salvaHash, exige: { fiado: true, excluirPendenciaDoMotoboy: true } };
 
   // ── Excluir pendência na conferência do motoboy ──
   const pendencias = await rota("motoboy-report/pendencias");
@@ -395,6 +421,46 @@ async function provarAsRotas() {
     body: JSON.stringify({ deliveryType: "RETIRADA", paymentMethod: "Conta Funcionário", employeeId: "cliente-de-outra-loja", totalAmount: 18, items: [{ menuProductId: "x", quantity: 1, price: 18 }] }),
   }));
   exigir("balcão no fiado: cadastro que não é da loja → 400", r2.status === 400 && !pedidoCriado(), await r2.json().catch(() => null));
+
+  // ── 5. Balcão com desconto ("Dar desconto") ──
+  const venderComDesconto = (senha?: string) => presencial.POST(new Request("http://teste/x", {
+    method: "POST", headers: { "Content-Type": "application/json", ...comSenha(senha) },
+    body: JSON.stringify({ deliveryType: "RETIRADA", paymentMethod: "Dinheiro", totalAmount: 13, discountTotal: 5, discountMerchant: 5, items: [{ menuProductId: "x", quantity: 1, price: 18 }] }),
+  }));
+  resetar(); bd.senha = { hash, exige: { darDesconto: true } };
+  r = await lerJson(await venderComDesconto());
+  exigir("5. balcão com desconto: sem a senha → 403 PEDIDA, nenhum pedido criado", r.status === 403 && r.corpo.codigo === CODIGO_SENHA_PEDIDA && r.corpo.acao === "darDesconto" && !pedidoCriado(), r);
+  resetar();
+  r = await lerJson(await venderComDesconto("1"));
+  exigir("5. balcão com desconto: senha errada → 403 ERRADA, nenhum pedido criado", r.status === 403 && r.corpo.codigo === CODIGO_SENHA_ERRADA && !pedidoCriado(), r);
+  resetar();
+  r = await lerJson(await venderComDesconto("4321"));
+  exigir("5. balcão com desconto: senha certa passa da senha", ![CODIGO_SENHA_PEDIDA, CODIGO_SENHA_ERRADA].includes(r.corpo?.codigo), r);
+  resetar(); bd.senha = { hash, exige: { fiado: true } };
+  r = await lerJson(await venderComDesconto());
+  exigir("5. balcão com desconto: \"Dar desconto\" desligado não pede", ![CODIGO_SENHA_PEDIDA, CODIGO_SENHA_ERRADA].includes(r.corpo?.codigo), r);
+
+  // ── 5. O caixa aberto: o esperado não sai para o funcionário ──
+  const caixa = await rota("cash-session");
+  bd.caixaDoGet = { id: "caixa-1", franchiseeId: "loja-1", status: "OPEN", openedAt: new Date(Date.now() - 3_600_000), openingAmount: 100 };
+  const lerCaixa = async (email: string, role: string) => {
+    (globalThis as any).__sessaoDoTeste = { user: { email, role } };
+    return lerJson(await caixa.GET());
+  };
+  resetar(); bd.senha = { hash, exige: { fechamentoCego: true } };
+  const doFunc = await lerCaixa("caixa@delicia.test", "STAFF");
+  const texto = JSON.stringify(doFunc.corpo);
+  exigir("5. cego, funcionário: caixaCego e sem o esperado das formas contadas",
+    doFunc.status === 200 && doFunc.corpo.caixaCego === true && !("cash" in (doFunc.corpo.expected || {})) && !("total" in (doFunc.corpo.expected || {})), doFunc);
+  exigir("5. cego, funcionário: nada de dinheiro na gaveta, vendas em dinheiro nem vendas por tipo",
+    !texto.includes("dinheiroNaGaveta") && !texto.includes("vendasEmDinheiro") && doFunc.corpo.vendasPorTipo === null && doFunc.corpo.trocoNoPix === null, doFunc.corpo);
+  const doDono = await lerCaixa("allan@delicia.test", "FRANCHISEE");
+  exigir("5. cego, dono: recebe o esperado inteiro", doDono.status === 200 && !doDono.corpo.caixaCego && typeof doDono.corpo.expected?.cash === "number", doDono.corpo.expected);
+  resetar(); bd.senha = { hash, exige: { fiado: true } };
+  const desligado = await lerCaixa("caixa@delicia.test", "STAFF");
+  exigir("5. desligado, funcionário: recebe o esperado como sempre", desligado.status === 200 && !desligado.corpo.caixaCego && typeof desligado.corpo.expected?.cash === "number", desligado.corpo.expected);
+  bd.caixaDoGet = undefined;
+  (globalThis as any).__sessaoDoTeste = { user: { email: "allan@delicia.test", role: "FRANCHISEE" } };
 }
 
 (async () => {

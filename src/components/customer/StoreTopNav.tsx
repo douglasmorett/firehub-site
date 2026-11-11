@@ -14,7 +14,7 @@ import VendasPorTipoDoCaixa, { type VendasPorTipo } from "./VendasPorTipoDoCaixa
 import CancelamentosDoCaixa, { type CancelamentosDoTurno } from "./CancelamentosDoCaixa";
 import SecoesDoFechamentoNoPapel from "./SecoesDoFechamentoNoPapel";
 import ResumoDoCaixaAbertoNoMenu from "./ResumoDoCaixaAberto";
-import type { ResumoDoCaixaAberto } from "@/lib/resumo-do-caixa-aberto";
+import type { ResumoDoCaixaAberto, ResumoDoCaixaCego } from "@/lib/resumo-do-caixa-aberto";
 import {
   avisarQueOCaixaMudou, EVENTO_ABRIR_MENU_DO_CAIXA, PARAMETRO_ABRIR_CAIXA, type PedidoDoCaixa,
 } from "@/lib/caixa-aberto";
@@ -333,6 +333,12 @@ export default function StoreTopNav({
 
   // Close modal state
   const [expected, setExpected] = useState<Record<string,number>>({ cash:0, debit:0, credit:0, pix:0, voucher:0, total:0 });
+  // ── FECHAMENTO CEGO (Minha Loja → Senha do gerente) ─────────────────
+  // Lucas, Frangoso Trindade (11/11/2026): o atendente digitava a contagem até
+  // bater com o "Sistema espera". Ligado, o servidor não manda o esperado ao
+  // funcionário (GET /api/cash-session → caixaCego): ele conta, encerra e vê o
+  // resultado no aviso do topo, que vem na resposta do fechamento.
+  const [cego, setCego] = useState(false);
   // Parte do pago online que veio do site da loja (já dentro de expected.ifoodOnline).
   const [onlineDoSite, setOnlineDoSite] = useState(0);
   /* Pedidos sem pagamento provado: ficam fora do esperado, mas visíveis. */
@@ -404,7 +410,7 @@ export default function StoreTopNav({
   // dinheiro), as entradas e saídas e o dinheiro que deveria estar na gaveta.
   // Vem pronto do GET /api/cash-session — a MESMA apuração do fechamento
   // (lib/resumo-do-caixa-aberto.ts) —, então a tela não soma nada.
-  const [resumoDoCaixa, setResumoDoCaixa] = useState<(ResumoDoCaixaAberto & { fuso: string }) | null>(null);
+  const [resumoDoCaixa, setResumoDoCaixa] = useState<((ResumoDoCaixaAberto | ResumoDoCaixaCego) & { fuso: string }) | null>(null);
   const [resumoCarregando, setResumoCarregando] = useState(false);
   // ── O COMPROVANTE DA SANGRIA ────────────────────────────────────────
   // Pedido da Delícia de Casa (02/10/2026): imprimir a entrada ou a retirada
@@ -577,6 +583,7 @@ export default function StoreTopNav({
     setJaAvisouBranco(false);
     carregarMovs();
     fetch("/api/cash-session").then(r => r.json()).then(d => {
+      setCego(d.caixaCego === true);
       if (d.expected) setExpected(d.expected);
       setOnlineDoSite(Number(d.onlineDoSite) || 0);
       setNaMaquininha(d.naMaquininha || null);
@@ -662,12 +669,16 @@ export default function StoreTopNav({
   const esperadoConferido = Math.round(contadas.reduce((s, m) => s + (expected[m.key] || 0), 0) * 100) / 100;
   const contadoConferido = Math.round(contadas.reduce((s, m) => s + (Number(actual[m.key]) || 0), 0) * 100) / 100;
   const diferencaConferida = Math.round((contadoConferido - esperadoConferido) * 100) / 100;
+  // No fechamento cego a tela não sabe onde havia esperado: toda forma em
+  // branco é aviso, e "nada contado" é nenhuma forma digitada.
   const linhasEmBranco = METHODS.filter(
-    m => Math.abs(expected[m.key] || 0) > 0.01 && !digitada(m.key)
+    m => (cego || Math.abs(expected[m.key] || 0) > 0.01) && !digitada(m.key)
   );
   const esperadoEmBranco = Math.round(linhasEmBranco.reduce((s, m) => s + (expected[m.key] || 0), 0) * 100) / 100;
-  const nadaContado = linhasEmBranco.length > 0 &&
-    !contadas.some(m => Math.abs(expected[m.key] || 0) > 0.01 || Math.abs(Number(actual[m.key]) || 0) > 0.01);
+  const nadaContado = cego
+    ? contadas.length === 0
+    : linhasEmBranco.length > 0 &&
+      !contadas.some(m => Math.abs(expected[m.key] || 0) > 0.01 || Math.abs(Number(actual[m.key]) || 0) > 0.01);
   const onlineTravado = (expected.ifoodOnline || 0) + (expected.food99Online || 0);
 
   const tryClose = (respondido: { pendentes?: boolean; branco?: boolean } = {}) => {
@@ -687,7 +698,8 @@ export default function StoreTopNav({
     setFechandoSemConferencia(false);
     const d = diferencaConferida;
     setDiff(d);
-    if (Math.abs(d) > 0.01) { setCloseWarn(true); return; }
+    // Fechamento cego: a diferença só existe no servidor, depois de encerrar.
+    if (!cego && Math.abs(d) > 0.01) { setCloseWarn(true); return; }
     // Último passo antes de encerrar: perguntar se imprime. Vem depois dos
     // avisos de propósito — quem voltou para corrigir não precisa responder
     // duas vezes a mesma pergunta.
@@ -723,24 +735,38 @@ export default function StoreTopNav({
         closingFood99Coupons: expected.food99Coupons || 0,
         difference: diff,
         imprimir,
+        // Fechamento cego: a tela não tinha o esperado (o servidor não loga "tela velha").
+        caixaCego: cego,
       }),
     });
     // O papel do fechamento só existe na fila da nuvem. Se o Assistente desta
     // loja não está puxando a fila, ele NÃO vai sair — e a tela fechava calada,
     // como se tivesse impresso (Frangoso, 20 a 23/09/2026). Agora diz o que
     // fazer. `null`/ausente = não deu para saber: não acusa nada.
-    if (imprimir) {
-      const r = await resposta.json().catch(() => null);
-      if (r?.impressao?.assistenteOuvindo === false) {
-        // Aviso no topo, não alert() (aviso-e-no-topo-nao-alert).
-        setAviso({
-          tipo: "atencao",
-          titulo: "Caixa fechado — mas o fechamento NÃO vai sair no papel agora",
-          detalhe:
-            "O Assistente de Impressão desta loja não está consultando a fila. No computador do caixa, clique em “Vincular agora” no aviso laranja do topo (ou abra Impressoras e salve). " +
-            "Depois, imprima de novo em Caixa → Histórico de caixas.",
-        });
-      }
+    const r = await resposta.json().catch(() => null);
+    // Fechamento cego: é aqui que o operador vê, pela primeira vez, se faltou
+    // ou sobrou — o servidor manda o resultado só depois de encerrar.
+    let resultado: Aviso | null = null;
+    if (cego && resposta.ok && r) {
+      const dif = Number(r.difference) || 0;
+      const conta = r.conferido ? `Esperado nas formas contadas ${fmt(Number(r.conferido.esperado) || 0)} · contado ${fmt(Number(r.conferido.contado) || 0)}.` : undefined;
+      resultado = r.semConferencia
+        ? { tipo: "info", titulo: "Caixa fechado sem conferência", detalhe: "Nenhuma forma foi contada: não ficou falta nem sobra registrada." }
+        : Math.abs(dif) < 0.01
+          ? { tipo: "ok", titulo: "Caixa fechado — conferiu certinho", detalhe: conta }
+          : { tipo: "atencao", titulo: dif < 0 ? `Caixa fechado — faltaram ${fmt(-dif)}` : `Caixa fechado — sobraram ${fmt(dif)}`, detalhe: conta };
+    }
+    if (imprimir && r?.impressao?.assistenteOuvindo === false) {
+      // Aviso no topo, não alert() (aviso-e-no-topo-nao-alert).
+      setAviso({
+        tipo: "atencao",
+        titulo: resultado ? `${resultado.titulo}. O papel NÃO vai sair agora` : "Caixa fechado — mas o fechamento NÃO vai sair no papel agora",
+        detalhe:
+          "O Assistente de Impressão desta loja não está consultando a fila. No computador do caixa, clique em “Vincular agora” no aviso laranja do topo (ou abra Impressoras e salve). " +
+          "Depois, imprima de novo em Caixa → Histórico de caixas.",
+      });
+    } else if (resultado) {
+      setAviso(resultado);
     }
     setClosing(false);
     setCashOpen(false);
@@ -1246,8 +1272,23 @@ export default function StoreTopNav({
                   {fechandoSemConferencia ? (
                     <div style={{ color:"#475569" }}>
                       <strong style={{ color:"#0F172A" }}>Sem conferência.</strong> O caixa fecha sem falta nem sobra registrada, e o dono
-                      recebe "fechado sem conferir". O sistema esperava <strong>{fmt(esperadoEmBranco)}</strong> em dinheiro, cartões e Pix.
+                      recebe "fechado sem conferir".{!cego && <> O sistema esperava <strong>{fmt(esperadoEmBranco)}</strong> em dinheiro, cartões e Pix.</>}
                     </div>
+                  ) : cego ? (
+                    /* Fechamento cego: só o que o operador contou; o resultado vem depois de encerrar. */
+                    <>
+                      <div style={{ display:"flex", justifyContent:"space-between" }}>
+                        <span>Você contou</span><strong style={{ color:"#0F172A" }}>{fmt(contadoConferido)}</strong>
+                      </div>
+                      <div style={{ fontSize:"0.76rem", color:"#64748B", marginTop:4 }}>
+                        🙈 Fechamento cego: se faltou ou sobrou aparece assim que o caixa for encerrado.
+                      </div>
+                      {linhasEmBranco.length > 0 && (
+                        <div style={{ fontSize:"0.76rem", color:"#94A3B8", marginTop:4 }}>
+                          Não conferido (em branco): {linhasEmBranco.map(m => m.label.replace(/^\S+\s/, "")).join(", ")}.
+                        </div>
+                      )}
+                    </>
                   ) : (
                     <>
                       <div style={{ display:"flex", justifyContent:"space-between" }}>
@@ -1326,13 +1367,13 @@ export default function StoreTopNav({
                 <div style={{ fontSize:"3rem", marginBottom:8 }}>📋</div>
                 <h2 style={{ margin:"0 0 8px", fontSize:"1.15rem", fontWeight:900, color:"#334155" }}>Nenhuma forma foi contada</h2>
                 <p style={{ margin:"0 0 10px", fontSize:"0.9rem", color:"#334155", lineHeight:1.5 }}>
-                  Você não digitou a contagem de nenhuma forma de pagamento. O sistema esperava:
+                  Você não digitou a contagem de nenhuma forma de pagamento. {cego ? "Ficaram em branco:" : "O sistema esperava:"}
                 </p>
                 <div style={{ background:"#F8FAFC", border:"1px solid #E2E8F0", borderRadius:12, padding:"12px 14px", margin:"0 0 12px", textAlign:"left" }}>
                   {linhasEmBranco.map(m => (
                     <div key={m.key} style={{ display:"flex", justifyContent:"space-between", fontSize:"0.86rem", padding:"4px 0", color:"#334155" }}>
                       <span style={{ fontWeight:700 }}>{m.label}</span>
-                      <span>esperado <strong>{fmt(expected[m.key] || 0)}</strong></span>
+                      {!cego && <span>esperado <strong>{fmt(expected[m.key] || 0)}</strong></span>}
                     </div>
                   ))}
                 </div>
@@ -1355,19 +1396,19 @@ export default function StoreTopNav({
                 <div style={{ fontSize:"3rem", marginBottom:8 }}>✋</div>
                 <h2 style={{ margin:"0 0 8px", fontSize:"1.15rem", fontWeight:900, color:"#B45309" }}>Faltou preencher</h2>
                 <p style={{ margin:"0 0 10px", fontSize:"0.9rem", color:"#334155", lineHeight:1.5 }}>
-                  {linhasEmBranco.length === 1 ? "Uma forma de pagamento ficou" : `${linhasEmBranco.length} formas de pagamento ficaram`} em branco,
-                  mas o sistema esperava dinheiro {linhasEmBranco.length === 1 ? "nela" : "nelas"}.
+                  {linhasEmBranco.length === 1 ? "Uma forma de pagamento ficou" : `${linhasEmBranco.length} formas de pagamento ficaram`} em branco
+                  {cego ? "." : <>, mas o sistema esperava dinheiro {linhasEmBranco.length === 1 ? "nela" : "nelas"}.</>}
                 </p>
                 <div style={{ background:"#FFF7E6", border:"1px solid #FDE68A", borderRadius:12, padding:"12px 14px", margin:"0 0 12px", textAlign:"left" }}>
                   {linhasEmBranco.map(m => (
                     <div key={m.key} style={{ display:"flex", justifyContent:"space-between", fontSize:"0.86rem", padding:"4px 0", color:"#92400E" }}>
                       <span style={{ fontWeight:700 }}>{m.label}</span>
-                      <span>esperado <strong>{fmt(expected[m.key] || 0)}</strong></span>
+                      {!cego && <span>esperado <strong>{fmt(expected[m.key] || 0)}</strong></span>}
                     </div>
                   ))}
                   <div style={{ borderTop:"1px dashed #FDE68A", marginTop:8, paddingTop:8, fontSize:"0.84rem", color:"#92400E" }}>
                     Fechando assim, {linhasEmBranco.length === 1 ? "ela fica" : "elas ficam"} como <strong>não conferida{linhasEmBranco.length === 1 ? "" : "s"}</strong>:
-                    {" "}{fmt(esperadoEmBranco)} fora da diferença, e o histórico e o aviso ao dono dizem que ninguém contou.
+                    {" "}{cego ? "fora" : `${fmt(esperadoEmBranco)} fora`} da diferença, e o histórico e o aviso ao dono dizem que ninguém contou.
                   </div>
                 </div>
                 <p style={{ margin:"0 0 1rem", fontSize:"0.78rem", color:"#94A3B8", lineHeight:1.5 }}>
@@ -1390,6 +1431,12 @@ export default function StoreTopNav({
                 <p style={{ margin:"0 0 1rem", fontSize:"0.82rem", color:"#64748B" }}>
                   Informe o valor <strong>real contado</strong> em cada forma de pagamento. O que importa é o <strong>total</strong>.
                 </p>
+
+                {cego && (
+                  <div style={{ background:"#F8FAFC", border:"1px solid #E2E8F0", borderRadius:12, padding:"12px 14px", marginBottom:"1rem", textAlign:"left", fontSize:"0.84rem", color:"#334155", lineHeight:1.5 }}>
+                    🙈 <strong>Fechamento cego.</strong> Conte a gaveta e digite o que contou em cada forma. Se faltou ou sobrou, você vê assim que encerrar o caixa.
+                  </div>
+                )}
 
                 {/* Vendas feitas antes deste caixa abrir. O dinheiro delas
                     está na gaveta e o sistema não tem como saber disso — é
@@ -1462,7 +1509,7 @@ export default function StoreTopNav({
                           {/* O dinheiro esperado leva o troco de abertura (e as
                               sangrias e reforços): sem dizer, o operador procurava
                               uma venda do tamanho do troco. */}
-                          {m.key === "cash" && (trocoInicial > 0.005 || movTotais.entradas > 0 || movTotais.saidas > 0) && (
+                          {!cego && m.key === "cash" && (trocoInicial > 0.005 || movTotais.entradas > 0 || movTotais.saidas > 0) && (
                             <span style={{ display:"block", fontSize:"0.7rem", fontWeight:500, color:"#64748B" }}>
                               {trocoInicial > 0.005 ? `inclui ${fmt(trocoInicial)} de troco inicial` : "inclui"}
                               {movTotais.entradas > 0 ? ` + ${fmt(movTotais.entradas)} de reforço` : ""}
@@ -1486,7 +1533,7 @@ export default function StoreTopNav({
                             </span>
                           )}
                         </td>
-                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#64748B" }}>{fmt(expected[m.key] || 0)}</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#64748B" }}>{cego ? "🙈" : fmt(expected[m.key] || 0)}</td>
                         <td style={{ padding:"8px 10px", textAlign:"right" }}>
                           <input
                             type="number" min="0" step="0.01"
@@ -1685,18 +1732,18 @@ export default function StoreTopNav({
                       você CONTOU, dos dois lados: a forma em branco fica fora
                       (não conferida) e o online, travado, também. */}
                   <tfoot>
-                    <tr style={{ background: contadas.length === 0 ? "#F8FAFC" : Math.abs(diferencaConferida) < 0.01 ? "#F0FDFA" : "#FEF2F2" }}>
+                    <tr style={{ background: contadas.length === 0 || cego ? "#F8FAFC" : Math.abs(diferencaConferida) < 0.01 ? "#F0FDFA" : "#FEF2F2" }}>
                       <td style={{ padding:"10px", fontWeight:900, fontSize:"0.9rem" }}>
                         CONFERIDO
                         <span style={{ display:"block", fontSize:"0.68rem", fontWeight:500, color:"#64748B" }}>as formas que você contou</span>
                       </td>
-                      <td style={{ padding:"10px", textAlign:"right", fontWeight:700, color:"#334155" }}>{contadas.length === 0 ? "—" : fmt(esperadoConferido)}</td>
+                      <td style={{ padding:"10px", textAlign:"right", fontWeight:700, color:"#334155" }}>{contadas.length === 0 || cego ? "—" : fmt(esperadoConferido)}</td>
                       <td style={{ padding:"10px", textAlign:"right", fontWeight:900, fontSize:"1rem",
-                        color: contadas.length === 0 ? "#94A3B8" : Math.abs(diferencaConferida) < 0.01 ? "#0F766E" : "#C92E09" }}>
+                        color: contadas.length === 0 ? "#94A3B8" : cego ? "#0F172A" : Math.abs(diferencaConferida) < 0.01 ? "#0F766E" : "#C92E09" }}>
                         {contadas.length === 0 ? "—" : fmt(contadoConferido)}
                       </td>
                     </tr>
-                    {contadas.length > 0 && (
+                    {contadas.length > 0 && !cego && (
                       <tr>
                         <td colSpan={3} style={{ padding:"6px 10px", textAlign:"center", fontSize:"0.78rem",
                           color: Math.abs(diferencaConferida) < 0.01 ? "#0F766E" : diferencaConferida < 0 ? "#C92E09" : "#B45309", fontWeight:700 }}>
@@ -1711,18 +1758,24 @@ export default function StoreTopNav({
                     {linhasEmBranco.length > 0 && (
                       <tr>
                         <td colSpan={3} style={{ padding:"4px 10px", textAlign:"center", fontSize:"0.74rem", color:"#64748B" }}>
-                          {contadas.length === 0
+                          {cego
+                            ? (contadas.length === 0
+                              ? "Nada contado ainda."
+                              : `Em branco (não conferido, fora da diferença): ${linhasEmBranco.map(m => m.label.replace(/^\S+\s/, "")).join(", ")}.`)
+                            : contadas.length === 0
                             ? `Nada contado ainda: o sistema espera ${fmt(esperadoEmBranco)} nas formas acima.`
                             : `Em branco (não conferido, fora da diferença): ${linhasEmBranco.map(m => `${m.label.replace(/^\S+\s/, "")} ${fmt(expected[m.key] || 0)}`).join(", ")}.`}
                         </td>
                       </tr>
                     )}
+                    {!cego && (
                     <tr>
                       <td colSpan={3} style={{ padding:"4px 10px", textAlign:"center", fontSize:"0.72rem", color:"#94A3B8" }}>
                         Total do turno com o online e o troco inicial: {fmt(expected.total || 0)}
                         {onlineTravado > 0.005 ? ` (o online, ${fmt(onlineTravado)}, não se conta)` : ""}
                       </td>
                     </tr>
+                    )}
                   </tfoot>
                 </table>
                 {/* As vendas do turno separadas por tipo — informação, não

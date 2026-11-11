@@ -1,6 +1,6 @@
 "use client";
 import type { CSSProperties } from "react";
-import { rotuloDoPapel, type ResumoDoCaixaAberto } from "@/lib/resumo-do-caixa-aberto";
+import { rotuloDoPapel, type ResumoDoCaixaAberto, type ResumoDoCaixaCego } from "@/lib/resumo-do-caixa-aberto";
 
 /**
  * O topo do "Movimentar caixa": o caixa aberto, em resumo.
@@ -15,6 +15,10 @@ import { rotuloDoPapel, type ResumoDoCaixaAberto } from "@/lib/resumo-do-caixa-a
  * lib/resumo-do-caixa-aberto.ts), rearranjados da MESMA apuração que o
  * fechamento confere. A tela não soma nada: o "dinheiro na gaveta" daqui é o
  * dinheiro esperado do fechamento, centavo por centavo.
+ *
+ * Com o FECHAMENTO CEGO ligado (Minha Loja → Senha do gerente), o funcionário
+ * recebe o resumo sem as vendas e sem o dinheiro da gaveta (ResumoDoCaixaCego):
+ * o servidor nem manda esses números.
  */
 const fmt = (v: number) =>
   `R$ ${(Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -49,7 +53,7 @@ export default function ResumoDoCaixaAbertoNoMenu({
   resumo,
   carregando,
 }: {
-  resumo: (ResumoDoCaixaAberto & { fuso: string }) | null;
+  resumo: ((ResumoDoCaixaAberto | ResumoDoCaixaCego) & { fuso: string }) | null;
   carregando: boolean;
 }) {
   if (!resumo) {
@@ -84,6 +88,24 @@ export default function ResumoDoCaixaAbertoNoMenu({
           {quando(r.abertoEm, r.fuso) && <span> em <strong style={{ color: "#0F172A" }}>{quando(r.abertoEm, r.fuso)}</strong></span>}
         </div>
 
+        {"cego" in r ? (
+          <>
+            <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+              <div style={{ flex: 1, minWidth: 0, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 12, padding: "10px 12px" }}>
+                <div style={rotulo}>Abertura</div>
+                <div style={{ fontSize: "1.05rem", fontWeight: 900, color: "#0F172A", marginTop: 2 }}>{fmt(r.trocoInicial)}</div>
+                <div style={{ fontSize: "0.72rem", color: "#94A3B8", marginTop: 1 }}>troco inicial</div>
+              </div>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <Linha sinal="+" nome="Entradas (reforço de troco)" valor={r.entradas} cor={r.entradas > 0 ? "#0F766E" : undefined} />
+              <Linha sinal="−" nome="Saídas (sangria)" valor={r.saidas} cor={r.saidas > 0 ? "#D14300" : undefined} />
+              <div style={{ fontSize: "0.72rem", color: "#94A3B8", marginTop: 6, lineHeight: 1.45 }}>
+                🙈 Fechamento cego: o dinheiro esperado na gaveta aparece só depois de encerrar o caixa. No fechamento, conte e digite o que contou.
+              </div>
+            </div>
+          </>
+        ) : (<>
         <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
           <div style={{ flex: 1, minWidth: 0, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 12, padding: "10px 12px" }}>
             <div style={rotulo}>Abertura</div>
@@ -116,6 +138,7 @@ export default function ResumoDoCaixaAbertoNoMenu({
             É o mesmo dinheiro esperado que o fechamento vai conferir. Cartão, Pix e pago online não ficam na gaveta.
           </div>
         </div>
+        </>)}
       </div>
     </div>
   );

@@ -736,7 +736,7 @@ export default function VendaPresencialPage() {
     setLoading(false);
     if (!res) {
       // Cancelou a senha do gerente: o carrinho fica como está.
-      setMsg("⚠️ Venda não lançada — sem a senha do gerente o fiado não passa.");
+      setMsg(`⚠️ Venda não lançada — sem a senha do gerente ${descontoEmReais > 0 ? "o desconto" : "o fiado"} não passa.`);
       return;
     }
     if (res.ok) {

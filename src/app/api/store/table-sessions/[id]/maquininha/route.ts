@@ -16,6 +16,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { lerContextoDaConta } from "@/lib/contexto-da-conta-da-mesa";
 import { sanearTaxa } from "@/lib/conta-da-mesa";
+import { contextoPagoDaMesa } from "@/lib/saldo-da-mesa";
+import { exigirSenhaDoGerente } from "@/lib/senha-do-gerente";
 import { resolverOperadorDaMesa, rotuloDoOperador } from "@/lib/garcom-auth";
 import { recusaSeCaixaFechado } from "@/lib/caixa-aberto-servidor";
 import { PROVEDORES_COM_APP, NOME_DO_PROVEDOR } from "@/lib/terminal-app";
@@ -132,6 +134,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!ctx.operador.garcom.podeTirarTaxa) {
       const loja = await prisma.user.findUnique({ where: { id: ctx.lojaId! }, select: { taxaServicoPadrao: true } });
       if (conta.taxa < sanearTaxa(loja?.taxaServicoPadrao, 10)) return NextResponse.json({ error: "Este garçom não tira a taxa de serviço." }, { status: 403 });
+    }
+  }
+  // ── DESCONTO NA COBRANÇA ("Dar desconto" da senha do gerente) ─────────
+  // A conta com desconto vai junto da cobrança e, se a maquininha quita a
+  // mesa, ela fecha sozinha (lib/fechamento-pos-da-mesa.ts) sem passar pelo
+  // close — então a senha é pedida aqui. Uma vez por desconto: a 2ª cobrança
+  // com o MESMO desconto já fixado por uma passada anterior não pede de novo.
+  if (conta?.desconto && conta.desconto.valor > 0) {
+    const mesa = await prisma.tableSession.findFirst({ where: { id, table: { franchiseeId: ctx.lojaId! } }, select: { paymentMethods: true } });
+    const fixado = contextoPagoDaMesa(mesa?.paymentMethods)?.desconto;
+    const mesmo = !!fixado && fixado.tipo === conta.desconto.tipo && Math.abs(fixado.valor - conta.desconto.valor) < 0.005;
+    if (!mesmo) {
+      const semSenha = await exigirSenhaDoGerente(req, ctx.lojaId!, "darDesconto");
+      if (semSenha) return semSenha;
     }
   }
   const valor = Number(corpo?.valor) || 0;

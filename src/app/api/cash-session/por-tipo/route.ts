@@ -16,13 +16,14 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { calcularEsperadoDoTurno } from "@/lib/esperado-do-turno";
+import { caixaCegoPara } from "@/lib/senha-do-gerente";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
-  const u = await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true, ownerId: true } });
+  const u = await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true, ownerId: true, role: true } });
   if (!u) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
   const lojaId = u.ownerId || u.id;
 
@@ -32,6 +33,10 @@ export async function GET(req: Request) {
   // A sessão TEM que ser desta loja: o id vem do navegador.
   const caixa = await prisma.cashSession.findFirst({ where: { id: sessionId, franchiseeId: lojaId } });
   if (!caixa) return NextResponse.json({ error: "Caixa não encontrado." }, { status: 404 });
+  // Fechamento cego: as vendas do caixa AINDA ABERTO, para o funcionário, só depois de fechar.
+  if (caixa.status === "OPEN" && (await caixaCegoPara(u))) {
+    return NextResponse.json({ error: "Com o fechamento cego ligado, as vendas do caixa aparecem depois de encerrar." }, { status: 403 });
+  }
 
   const d = await calcularEsperadoDoTurno(lojaId, caixa, { ate: caixa.closedAt || new Date() });
   // O faturado (régua dos relatórios), o recebido (a soma dos tipos) e a ponte

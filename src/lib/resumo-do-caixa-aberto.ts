@@ -154,3 +154,16 @@ export function resumoDoCaixaAberto(
     dinheiroNaGaveta: c2(turno.expected.cash),
   };
 }
+
+/**
+ * O resumo do caixa aberto para o FUNCIONÁRIO, com o fechamento cego ligado
+ * (lib/senha-do-gerente-regras.ts): sai o que diz quanto deveria ter na gaveta
+ * — as vendas, a parte em dinheiro e o "deve ter na gaveta". Fica o que o
+ * próprio operador lançou (troco, entradas, saídas) e quem abriu. É cortado no
+ * servidor: o número não chega ao navegador.
+ */
+export type ResumoDoCaixaCego = Pick<ResumoDoCaixaAberto, "abertoEm" | "abertoPor" | "trocoInicial" | "entradas" | "saidas"> & { cego: true };
+
+export function resumoCego(r: ResumoDoCaixaAberto): ResumoDoCaixaCego {
+  return { abertoEm: r.abertoEm, abertoPor: r.abertoPor, trocoInicial: r.trocoInicial, entradas: r.entradas, saidas: r.saidas, cego: true };
+}

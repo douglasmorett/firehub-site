@@ -8,10 +8,13 @@
  * Loja que já tem senha: qualquer mudança pede a senha atual (ou a senha de
  * acesso da conta do dono). É o que impede quem está no caixa, logado na
  * conta do dono, de desligar a proteção.
+ *
+ * O FECHAMENTO CEGO mora aqui também (mesma gravação, só do dono): não pede
+ * senha para nada, só esconde do funcionário o esperado do caixa aberto.
  */
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { AvisoNoTopo, type Aviso } from "@/components/mesas/SelecionarItensParaImpressao";
-import { ACOES_PROTEGIDAS, type AcaoProtegida, type ExigeSenha } from "@/lib/senha-do-gerente-regras";
+import { ACOES_PROTEGIDAS, algumaLigada, type AcaoProtegida, type ExigeSenha } from "@/lib/senha-do-gerente-regras";
 
 type Estado = { temSenha: boolean; exige: ExigeSenha; podeMudar: boolean };
 
@@ -23,6 +26,7 @@ export default function SenhaDoGerenteConfig() {
   const [estado, setEstado] = useState<Estado | null>(null);
   const [erroAoCarregar, setErroAoCarregar] = useState(false);
   const [exige, setExige] = useState<ExigeSenha | null>(null);
+  const [fechamentoCego, setFechamentoCego] = useState(false);
   const [senhaAtual, setSenhaAtual] = useState("");
   const [novaSenha, setNovaSenha] = useState("");
   const [confirmar, setConfirmar] = useState("");
@@ -38,6 +42,7 @@ export default function SenhaDoGerenteConfig() {
       const d = await r.json();
       setEstado({ temSenha: Boolean(d.temSenha), exige: d.exige, podeMudar: Boolean(d.podeMudar) });
       setExige(d.exige);
+      setFechamentoCego(d.fechamentoCego === true);
     } catch {
       setErroAoCarregar(true);
     }
@@ -55,6 +60,7 @@ export default function SenhaDoGerenteConfig() {
       if (!r.ok) return setAviso({ tipo: "erro", titulo: "Não foi salvo", detalhe: d?.error || "Tente de novo." });
       setEstado((e) => (e ? { ...e, temSenha: Boolean(d.temSenha), exige: d.exige } : e));
       setExige(d.exige);
+      setFechamentoCego(d.fechamentoCego === true);
       setSenhaAtual(""); setNovaSenha(""); setConfirmar("");
       setAviso(ok);
     } catch {
@@ -71,9 +77,10 @@ export default function SenhaDoGerenteConfig() {
       if (novaSenha.trim().length < 4) return setAviso({ tipo: "atencao", titulo: "A senha precisa de pelo menos 4 caracteres" });
     }
     if (estado?.temSenha && !senhaAtual) return setAviso({ tipo: "atencao", titulo: "Digite a senha atual", detalhe: "A senha do gerente de agora (ou a senha de acesso da sua conta)." });
-    if (!estado?.temSenha && !novaSenha) return setAviso({ tipo: "atencao", titulo: "Cadastre a senha primeiro", detalhe: "Digite a senha nova e a confirmação." });
+    // Só o fechamento cego salva sem senha cadastrada: ele não pede senha.
+    if (!estado?.temSenha && !novaSenha && algumaLigada(exige)) return setAviso({ tipo: "atencao", titulo: "Cadastre a senha primeiro", detalhe: "Digite a senha nova e a confirmação." });
     enviar(
-      { exige, ...(novaSenha ? { novaSenha } : {}) },
+      { exige, fechamentoCego, ...(novaSenha ? { novaSenha } : {}) },
       { tipo: "ok", titulo: novaSenha ? "Senha do gerente salva" : "Proteções salvas", detalhe: "Vale na hora para todas as telas. Quem estava com uma tela aberta pode precisar apertar F5." },
     );
   };
@@ -122,6 +129,27 @@ export default function SenhaDoGerenteConfig() {
             );
           })}
         </div>
+      </div>
+
+      {/* Lucas, Frangoso Trindade (11/11/2026): o atendente via o dinheiro
+          esperado e digitava até bater. */}
+      <div style={caixa}>
+        <div style={{ fontWeight: 800, color: "#0F172A", marginBottom: 10 }}>Caixa</div>
+        <label style={{ display: "flex", alignItems: "flex-start", gap: 12, cursor: "pointer" }}>
+          <button type="button" role="switch" aria-checked={fechamentoCego} onClick={() => setFechamentoCego((v) => !v)}
+            style={{ flexShrink: 0, width: 44, height: 24, borderRadius: 999, border: "none", padding: 2, cursor: "pointer", background: fechamentoCego ? "#C92E09" : "#CBD5E1", transition: "background 0.15s" }}>
+            <span style={{ display: "block", width: 20, height: 20, borderRadius: "50%", background: "#fff", transform: `translateX(${fechamentoCego ? 20 : 0}px)`, transition: "transform 0.15s" }} />
+          </button>
+          <span>
+            <strong style={{ fontSize: "0.9rem", color: "#0F172A" }}>Fechamento cego</strong>
+            <span style={{ display: "block", fontSize: "0.78rem", color: "#64748B", lineHeight: 1.45 }}>
+              O funcionário não vê quanto deveria ter na gaveta nem o que o sistema espera no fechamento: ele conta, digita o que contou,
+              encerra e só então vê se faltou ou sobrou. Você, no login de dono, vê tudo sempre. Vale para quem entra com login de
+              funcionário (Equipe &amp; permissões) — quem usa o seu login vê tudo.
+            </span>
+          </span>
+        </label>
+        <div style={{ fontSize: "0.76rem", color: "#94A3B8", marginTop: 8 }}>Não pede senha. Clique em Salvar, logo abaixo, para valer.</div>
       </div>
 
       <div style={{ ...caixa, display: "grid", gap: "0.9rem" }}>

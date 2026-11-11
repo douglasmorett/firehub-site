@@ -17,8 +17,10 @@ import { conferirFechamento, lerContado, mensagemDoCaixaFechado } from "@/lib/co
 import { formaDoPedido, formaDoTexto } from "@/lib/relatorios/formas-de-pagamento";
 import { lerPagamentos } from "@/lib/pagamentos-da-mesa";
 // O resumo do caixa aberto (topo do "Movimentar caixa") e quem abriu.
-import { quemEstaAbrindo, resumoDoCaixaAberto } from "@/lib/resumo-do-caixa-aberto";
+import { quemEstaAbrindo, resumoCego, resumoDoCaixaAberto } from "@/lib/resumo-do-caixa-aberto";
 import { gravarQuemAbriu, lerQuemAbriuDoBanco } from "@/lib/quem-abriu-o-caixa";
+// O fechamento cego (Minha Loja → Senha do gerente): o funcionário não recebe o esperado.
+import { caixaCegoPara } from "@/lib/senha-do-gerente";
 
 async function getUser(session: any) {
   const u = await prisma.user.findUnique({ where: { email: session.user?.email || "" } });
@@ -130,6 +132,56 @@ export async function GET() {
       ...resumoDoCaixaAberto({ openedAt: openSession.openedAt, openingAmount: openSession.openingAmount, abertoPor }, { ...dados, detalhe }),
       fuso: loja?.storeTimezone || FUSO_PADRAO,
     };
+  }
+
+  // ── FECHAMENTO CEGO ────────────────────────────────────────────────────
+  //
+  // Lucas, Frangoso Trindade (11/11/2026): o atendente via o dinheiro
+  // esperado e digitava a contagem até bater. Com o fechamento cego ligado, o
+  // FUNCIONÁRIO não recebe nada que diga quanto deveria ter: o esperado das
+  // formas contadas, a parte em dinheiro das vendas, o total vendido, o troco
+  // feito pelo Pix e o dinheiro de antes do turno. Cortado AQUI, não na tela —
+  // quem abrisse a resposta no navegador veria o número. O pago online (que
+  // ninguém conta e fica travado) continua. O dono vê tudo sempre; o
+  // resultado sai na resposta do fechamento (PUT), depois de encerrado.
+  const cego = Boolean(openSession) && (await caixaCegoPara(user));
+  if (cego) {
+    return NextResponse.json({
+      caixaCego: true,
+      resumoDoCaixa: resumoDoCaixa ? { ...resumoCego(resumoDoCaixa), fuso: resumoDoCaixa.fuso } : null,
+      session: openSession,
+      expected: {
+        ifoodOnline: expected.ifoodOnline, ifoodCoupons: expected.ifoodCoupons,
+        food99Online: expected.food99Online, food99Coupons: expected.food99Coupons,
+      },
+      onlineDoSite: Number(onlineProprio.toFixed(2)),
+      naMaquininha,
+      cashOpen: user.cashOpen,
+      movimentacao: { entradas: Number(movimentacaoEntradas.toFixed(2)), saidas: Number(movimentacaoSaidas.toFixed(2)) },
+      pendentesDePagamento: { valor: Number(pendentesValor.toFixed(2)), quantidade: pendentesQuantidade },
+      foraDaConferencia: {
+        fiado: Number(foraDaConferencia.fiado.toFixed(2)),
+        fiadoQtd: foraDaConferencia.fiadoQtd,
+        naoIdentificado: Number(foraDaConferencia.naoIdentificado.toFixed(2)),
+        naoIdentificadoQtd: foraDaConferencia.naoIdentificadoQtd,
+        mesasAbertas: Number(foraDaConferencia.mesasAbertas.toFixed(2)),
+        mesasAbertasQtd: foraDaConferencia.mesasAbertasQtd,
+        proprias: foraDaConferencia.proprias || [],
+      },
+      foraDoTurno: { valor: Number(foraDoTurno.valor.toFixed(2)), quantidade: foraDoTurno.quantidade, dinheiro: 0, desde: foraDoTurno.desde },
+      ultimoFechamento: ultimoFechamento
+        ? { cash: ultimoFechamento.closingCash || 0, em: ultimoFechamento.closedAt?.toISOString() || null }
+        : null,
+      trocoInicial: Number(openSession!.openingAmount || 0),
+      onlinePorCanal: detalhe ? detalhe.onlinePorCanal : [],
+      cobradoPeloApp: detalhe ? detalhe.cobradoPeloApp || [] : [],
+      cupomDaPlataforma: detalhe ? detalhe.cupomDaPlataforma : [],
+      trocoNoPix: null,
+      vendasPorTipo: null,
+      cancelamentos: detalhe
+        ? { pedidos: detalhe.cancelados, itens: detalhe.itensCancelados || [] }
+        : null,
+    });
   }
 
   return NextResponse.json({
@@ -407,6 +459,9 @@ export async function PUT(req: Request) {
   });
 
   let difference: number | null = 0;
+  // O esperado e o contado das formas CONTADAS: o resultado que a tela mostra
+  // depois de encerrar (no fechamento cego, é a primeira vez que o operador vê).
+  let conferido: { esperado: number; contado: number } | null = null;
   let semConferencia = false;
   let naoConferidas: { nome: string; esperado: number }[] = [];
   // O que o cupom do fechamento precisa. Preenchido dentro do if, impresso
@@ -449,6 +504,14 @@ export async function PUT(req: Request) {
     );
     difference = conferencia.diferenca;
     semConferencia = conferencia.semConferencia;
+    {
+      const esperadoDe = { cash: expectedCash, debit: expectedDebit, credit: expectedCredit, pix: expectedPix, voucher: expectedVoucher };
+      const contadas = (Object.keys(esperadoDe) as (keyof typeof esperadoDe)[]).filter((k) => contado[k] != null);
+      conferido = {
+        esperado: Number(contadas.reduce((t, k) => t + esperadoDe[k], 0).toFixed(2)),
+        contado: Number(contadas.reduce((t, k) => t + (contado[k] as number), 0).toFixed(2)),
+      };
+    }
     naoConferidas = conferencia.naoConferidas;
     paraOCupom = {
       esperado: { cash: expectedCash, debit: expectedDebit, credit: expectedCredit, pix: expectedPix, voucher: expectedVoucher, total: expectedTotal },
@@ -460,7 +523,8 @@ export async function PUT(req: Request) {
     // Tela velha não é erro — é aviso. Se a divergência for grande, o operador
     // fechou olhando um número que já não existia, e é bom saber disso depois.
     const defasagem = Math.abs(esperadoDaTela.total - expectedTotal);
-    if (defasagem > 0.01) {
+    // No fechamento cego a tela nunca teve o esperado: não é tela velha.
+    if (defasagem > 0.01 && body?.caixaCego !== true) {
       console.warn(
         `[Caixa] Tela desatualizada ao fechar ${openSession.id}: ela mostrava esperado R$ ${esperadoDaTela.total.toFixed(2)}, ` +
         `o servidor apurou R$ ${expectedTotal.toFixed(2)} (defasagem R$ ${defasagem.toFixed(2)}). Gravado o do servidor.`
@@ -675,5 +739,5 @@ export async function PUT(req: Request) {
     ? { assistenteOuvindo: await assistenteOuvindoAFila(user.targetId) }
     : undefined;
 
-  return NextResponse.json({ success: true, difference, ...(impressao ? { impressao } : {}) });
+  return NextResponse.json({ success: true, difference, semConferencia, conferido, ...(impressao ? { impressao } : {}) });
 }

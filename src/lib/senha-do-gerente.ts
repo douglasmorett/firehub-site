@@ -26,10 +26,13 @@ import { executarDDL } from "@/lib/ddl-do-boot";
 import { horaEmUtc } from "@/lib/cashback-no-banco";
 import {
   CABECALHO_DA_SENHA,
+  CHAVE_DO_FECHAMENTO_CEGO,
   CODIGO_SENHA_PEDIDA,
   FreioDaSenha,
   conferirSenhaDoGerenteCom,
+  ehDonoDaLoja,
   lerExigeSenha,
+  lerFechamentoCego,
   senhaDoCabecalho,
   type AcaoProtegida,
   type ConfigDaSenha,
@@ -62,19 +65,46 @@ export async function garantirTabelaDaSenhaDoGerente(): Promise<boolean> {
   }
 }
 
-/** A configuração da loja, com o hash (só para o servidor). */
-export async function lerConfigDaSenha(lojaId: string): Promise<ConfigDaSenha> {
+/** A linha da loja como está no banco (o `exige` cru). Nula = nunca cadastrou. */
+async function linhaDaSenha(lojaId: string): Promise<{ hash: string | null; exige: unknown } | null> {
   if (!(await garantirTabelaDaSenhaDoGerente())) return null;
   const linhas = await prisma.$queryRaw<{ hash: string | null; exige: unknown }[]>(Prisma.sql`
     SELECT "hash", "exige" FROM "SenhaDoGerente" WHERE "lojaId" = ${lojaId} LIMIT 1`);
-  if (!linhas.length) return null;
-  return { hash: linhas[0].hash || null, exige: lerExigeSenha(linhas[0].exige) };
+  return linhas[0] ?? null;
 }
 
-/** O que a tela pode saber: se há senha e o que ela protege. Nunca o hash. */
-export async function resumoDaSenha(lojaId: string): Promise<{ temSenha: boolean; exige: ExigeSenha }> {
-  const c = await lerConfigDaSenha(lojaId).catch(() => null);
-  return { temSenha: Boolean(c?.hash), exige: c ? c.exige : lerExigeSenha(null) };
+/** A configuração da loja, com o hash (só para o servidor). */
+export async function lerConfigDaSenha(lojaId: string): Promise<ConfigDaSenha> {
+  const linha = await linhaDaSenha(lojaId);
+  if (!linha) return null;
+  return { hash: linha.hash || null, exige: lerExigeSenha(linha.exige) };
+}
+
+/** O fechamento cego está ligado nesta loja? (lib/senha-do-gerente-regras.ts) */
+export async function fechamentoCegoLigado(lojaId: string): Promise<boolean> {
+  const linha = await linhaDaSenha(lojaId);
+  return lerFechamentoCego(linha?.exige);
+}
+
+/**
+ * Esconde o caixa aberto de QUEM pede? Só do funcionário, e só na loja que
+ * ligou o fechamento cego — o dono vê tudo sempre. Falha ao ler = não esconde
+ * (é como toda loja nasce), com o erro no log.
+ */
+export async function caixaCegoPara(u: { id: string; ownerId?: string | null; role?: string | null }): Promise<boolean> {
+  if (ehDonoDaLoja(u)) return false;
+  try {
+    return await fechamentoCegoLigado(u.ownerId || u.id);
+  } catch (err: any) {
+    console.error(`[Fechamento cego] não li a configuração da loja ${u.ownerId || u.id}:`, err?.message || err);
+    return false;
+  }
+}
+
+/** O que a tela pode saber: se há senha, o que ela protege e o fechamento cego. Nunca o hash. */
+export async function resumoDaSenha(lojaId: string): Promise<{ temSenha: boolean; exige: ExigeSenha; fechamentoCego: boolean }> {
+  const l = await linhaDaSenha(lojaId).catch(() => null);
+  return { temSenha: Boolean(l?.hash), exige: lerExigeSenha(l?.exige ?? null), fechamentoCego: lerFechamentoCego(l?.exige) };
 }
 
 /**
@@ -82,10 +112,12 @@ export async function resumoDaSenha(lojaId: string): Promise<{ temSenha: boolean
  * (e desliga tudo — interruptor sem senha não protege nada); undefined = deixa
  * a que está.
  */
-export async function gravarConfigDaSenha(o: { lojaId: string; senha?: string | null; exige: ExigeSenha; quem: string }) {
+export async function gravarConfigDaSenha(o: { lojaId: string; senha?: string | null; exige: ExigeSenha; fechamentoCego: boolean; quem: string }) {
   if (!(await garantirTabelaDaSenhaDoGerente())) throw new Error("tabela SenhaDoGerente indisponível");
   const exige = o.senha === null ? lerExigeSenha(null) : o.exige;
-  const json = JSON.stringify(exige);
+  // O fechamento cego vai junto no JSON e NÃO cai com a senha apagada: ele não
+  // depende de senha nenhuma (só de quem está logado ser dono ou funcionário).
+  const json = JSON.stringify(o.fechamentoCego ? { ...exige, [CHAVE_DO_FECHAMENTO_CEGO]: true } : exige);
   const quem = o.quem.slice(0, 120);
   const agora = horaEmUtc(new Date());
   if (o.senha === undefined) {
