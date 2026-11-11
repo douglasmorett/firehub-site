@@ -32,8 +32,10 @@ const INTERVALO_MS = 4000;
 const CHAMADA_MS = 7000;
 const MAX_PREPARANDO = 15;
 const MAX_PRONTOS = 9;
-// O cartão do motoboy tem o selo da plataforma em cima: cabe uma linha a menos.
-const MAX_PREPARANDO_MOTOBOY = 12;
+// Na TV do motoboy quem importa é o Pronto (é o que ele procura): topo e
+// rodapé mais baixos, Pronto com 3/4 da largura em 4 × 5, Preparando estreito.
+const MAX_PREPARANDO_MOTOBOY = 10;
+const MAX_PRONTOS_MOTOBOY = 20;
 
 const EXEMPLO_PREPARANDO: Senha[] = [418, 233, 871, 129, 560].map((n, i) => ({ id: `p${i}`, numero: n, nome: ["Ana", "Lucas", "", "Bruna", ""][i], desde: "" }));
 const EXEMPLO_PRONTOS: Senha[] = [347, 812, 95].map((n, i) => ({ id: `r${i}`, numero: n, nome: ["Maria", "", "João"][i], desde: "" }));
@@ -249,9 +251,11 @@ export default function PainelDeSenhasTV({ lojaId, codigo, previa, tela = "balca
   const prontos = exemplo ? (motoboy ? EXEMPLO_MOTOBOY_PRONTOS : EXEMPLO_PRONTOS) : dados.prontos;
   const prepVisiveis = preparando.slice(0, motoboy ? MAX_PREPARANDO_MOTOBOY : MAX_PREPARANDO);
   const sobra = preparando.length - prepVisiveis.length;
-  const prontosVisiveis = prontos.slice(0, MAX_PRONTOS);
+  const prontosVisiveis = prontos.slice(0, motoboy ? MAX_PRONTOS_MOTOBOY : MAX_PRONTOS);
   const mostrarNome = dados.config.mostrarNome || exemplo;
   const nomeDaLoja = dados.loja.nome || "Painel de senhas";
+  // Estilo da peça, com o ajuste da TV do motoboy por cima (MOTO, lá embaixo).
+  const st = (k: string): React.CSSProperties => (motoboy ? { ...S[k], ...MOTO[k] } : S[k]);
 
   return (
     <div
@@ -262,18 +266,18 @@ export default function PainelDeSenhasTV({ lojaId, codigo, previa, tela = "balca
       {!previa && <style>{CSS_DA_TV}</style>}
 
       {/* ── Topo: a marca da loja é a estrela ── */}
-      <header style={S.topo}>
+      <header style={st("topo")}>
         <div style={{ display: "flex", alignItems: "center", gap: "calc(var(--u) * 2.2)", minWidth: 0 }}>
           {dados.loja.logo ? (
-            <img src={dados.loja.logo} alt="" style={S.logo} />
+            <img src={dados.loja.logo} alt="" style={st("logo")} />
           ) : (
-            <div style={{ ...S.logo, background: cor, color: corTexto, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "calc(var(--u) * 6)", fontWeight: 900 }}>
+            <div style={{ ...st("logo"), background: cor, color: corTexto, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "calc(var(--u) * 6)", fontWeight: 900 }}>
               {nomeDaLoja.trim().charAt(0).toUpperCase()}
             </div>
           )}
           <div style={{ minWidth: 0 }}>
-            <div style={S.nomeDaLoja}>{nomeDaLoja}</div>
-            <div style={{ fontSize: "calc(var(--u) * 2.2)", color: "rgba(255,255,255,0.55)", fontWeight: 600, letterSpacing: "calc(var(--u) * 0.3)", textTransform: "uppercase" }}>
+            <div style={st("nomeDaLoja")}>{nomeDaLoja}</div>
+            <div style={{ fontSize: `calc(var(--u) * ${motoboy ? 1.8 : 2.2})`, color: "rgba(255,255,255,0.55)", fontWeight: 600, letterSpacing: "calc(var(--u) * 0.3)", textTransform: "uppercase" }}>
               {motoboy ? "Entregadores de aplicativo" : "Acompanhe sua senha"}
             </div>
           </div>
@@ -281,26 +285,26 @@ export default function PainelDeSenhasTV({ lojaId, codigo, previa, tela = "balca
         <div style={{ display: "flex", alignItems: "center", gap: "calc(var(--u) * 2)" }}>
           {semConexao && <span style={S.semConexao}>● sem conexão</span>}
           {exemplo && <span style={{ ...S.semConexao, color: "#FDE68A", borderColor: "rgba(253,230,138,0.4)" }}>exemplo</span>}
-          <div style={S.relogio}>{hora}</div>
+          <div style={st("relogio")}>{hora}</div>
         </div>
       </header>
 
       {/* ── Colunas ── */}
-      <main style={S.colunas}>
-        <section style={S.colunaPreparando}>
-          <h2 style={S.tituloColuna}>
+      <main style={st("colunas")}>
+        <section style={st("colunaPreparando")}>
+          <h2 style={st("tituloColuna")}>
             <span className="fh-pulso" style={{ ...S.bolinha, background: "#F59E0B" }} />
             Preparando
           </h2>
           {prepVisiveis.length === 0 ? (
             <p style={S.vazio}>{motoboy ? "Os pedidos do iFood, 99 e outros apps aparecem aqui pelo código do app." : "Sua senha aparece aqui assim que o pedido for feito."}</p>
           ) : (
-            <div style={S.gradePreparando}>
+            <div style={st("gradePreparando")}>
               {prepVisiveis.map((s) => (
-                <div key={s.id} className="fh-entra" style={S.senhaPreparando}>
-                  {s.codigo && <Selo s={s} tamanho={1.8} />}
+                <div key={s.id} className="fh-entra" style={st("senhaPreparando")}>
+                  {s.codigo && <Selo s={s} tamanho={1.3} />}
                   {s.codigo
-                    ? <span style={{ ...S.numeroPreparando, fontSize: `calc(var(--u) * ${tamanhoDoCodigo(s.codigo, 6, 16)})` }}>{s.codigo}</span>
+                    ? <span style={{ ...S.numeroPreparando, fontSize: `calc(var(--u) * ${tamanhoDoCodigo(s.codigo, 5, 14)})` }}>{s.codigo}</span>
                     : <span style={S.numeroPreparando}>{s.numero}</span>}
                   {/* Sem nome, a linha fica vazia: os números da grade não desalinham. */}
                   {mostrarNome && <span style={S.nomePreparando}>{s.nome || " "}</span>}
@@ -311,15 +315,15 @@ export default function PainelDeSenhasTV({ lojaId, codigo, previa, tela = "balca
           {sobra > 0 && <div style={{ fontSize: "calc(var(--u) * 2.4)", color: "rgba(255,255,255,0.45)", marginTop: "calc(var(--u) * 1.5)" }}>+ {sobra} {sobra === 1 ? "pedido" : "pedidos"}</div>}
         </section>
 
-        <section style={{ ...S.colunaPronto, background: `linear-gradient(160deg, ${cor}26 0%, ${cor}0D 60%)`, borderColor: `${cor}55` }}>
-          <h2 style={{ ...S.tituloColuna, color: cor }}>
+        <section style={{ ...st("colunaPronto"), background: `linear-gradient(160deg, ${cor}26 0%, ${cor}0D 60%)`, borderColor: `${cor}55` }}>
+          <h2 style={{ ...st("tituloColuna"), color: cor }}>
             <span style={{ ...S.check, background: cor, color: corTexto }}>✓</span>
             {motoboy ? "Pronto · pode retirar" : "Pronto · retire seu pedido"}
           </h2>
           {prontosVisiveis.length === 0 ? (
             <p style={S.vazio}>Nenhum pedido esperando retirada.</p>
           ) : (
-            <div style={S.gradePronto}>
+            <div style={st("gradePronto")}>
               {prontosVisiveis.map((s, i) => {
                 const destaque = recentes.has(s.id) || (exemplo && i === 0);
                 return (
@@ -327,17 +331,16 @@ export default function PainelDeSenhasTV({ lojaId, codigo, previa, tela = "balca
                     key={s.id}
                     className={destaque ? "fh-entra fh-brilha" : "fh-entra"}
                     style={{
-                      ...S.senhaPronto,
-                      ...(s.codigo ? { padding: "calc(var(--u) * 1.4) 0" } : {}),
+                      ...st("senhaPronto"),
                       background: destaque ? cor : "rgba(255,255,255,0.06)",
                       color: destaque ? corTexto : "#fff",
                       borderColor: destaque ? cor : `${cor}66`,
                       ["--fh-cor" as any]: cor,
                     }}
                   >
-                    {s.codigo && <Selo s={s} tamanho={2.2} />}
+                    {s.codigo && <Selo s={s} tamanho={1.6} />}
                     {s.codigo
-                      ? <span style={{ ...S.numeroPronto, fontSize: `calc(var(--u) * ${tamanhoDoCodigo(s.codigo, 8, 27)})` }}>{s.codigo}</span>
+                      ? <span style={{ ...S.numeroPronto, fontSize: `calc(var(--u) * ${tamanhoDoCodigo(s.codigo, 7, 23.5)})` }}>{s.codigo}</span>
                       : <span style={S.numeroPronto}>{s.numero}</span>}
                     {mostrarNome && <span style={{ ...S.nomePronto, color: destaque ? corTexto : "rgba(255,255,255,0.75)" }}>{s.nome || " "}</span>}
                   </div>
@@ -349,13 +352,13 @@ export default function PainelDeSenhasTV({ lojaId, codigo, previa, tela = "balca
       </main>
 
       {/* ── Rodapé: recado da loja, QR do cardápio e a assinatura do FireHub ── */}
-      <footer style={S.rodape}>
+      <footer style={st("rodape")}>
         <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: "calc(var(--u) * 2)" }}>
           {dados.config.mensagem && <div style={S.mensagem}>{dados.config.mensagem}</div>}
         </div>
         {qr && (
           <div style={S.qrCaixa}>
-            <img src={qr} alt="" style={S.qr} />
+            <img src={qr} alt="" style={st("qr")} />
             <div style={{ lineHeight: 1.15 }}>
               <div style={{ fontSize: "calc(var(--u) * 2.2)", fontWeight: 800 }}>Peça pelo celular</div>
               <div style={{ fontSize: "calc(var(--u) * 1.7)", color: "rgba(255,255,255,0.6)" }}>aponte a câmera</div>
@@ -451,4 +454,23 @@ const S: Record<string, React.CSSProperties> = {
     position: "fixed", left: "50%", bottom: "calc(var(--u) * 12)", transform: "translateX(-50%)", zIndex: 30, fontSize: "calc(var(--u) * 2.6)", fontWeight: 700,
     padding: "calc(var(--u) * 1.8) calc(var(--u) * 3.4)", borderRadius: "calc(var(--u) * 99)", whiteSpace: "nowrap", border: "2px solid rgba(255,255,255,0.35)", background: "rgba(11,15,23,0.92)", color: "#fff", cursor: "pointer",
   },
+};
+
+/** A TV do motoboy: mais cartões de Pronto na mesma tela (só o que muda de S). */
+const MOTO: Record<string, React.CSSProperties> = {
+  topo: { height: "calc(var(--u) * 11)", padding: "0 calc(var(--u) * 3)" },
+  logo: { width: "calc(var(--u) * 7.5)", height: "calc(var(--u) * 7.5)", borderRadius: "calc(var(--u) * 1.8)" },
+  nomeDaLoja: { fontSize: "calc(var(--u) * 4.2)" },
+  relogio: { fontSize: "calc(var(--u) * 4)" },
+  colunas: { gridTemplateColumns: "25fr 75fr", gap: "calc(var(--u) * 2)", padding: "calc(var(--u) * 2) calc(var(--u) * 3)" },
+  colunaPreparando: { padding: "calc(var(--u) * 2.4)" },
+  colunaPronto: { padding: "calc(var(--u) * 2.4)" },
+  tituloColuna: { margin: "0 0 calc(var(--u) * 1.8)", fontSize: "calc(var(--u) * 3)" },
+  gradePreparando: { gridTemplateColumns: "repeat(2, 1fr)", gap: "calc(var(--u) * 1.2)" },
+  senhaPreparando: { padding: "calc(var(--u) * 0.8) 0" },
+  // As 5 linhas dividem a altura que sobra: o cartão é do mesmo tamanho com 3 ou 20 prontos.
+  gradePronto: { flex: 1, minHeight: 0, gridTemplateColumns: "repeat(4, 1fr)", gridTemplateRows: "repeat(5, 1fr)", gap: "calc(var(--u) * 1.4)" },
+  senhaPronto: { padding: "calc(var(--u) * 0.6) 0", minHeight: 0 },
+  rodape: { height: "calc(var(--u) * 7)", padding: "0 calc(var(--u) * 3)" },
+  qr: { width: "calc(var(--u) * 5.6)", height: "calc(var(--u) * 5.6)" },
 };
