@@ -27,7 +27,10 @@ export async function generateStaticParams() {
 }
 
 async function carregar(slug: string) {
-  const franchisee = await prisma.user.findUnique({ where: { slug }, select: SELECT_DA_LOJA_NO_CARDAPIO });
+  // etaConfig: o prazo automático do iFood no topo (lib/multimarcas/carga.ts).
+  // Só aqui, não no select do cardápio: a vitrine não manda o `franchisee`
+  // para o HTML; o cardápio manda inteiro.
+  const franchisee = await prisma.user.findUnique({ where: { slug }, select: { ...SELECT_DA_LOJA_NO_CARDAPIO, etaConfig: true } });
   if (!franchisee) return null;
   const config = (await multimarcasEstaLigado(franchisee.id)) ? await lerConfigDaPagina(franchisee.id, franchisee.storeName || franchisee.name || "") : null;
   return { franchisee, config: config && config.marcas.some((m) => !m.oculta) ? config : null };
