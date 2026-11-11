@@ -9,6 +9,7 @@ import { propsDoCardapio } from "@/lib/cardapio-publico";
 import { estadoDaLoja } from "@/lib/loja-aberta";
 import { filtroDoCardapio, minimoDeEstrelas } from "@/lib/avaliacoes-no-cardapio";
 import { ordenarComoALoja } from "@/lib/cardapio-da-loja";
+import { comPrazoDaExtensao } from "@/lib/prazo-automatico";
 import { chaveDaCategoria, mapaDeCategorias, type ConfigDaPagina } from "./pagina";
 import { MARCA_DOS_EXTRAS, type ConfigDaVitrine, type ProdutoDaVitrine } from "./vitrine";
 
@@ -48,7 +49,13 @@ async function avaliacoesComCategorias(franchisee: any) {
   return linhas.map((l: any) => ({ rating: l.rating, categorias: (l.order?.items ?? []).map((i: any) => i.menuProduct?.category) }));
 }
 
-/** Prazo da entrega pelas áreas da loja: o menor e o maior tempo (o maior + 15, como o checkout mostra). */
+/**
+ * Prazo da entrega pelas áreas da loja: o menor e o maior tempo (o maior + 15,
+ * como o checkout mostra). Recebe as áreas JÁ com o prazo automático do iFood
+ * somado (comPrazoDaExtensao): sem ele, o topo da página dizia o tempo
+ * cadastrado enquanto o checkout, o robô e o iFood diziam o da fila (Lucas,
+ * Frangoso, 11/11/2026: "não está atualizando no site, está ficando diferente").
+ */
 function prazoDasAreas(zonas: unknown): { min: number | null; max: number | null } {
   const tempos = (Array.isArray(zonas) ? zonas : []).map((z: any) => Number(z?.time)).filter((t) => t > 0 && t < 300);
   if (!tempos.length) return { min: null, max: null };
@@ -86,7 +93,7 @@ export async function vitrineDaLoja(franchisee: any, config: ConfigDaPagina): Pr
       cor: config.cor,
       logo: franchisee.storeLogo || null,
       avisoFechada: estado.aberta ? undefined : estado.texto,
-      entrega: { taxa: null, ...prazoDasAreas(franchisee.deliveryZones), minimo: Number(dc.minimumOrderValue) || 0 },
+      entrega: { taxa: null, ...prazoDasAreas(comPrazoDaExtensao(franchisee).deliveryZones), minimo: Number(dc.minimumOrderValue) || 0 },
       marcas: config.marcas.map((m) => ({
         id: m.id, nome: m.nome, tipo: m.tipo, cor: m.cor, logo: m.logo, capa: m.capa, oculta: m.oculta,
         nota: notas.get(m.id)?.media ?? null,

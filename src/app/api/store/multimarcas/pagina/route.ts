@@ -48,7 +48,7 @@ async function sugestoesDeMarcas(franchiseeId: string): Promise<string[]> {
 export async function GET() {
   const s = await lojaDoMultimarcasDaSessao();
   if (!s) return NextResponse.json({ error: "Seu acesso não abre o Multimarcas. Peça ao dono da loja." }, { status: 403 });
-  const franchisee = await prisma.user.findUnique({ where: { id: s.franchiseeId }, select: SELECT_DA_LOJA_NO_CARDAPIO });
+  const franchisee = await prisma.user.findUnique({ where: { id: s.franchiseeId }, select: { ...SELECT_DA_LOJA_NO_CARDAPIO, etaConfig: true } });
   if (!franchisee) return NextResponse.json({ error: "Loja não encontrada." }, { status: 404 });
   const nomeDaLoja = franchisee.storeName || franchisee.name || "Minhas marcas";
 
