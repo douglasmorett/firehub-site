@@ -4,7 +4,10 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sendEvolutionMessage, sendEvolutionMediaUrl } from "@/lib/whatsapp-evolution";
 import { segredoObrigatorio } from "@/lib/segredos";
-import { DISPARO_EM_MASSA_LIBERADO, MOTIVO_DISPARO_DESLIGADO } from "@/lib/disparo-em-massa";
+import { DISPARO_EM_MASSA_LIBERADO, MOTIVO_DISPARO_DESLIGADO, MOTIVO_SEM_ACEITE, aceiteDoRiscoQr } from "@/lib/disparo-em-massa";
+import { chaveDoTelefone, descadastradosDaLoja, mesclarNoChatbotConfig } from "@/lib/disparo-pelo-qr";
+import { marcosLigadosNoOficial } from "@/lib/disparo-oficial/servidor";
+import { lerCupons } from "@/lib/cupons";
 import { contatosDaFila } from "@/lib/fila-de-atendimento-humano";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +52,8 @@ async function processBackgroundCampaign(userId: string, targetFranchiseeId: str
           const config = (freshUser.chatbotConfig as any) || {};
           const history = Array.isArray(config.campaignHistory) ? config.campaignHistory : [];
           const isDone = i === allTargetPhones.length - 1;
+          // A loja desfez o aceite do risco no meio do disparo: para aqui.
+          const desfeito = !aceiteDoRiscoQr(config);
 
           const updatedHistory = history.map((c: any) => {
             if (c.id === campaignId) {
@@ -65,7 +70,7 @@ async function processBackgroundCampaign(userId: string, targetFranchiseeId: str
                 // de disparar EM PARALELO com este worker (mensagem duplicada
                 // para o cliente). O GET só assume se isto ficar parado.
                 lastProgressAt: new Date().toISOString(),
-                status: isDone ? "COMPLETED" : "DISPARANDO",
+                status: isDone ? "COMPLETED" : desfeito ? "INTERROMPIDO" : "DISPARANDO",
               };
             }
             return c;
@@ -75,6 +80,7 @@ async function processBackgroundCampaign(userId: string, targetFranchiseeId: str
             where: { id: userId },
             data: { chatbotConfig: { ...config, campaignHistory: updatedHistory } },
           });
+          if (desfeito) return;
         }
       } catch (dbErr) {
         console.error("[Background Campaign DB Update Error]:", dbErr);
@@ -117,7 +123,7 @@ export async function GET(req: NextRequest) {
     const user = quemPediu
       ? await prisma.user.findUnique({
           where: { id: quemPediu.ownerId || quemPediu.id },
-          select: { id: true, ownerId: true, chatbotConfig: true },
+          select: { id: true, ownerId: true, chatbotConfig: true, storeCoupons: true },
         })
       : null;
 
@@ -290,8 +296,14 @@ export async function GET(req: NextRequest) {
     // avançando o mesmo índice, cliente recebendo a campanha duas vezes.
     // Agora ele apenas assume campanha ABANDONADA (worker morto num deploy):
     // sem progresso há mais de 2 minutos.
-    const pendingCampIdx = rawHistory.findIndex((c: any) => {
+    // Também sai pelo QR: sem o aceite da loja (ou com o interruptor geral
+    // desligado), o resgate não continua nada.
+    const podeUsarQr = DISPARO_EM_MASSA_LIBERADO && !!aceiteDoRiscoQr(chatbotConfig);
+    const pendingCampIdx = !podeUsarQr ? -1 : rawHistory.findIndex((c: any) => {
       if (c.status !== "DISPARANDO") return false;
+      // Campanha de mais de um dia não é retomada: uma presa desde antes do
+      // desligamento de 02/09 voltaria a sair com a promoção velha.
+      if (Date.now() - new Date(c.createdAt).getTime() > 24 * 60 * 60 * 1000) return false;
       const ultimo = c.lastProgressAt ? new Date(c.lastProgressAt).getTime() : 0;
       return Date.now() - ultimo > 120_000;
     });
@@ -405,6 +417,7 @@ export async function GET(req: NextRequest) {
     if (chatbotConfig.coupon7d) activeCampaignCoupons.add(chatbotConfig.coupon7d.trim().toLowerCase());
     if (chatbotConfig.coupon15d) activeCampaignCoupons.add(chatbotConfig.coupon15d.trim().toLowerCase());
     if (chatbotConfig.coupon30d) activeCampaignCoupons.add(chatbotConfig.coupon30d.trim().toLowerCase());
+    if (chatbotConfig.couponConversa) activeCampaignCoupons.add(chatbotConfig.couponConversa.trim().toLowerCase());
     if (chatbotConfig.instantCouponCode) activeCampaignCoupons.add(chatbotConfig.instantCouponCode.trim().toLowerCase());
 
     // Buscar pedidos reais da loja que utilizaram os cupons das campanhas de marketing
@@ -446,10 +459,25 @@ export async function GET(req: NextRequest) {
       recoveredOrdersCount,
       recoveredRevenue,
       campaignHistory: campaignHistoryProcessed,
+      // Pelo QR Code (11/11/2026): o aceite do risco, os cupons para escolher
+      // em cada marco e os marcos que já saem pelo oficial (esses o QR pula).
+      aceiteRiscoQr: aceiteDoRiscoQr(chatbotConfig),
+      cupons: lerCupons(user.storeCoupons).map((c) => ({
+        code: c.code, type: c.type, discount: c.discount, active: c.active, validade: c.validade, primeiroPedido: c.primeiroPedido,
+      })),
+      marcosNoOficial: await marcosLigadosNoOficial(targetFranchiseeId).catch(() => [] as number[]),
       marketingConfig: {
-        autoRecuperation7d: chatbotConfig.autoRecuperation7d ?? true,
-        autoRecuperation15d: chatbotConfig.autoRecuperation15d ?? true,
-        autoRecuperation30d: chatbotConfig.autoRecuperation30d ?? true,
+        // `=== true`: é o que o cron exige. O `?? true` de antes mostrava
+        // ATIVADO num marco que nunca tinha sido gravado — e nada saía.
+        autoRecuperation7d: chatbotConfig.autoRecuperation7d === true,
+        autoRecuperation15d: chatbotConfig.autoRecuperation15d === true,
+        autoRecuperation30d: chatbotConfig.autoRecuperation30d === true,
+        autoRecuperacaoConversa: chatbotConfig.autoRecuperacaoConversa === true,
+        msgConversa: chatbotConfig.msgConversa || "Oi! Vi que você conversou com a gente e ainda não fez seu pedido. Para dar aquele empurrãozinho, separamos um desconto para o seu primeiro pedido! 😋",
+        coupon7d: chatbotConfig.coupon7d || "",
+        coupon15d: chatbotConfig.coupon15d || "",
+        coupon30d: chatbotConfig.coupon30d || "",
+        couponConversa: chatbotConfig.couponConversa || "",
         msg7d: chatbotConfig.msg7d || "Oie, sentimos sua falta! 🍕 Que tal matar a fome hoje com R$ 10 de desconto?",
         msg15d: chatbotConfig.msg15d || "Faz 15 dias que você não pede seu lanche favorito! 🚀 Ganhe 15% OFF hoje no nosso cardápio!",
         msg30d: chatbotConfig.msg30d || "Saudade do nosso tempero especial? ❤️ Liberamos Frete Grátis exclusivo para você pedir hoje!",
@@ -473,7 +501,7 @@ export async function POST(req: NextRequest) {
     // A loja, não o login (ver o GET).
     const quemPediu = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true, ownerId: true },
+      select: { id: true, ownerId: true, name: true },
     });
     const user = quemPediu
       ? await prisma.user.findUnique({
@@ -488,6 +516,34 @@ export async function POST(req: NextRequest) {
 
     const targetFranchiseeId = user.ownerId || user.id;
     const body = await req.json();
+
+    // 0. Aceite do risco do envio pelo QR Code (lib/disparo-em-massa.ts).
+    // Aceitar é do DONO: é o número dele que pode ser banido. Desfazer, qualquer
+    // login da loja pode — é o lado seguro. Cada vez fica no histórico.
+    if (body.action === "aceitar_risco_qr" || body.action === "desfazer_aceite_qr") {
+      const aceitar = body.action === "aceitar_risco_qr";
+      if (aceitar && quemPediu?.ownerId) {
+        return NextResponse.json({ error: "Só o dono da loja pode aceitar este risco. Peça para ele entrar com o login dele." }, { status: 403 });
+      }
+      if (aceitar && body.entendo !== true) {
+        return NextResponse.json({ error: "Marque que você entende que o número pode ser banido." }, { status: 400 });
+      }
+      const agora = new Date().toISOString();
+      const por = session.user.email;
+      const atual = (user.chatbotConfig as any) || {};
+      const historico = Array.isArray(atual.aceiteRiscoQrHistorico) ? atual.aceiteRiscoQrHistorico : [];
+      await mesclarNoChatbotConfig(user.id, {
+        aceiteRiscoQr: aceitar ? { aceitoEm: agora, aceitoPor: por, nome: quemPediu?.name || null } : null,
+        aceiteRiscoQrHistorico: [{ acao: aceitar ? "ACEITOU" : "DESFEZ", em: agora, por }, ...historico].slice(0, 30),
+      });
+      return NextResponse.json({
+        success: true,
+        aceiteRiscoQr: aceitar ? { aceitoEm: agora, aceitoPor: por, nome: quemPediu?.name || null } : null,
+        message: aceitar
+          ? "Envio pelo QR Code liberado nesta loja. Use com cuidado."
+          : "Pronto: o envio pelo QR Code está travado de novo. Nada mais sai por ele.",
+      });
+    }
 
     // 1. Disparar teste individual de 7 dias
     if (body.action === "send_test_7d") {
@@ -572,6 +628,14 @@ export async function POST(req: NextRequest) {
         img7d: body.img7d,
         img15d: body.img15d,
         img30d: body.img30d,
+        // Pelo QR (11/11/2026): o cupom de cada marco e o marco de quem
+        // conversou com o robô e nunca comprou (api/cron/recuperacao-clientes).
+        autoRecuperacaoConversa: body.autoRecuperacaoConversa === true,
+        msgConversa: body.msgConversa,
+        coupon7d: String(body.coupon7d || "").trim().toUpperCase(),
+        coupon15d: String(body.coupon15d || "").trim().toUpperCase(),
+        coupon30d: String(body.coupon30d || "").trim().toUpperCase(),
+        couponConversa: String(body.couponConversa || "").trim().toUpperCase(),
       };
 
       await prisma.user.update({
@@ -590,13 +654,29 @@ export async function POST(req: NextRequest) {
       if (!DISPARO_EM_MASSA_LIBERADO) {
         return NextResponse.json({ error: MOTIVO_DISPARO_DESLIGADO }, { status: 403 });
       }
+      // Liberado desde 11/11/2026 só para a loja que aceitou o risco.
+      if (!aceiteDoRiscoQr(user.chatbotConfig)) {
+        return NextResponse.json({ error: MOTIVO_SEM_ACEITE }, { status: 403 });
+      }
 
       const { message, imageUrl, targetPhones } = body;
       if (!message || !Array.isArray(targetPhones) || targetPhones.length === 0) {
         return NextResponse.json({ error: "Mensagem e contatos alvo são obrigatórios." }, { status: 400 });
       }
+      // Um disparo por vez: dois em paralelo dobram o ritmo e furam o intervalo anti-ban.
+      const emAndamento = ((user.chatbotConfig as any)?.campaignHistory || []).some(
+        (c: any) => c?.status === "DISPARANDO" && Date.now() - new Date(c.createdAt).getTime() < 24 * 60 * 60 * 1000
+      );
+      if (emAndamento) {
+        return NextResponse.json({ error: "Já tem um disparo saindo. Espere ele terminar para mandar outro." }, { status: 409 });
+      }
 
-      const allTargetPhones = targetPhones;
+      // Quem pediu para parar no Disparo oficial também não recebe por aqui.
+      const parou = await descadastradosDaLoja(targetFranchiseeId);
+      const allTargetPhones = targetPhones.filter((t: unknown) => !parou.has(chaveDoTelefone(t)));
+      if (allTargetPhones.length === 0) {
+        return NextResponse.json({ error: "Todos os contatos escolhidos pediram para não receber promoções." }, { status: 400 });
+      }
       const campaignId = `camp_${Date.now()}`;
 
       // Registrar o disparo IMEDIATAMENTE no histórico da loja com status "DISPARANDO"

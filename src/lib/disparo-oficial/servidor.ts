@@ -13,6 +13,7 @@ import { FUSO_PADRAO, dataDaLoja, horaDaLoja } from "@/lib/fuso";
 import { garantirEstruturaDoDisparoOficial } from "./estrutura-no-banco";
 import { avisarVendaAprovada } from "@/lib/app-firehub/aviso-de-venda";
 import * as meta from "./meta";
+import { enviosRecentesDaRecuperacaoQr } from "@/lib/disparo-em-massa";
 import {
   EXPIRA_SEM_ENTREGA_MS,
   assinaturaConfere,
@@ -814,7 +815,7 @@ async function pedidosRecentes(franchiseeId: string, dias: number) {
 }
 
 /** Quem não entra hoje: pediu para parar ou recebeu uma automática há pouco. */
-async function foraDaAutomacao(franchiseeId: string): Promise<Set<string>> {
+export async function foraDaAutomacao(franchiseeId: string): Promise<Set<string>> {
   const desde = new Date(Date.now() - RESPIRO_ENTRE_AUTOMATICAS_DIAS * 24 * 60 * 60 * 1000);
   const [descadastros, automaticas] = await Promise.all([
     db.disparoDescadastro.findMany({ where: { franchiseeId }, select: { telefone: true } }),
@@ -825,7 +826,23 @@ async function foraDaAutomacao(franchiseeId: string): Promise<Set<string>> {
     const envios = await db.disparoEnvio.findMany({ where: { campanhaId: { in: automaticas.map((c: any) => c.id) } }, select: { telefone: true } });
     for (const e of envios) fora.add(e.telefone);
   }
+  // Quem recebeu a recuperação pelo QR (11/11/2026, api/cron/recuperacao-
+  // clientes) também espera: a mesma recuperação nunca chega pelos dois caminhos.
+  const loja = await prisma.user.findUnique({ where: { id: franchiseeId }, select: { chatbotConfig: true } });
+  for (const tel of enviosRecentesDaRecuperacaoQr(loja?.chatbotConfig, desde)) fora.add(tel);
   return fora;
+}
+
+/**
+ * Os marcos (7, 15, 30) que a recuperação OFICIAL manda hoje nesta loja. A
+ * recuperação pelo QR pula esses: o cliente não recebe o mesmo marco duas vezes.
+ */
+export async function marcosLigadosNoOficial(franchiseeId: string): Promise<number[]> {
+  if (!lojaLiberada(franchiseeId)) return [];
+  const c = await conexaoDaLoja(franchiseeId).catch(() => null);
+  if (!c || c.status !== "CONECTADO") return [];
+  const auto = lerAutomacao(c.automacao);
+  return MARCOS_DA_RECUPERACAO.filter((m) => auto.marcos[String(m)]?.ligado && auto.marcos[String(m)]?.modeloId);
 }
 
 /** Quantos clientes fazem cada marco hoje — a tela mostra ao lado do interruptor. */
