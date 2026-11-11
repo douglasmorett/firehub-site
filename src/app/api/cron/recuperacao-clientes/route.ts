@@ -6,7 +6,13 @@ import { verifyCronAuth } from "@/lib/cron-auth";
 import { pegarVez } from "@/lib/vez";
 import { sendEvolutionMessage, sendEvolutionMediaUrl } from "@/lib/whatsapp-evolution";
 import { telefoneDeVerdade, paraEnvioWhatsApp } from "@/lib/telefone";
-import { RECUPERACAO_PELO_QR_LIGADA } from "@/lib/disparo-em-massa";
+import { RECUPERACAO_PELO_QR_LIGADA, aceiteDoRiscoQr } from "@/lib/disparo-em-massa";
+import { chaveDoTelefone, mesclarNoChatbotConfig } from "@/lib/disparo-pelo-qr";
+import { foraDaAutomacao, marcosLigadosNoOficial } from "@/lib/disparo-oficial/servidor";
+import { telefoneDaMeta } from "@/lib/disparo-oficial/regras";
+import { acharCupom, cupomVenceu } from "@/lib/cupons";
+import { ehConversaDeCliente } from "@/lib/jid-de-cliente";
+import { mesmoNumero, numeroDaEquipeDoFireHub, numeroEstaNaListaDeIgnorados } from "@/lib/numeros-ignorados";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -45,14 +51,50 @@ export const maxDuration = 300;
  *    ontem não está em nenhuma janela.
  * 5. TETO POR LOJA E RESPIRO ENTRE ENVIOS: protege o número de WhatsApp da
  *    loja de ser marcado como spam e bloqueado.
+ *
+ * ── RELIGADA COM ACEITE (11/11/2026) ────────────────────────────────────────
+ *
+ * Pausada em 13/10 (saía pelo QR) e religada pelo Douglas em 11/11 só para a
+ * loja que ACEITOU o risco (lib/disparo-em-massa.ts). O aceite é conferido de
+ * novo antes de CADA envio: desfeito no meio da leva, a leva para.
+ *
+ * Convive com a recuperação OFICIAL (lib/disparo-oficial, rodarRecuperacao)
+ * sem o cliente receber a mesma coisa pelos dois caminhos:
+ *   - o marco ligado no oficial fica parado aqui (marcosLigadosNoOficial);
+ *   - quem recebeu uma automática do oficial nos últimos 6 dias, ou pediu
+ *     para parar ("Parar promoções"), não recebe aqui (foraDaAutomacao);
+ *   - quem recebe aqui fica anotado em chatbotConfig.recuperacaoQrEnvios, e o
+ *     oficial lê esse mapa no mesmo foraDaAutomacao.
+ *
+ * O cupom de cada marco é conferido no cadastro de cupons: desligado ou
+ * vencido, o marco não sai (não se promete desconto que o site recusa).
+ *
+ * ── QUEM CONVERSOU E NÃO COMPROU (11/11/2026, Lucas/Frangoso) ───────────────
+ *
+ * Mais um marco: quem mandou mensagem ao robô da loja há DIAS_DA_CONVERSA dias
+ * e não tem nenhum pedido nesta loja. A fonte é ChatbotConversationState (uma
+ * linha por loja e conversa, gravada pelo anti-loop a cada mensagem recebida
+ * e nunca apagada; a faxina só zera o histórico). `lastMessageAt` é a última
+ * mensagem do contato. Ficam de fora: conversa que o dono assumiu pelo
+ * celular (humanTakeoverAt — fornecedor, família, motoboy), conversa que o
+ * robô passou para atendente (degradedAt), endereço @lid (não é telefone),
+ * motoboys e funcionários da loja, a lista de números que o robô ignora e o
+ * próprio número da loja.
  */
+
+/** Dias depois da última mensagem ao robô, para quem conversou e não comprou. */
+const DIAS_DA_CONVERSA = 3;
 
 /** Marcos de dias sem comprar, com as chaves que a tela do lojista já grava. */
 const MARCOS = [
-  { dias: 7, ligado: "autoRecuperation7d", msg: "msg7d", img: "img7d", cupom: "coupon7d" },
-  { dias: 15, ligado: "autoRecuperation15d", msg: "msg15d", img: "img15d", cupom: "coupon15d" },
-  { dias: 30, ligado: "autoRecuperation30d", msg: "msg30d", img: "img30d", cupom: "coupon30d" },
+  { dias: 7, ligado: "autoRecuperation7d", msg: "msg7d", img: "img7d", cupom: "coupon7d", conversa: false },
+  { dias: 15, ligado: "autoRecuperation15d", msg: "msg15d", img: "img15d", cupom: "coupon15d", conversa: false },
+  { dias: 30, ligado: "autoRecuperation30d", msg: "msg30d", img: "img30d", cupom: "coupon30d", conversa: false },
+  { dias: DIAS_DA_CONVERSA, ligado: "autoRecuperacaoConversa", msg: "msgConversa", img: "imgConversa", cupom: "couponConversa", conversa: true },
 ] as const;
+
+/** Por quanto tempo o envio fica anotado (o oficial espera 6 dias; folga de 1). */
+const GUARDA_DO_ENVIO_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Teto de mensagens por loja por execução: o WhatsApp bloqueia número que dispara demais. */
 const TETO_POR_LOJA = 60;
@@ -83,9 +125,9 @@ export async function GET(req: NextRequest) {
   if (!verifyCronAuth(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  // Pausada desde 13/10/2026: saía pelo QR Code (lib/disparo-em-massa.ts).
+  // Interruptor geral (lib/disparo-em-massa.ts). Ligado, cada loja ainda precisa do aceite.
   if (!RECUPERACAO_PELO_QR_LIGADA) {
-    return NextResponse.json({ ok: true, pausada: "recuperação pelo QR desligada — volta pela API oficial" });
+    return NextResponse.json({ ok: true, pausada: "recuperação pelo QR desligada no interruptor geral" });
   }
   // Cinto do cron-runner (que já só dispara no líder): com dois containers
   // vivos — o velho e o novo no deploy, ou A e B —, só um roda esta volta.
@@ -98,15 +140,29 @@ export async function GET(req: NextRequest) {
   let enviadosNoTotal = 0;
 
   try {
-    // Só lojas que ligaram pelo menos um dos marcos.
+    // Só lojas que aceitaram o risco e ligaram pelo menos um dos marcos.
     const lojas = await prisma.user.findMany({
       where: { NOT: { chatbotConfig: { equals: Prisma.DbNull } } },
-      select: { id: true, storeName: true, name: true, slug: true, chatbotConfig: true, storeTimezone: true },
+      select: { id: true, chatbotConfig: true },
     });
 
-    for (const loja of lojas) {
+    for (const daLista of lojas) {
+      const cfgDaLista = (daLista.chatbotConfig as any) || {};
+      if (!aceiteDoRiscoQr(cfgDaLista) || !MARCOS.some(m => cfgDaLista[m.ligado] === true)) continue;
+
+      // Lida de novo AGORA: a leva de cada loja leva até uma hora, e a lista lá
+      // de cima pode ter sido lida há horas — um aceite desfeito nesse meio
+      // tempo não pode valer como aceito.
+      const loja = await prisma.user.findUnique({
+        where: { id: daLista.id },
+        select: { id: true, storeName: true, name: true, slug: true, chatbotConfig: true, storeTimezone: true, storeCoupons: true },
+      });
+      if (!loja) continue;
       const cfg = (loja.chatbotConfig as any) || {};
-      const marcosLigados = MARCOS.filter(m => cfg[m.ligado] === true);
+      if (!aceiteDoRiscoQr(cfg)) continue;
+      // O marco que a recuperação oficial já manda fica parado aqui.
+      const noOficial = await marcosLigadosNoOficial(loja.id).catch(() => [] as number[]);
+      const marcosLigados = MARCOS.filter(m => cfg[m.ligado] === true && (m.conversa || !noOficial.includes(m.dias)));
       if (marcosLigados.length === 0) continue;
 
       // Janela das 10h às 20h NO RELÓGIO DA LOJA. Era uma checagem só, em
@@ -133,54 +189,73 @@ export async function GET(req: NextRequest) {
       // MESMOS clientes em paralelo: spam em dobro, que é justamente o que
       // derruba o número da loja. Se o processo morrer no meio, o custo é a
       // loja perder parte da leva de um dia — muito mais barato que o dobro.
-      await prisma.user.update({
-        where: { id: loja.id },
-        data: { chatbotConfig: { ...cfg, ultimaRecuperacaoEm: hoje } },
+      // Grava só este campo (jsonb `||`), sem reescrever o resto da config.
+      await mesclarNoChatbotConfig(loja.id, { ultimaRecuperacaoEm: hoje });
+
+      // Quem não entra hoje: pediu para parar, ou recebeu uma automática (do
+      // oficial ou daqui) nos últimos 6 dias. Chaves no formato telefoneDaMeta.
+      const fora = await foraDaAutomacao(loja.id).catch(() => new Set<string>());
+
+      // Último pedido de cada telefone desta loja. O agrupamento devolve o
+      // MAIOR createdAt por telefone — é isso que define "sumido há N dias".
+      // Uma consulta por loja (era uma por marco).
+      const porTelefone = await prisma.customerOrder.groupBy({
+        by: ["customerPhone"],
+        where: {
+          franchiseeId: loja.id,
+          customerPhone: { not: null as any },
+          status: { not: "CANCELADO" },
+        },
+        _max: { createdAt: true },
       });
 
       let enviadosDaLoja = 0;
+      let aceiteDesfeito = false;
       const detalhes: string[] = [];
+      const envios: Record<string, string> = {
+        ...(cfg.recuperacaoQrEnvios && typeof cfg.recuperacaoQrEnvios === "object" ? cfg.recuperacaoQrEnvios : {}),
+      };
 
       for (const marco of marcosLigados) {
-        if (enviadosDaLoja >= TETO_POR_LOJA) break;
+        if (enviadosDaLoja >= TETO_POR_LOJA || aceiteDesfeito) break;
+        const nomeDoMarco = marco.conversa ? "conversou e não comprou" : `${marco.dias}d`;
 
         const fim = new Date(Date.now() - marco.dias * 24 * 60 * 60 * 1000);
         const inicio = new Date(fim.getTime() - 24 * 60 * 60 * 1000);
 
-        // Último pedido de cada telefone desta loja. O agrupamento devolve o
-        // MAIOR createdAt por telefone — é isso que define "sumido há N dias".
-        const porTelefone = await prisma.customerOrder.groupBy({
-          by: ["customerPhone"],
-          where: {
-            franchiseeId: loja.id,
-            customerPhone: { not: null as any },
-            status: { not: "CANCELADO" },
-          },
-          _max: { createdAt: true },
-        });
-
-        const alvos = porTelefone
-          .filter(g => {
-            const ultimo = g._max?.createdAt;
-            if (!ultimo || !g.customerPhone) return false;
-            return ultimo >= inicio && ultimo < fim;
-          })
-          .map(g => g.customerPhone as string)
+        const alvos = (
+          marco.conversa
+            ? await conversaramENaoCompraram(loja.id, cfg, inicio, fim, porTelefone.map(g => g.customerPhone))
+            : porTelefone
+                .filter(g => {
+                  const ultimo = g._max?.createdAt;
+                  if (!ultimo || !g.customerPhone) return false;
+                  return ultimo >= inicio && ultimo < fim;
+                })
+                .map(g => g.customerPhone as string)
+        )
           // Embaralha: enviar sempre na mesma ordem (a do banco) é mais um
           // padrão previsível para o antispam reconhecer.
           .sort(() => Math.random() - 0.5);
 
         if (alvos.length === 0) {
-          detalhes.push(`${marco.dias}d: ninguém na janela`);
+          detalhes.push(`${nomeDoMarco}: ninguém na janela`);
           continue;
         }
 
         const cupom = String(cfg[marco.cupom] || "").trim();
+        if (cupom) {
+          const cadastrado = acharCupom(loja.storeCoupons, cupom);
+          if (!cadastrado || cupomVenceu(cadastrado, hoje)) {
+            detalhes.push(`${nomeDoMarco}: cupom ${cupom} desligado ou vencido — nada enviado`);
+            continue;
+          }
+        }
         const imagem = String(cfg[marco.img] || "").trim();
         const linkDaLoja = loja.slug ? `https://firehubfood.com.br/loja/${loja.slug}` : "";
         let texto = String(cfg[marco.msg] || "").trim();
         if (!texto) {
-          detalhes.push(`${marco.dias}d: sem mensagem configurada`);
+          detalhes.push(`${nomeDoMarco}: sem mensagem configurada`);
           continue;
         }
         if (cupom && !texto.toUpperCase().includes(cupom.toUpperCase())) {
@@ -200,12 +275,32 @@ export async function GET(req: NextRequest) {
           if (!telefoneDeVerdade(telefone)) continue;
           const digitos = paraEnvioWhatsApp(telefone).replace(/\D/g, "");
           if (digitos.length < 10) continue;
+          const chave = chaveDoTelefone(telefone);
+          if (fora.has(chave)) continue;
+
+          // O aceite de novo, antes de cada mensagem: desfeito, a leva para.
+          const agora = await prisma.user.findUnique({ where: { id: loja.id }, select: { chatbotConfig: true } });
+          if (!aceiteDoRiscoQr(agora?.chatbotConfig)) {
+            aceiteDesfeito = true;
+            break;
+          }
 
           try {
             const ok = imagem
               ? await sendEvolutionMediaUrl(loja.id, digitos, imagem, texto)
               : await sendEvolutionMessage(loja.id, digitos, texto);
-            if (ok) { enviadosDoMarco++; enviadosDaLoja++; enviadosNoTotal++; }
+            if (ok) {
+              enviadosDoMarco++; enviadosDaLoja++; enviadosNoTotal++;
+              // Anotado na hora, não no fim: se o processo cair no meio, o
+              // oficial ainda sabe quem já recebeu por aqui.
+              fora.add(chave);
+              envios[chave] = new Date().toISOString();
+              const corte = Date.now() - GUARDA_DO_ENVIO_MS;
+              for (const [t, em] of Object.entries(envios)) {
+                if (!(new Date(em).getTime() >= corte)) delete envios[t];
+              }
+              await mesclarNoChatbotConfig(loja.id, { recuperacaoQrEnvios: envios }).catch(() => {});
+            }
           } catch (e: any) {
             console.warn(`[Recuperação] falha ao enviar para ${digitos.slice(-4)}: ${e?.message}`);
           }
@@ -213,9 +308,10 @@ export async function GET(req: NextRequest) {
           const pausaLonga = enviadosDaLoja > 0 && enviadosDaLoja % ENVIOS_ATE_PAUSA_LONGA === 0;
           await dormir(pausaLonga ? aleatorio(120_000, 300_000) : aleatorio(RESPIRO_MIN_MS, RESPIRO_MAX_MS));
         }
-        detalhes.push(`${marco.dias}d: ${enviadosDoMarco}/${alvos.length}`);
+        detalhes.push(`${nomeDoMarco}: ${enviadosDoMarco}/${alvos.length}`);
       }
 
+      if (aceiteDesfeito) detalhes.push("parou: a loja desfez o aceite do risco");
       log.push(`📣 ${loja.storeName || loja.name}: ${enviadosDaLoja} envio(s) — ${detalhes.join(" | ")}`);
     }
 
@@ -224,4 +320,40 @@ export async function GET(req: NextRequest) {
     console.error("[Recuperação de clientes] erro:", err?.message);
     return NextResponse.json({ ok: false, error: err?.message, log }, { status: 500 });
   }
+}
+
+/**
+ * Quem mandou a última mensagem ao robô da loja entre `inicio` e `fim` e não
+ * tem pedido nesta loja (o que fica de fora, e por quê, está no cabeçalho).
+ */
+async function conversaramENaoCompraram(
+  lojaId: string,
+  cfg: any,
+  inicio: Date,
+  fim: Date,
+  telefonesComPedido: (string | null)[]
+): Promise<string[]> {
+  const conversas = await prisma.chatbotConversationState.findMany({
+    where: { userId: lojaId, lastMessageAt: { gte: inicio, lt: fim }, humanTakeoverAt: null, degradedAt: null },
+    select: { remoteJid: true },
+  });
+  if (conversas.length === 0) return [];
+
+  const comPedido = new Set(telefonesComPedido.map(t => telefoneDaMeta(t)).filter(Boolean) as string[]);
+  const [motoboys, equipe] = await Promise.all([
+    prisma.motoboy.findMany({ where: { franchiseeId: lojaId }, select: { phone: true } }),
+    prisma.storeEmployee.findMany({ where: { franchiseeId: lojaId }, select: { phone: true } }),
+  ]);
+  const daCasa = [...motoboys.map(m => m.phone), ...equipe.map(e => e.phone), cfg.phone].filter(Boolean);
+
+  const alvos = new Set<string>();
+  for (const { remoteJid } of conversas) {
+    if (!ehConversaDeCliente(remoteJid) || /@lid$/i.test(remoteJid)) continue;
+    const tel = telefoneDaMeta(remoteJid.split("@")[0]);
+    if (!tel || comPedido.has(tel)) continue;
+    if (numeroDaEquipeDoFireHub(tel) || numeroEstaNaListaDeIgnorados(tel, cfg.numerosIgnorados)) continue;
+    if (daCasa.some(n => mesmoNumero(n, tel))) continue;
+    alvos.add(tel);
+  }
+  return [...alvos];
 }
