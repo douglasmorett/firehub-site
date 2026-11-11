@@ -198,6 +198,22 @@ export async function registrarVendaPresencial(opcoes: {
     }
   }
 
+  // ── DESCONTO NO BALCÃO ("Dar desconto" da senha do gerente) ─────────────
+  // Lucas, Frangoso Trindade (11/11/2026). Mesma senha do cabeçalho do fiado:
+  // com as duas ligadas, o gerente digita uma vez só. Antes de gravar.
+  if (Number(discountTotal) > 0) {
+    let senha;
+    try {
+      senha = await conferirSenhaDoGerente(targetFranchiseeId, "darDesconto", senhaDoCabecalho(opcoes.senhaDoGerente));
+    } catch (err: any) {
+      console.error(`[Senha do gerente] não conferiu (darDesconto) na loja ${targetFranchiseeId}:`, err?.message || err);
+      return resposta({ error: "Não deu para conferir a senha do gerente agora. Tente de novo." }, { status: 503 });
+    }
+    if (!senha.ok) {
+      return resposta({ error: senha.error, mensagem: senha.error, codigo: senha.codigo, acao: senha.acao, restam: senha.restam }, { status: senha.status });
+    }
+  }
+
   // ── PAGER OBRIGATÓRIO, SE A LOJA MARCOU ──────────────────────────────────
   //
   // A trava mora AQUI, não na tela: o PDV pode estar com uma aba velha aberta

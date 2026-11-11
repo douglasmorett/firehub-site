@@ -128,7 +128,7 @@ const SECAO_DA_SENHA = {
   color: "#B91C1C",
   bg: "#FEF2F2",
   title: "Senha do gerente",
-  desc: "Senha que autoriza lançar no fiado e excluir lançamento no acerto do motoboy",
+  desc: "Senha que autoriza fiado, desconto, cancelamento e exclusões — e o fechamento cego do caixa",
 };
 
 /** Só entra no menu de quem tem mais de uma loja (MinhaLojaClient decide). */

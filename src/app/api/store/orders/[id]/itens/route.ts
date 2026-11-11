@@ -87,6 +87,7 @@ import { motivoDoCorpo, MENSAGEM_SEM_MOTIVO_DO_SERVIDOR, type ItemRetirado } fro
 import { carregarRodadaDaMesa, editarRodadaDaMesa, cancelarRodadaDaMesa } from "@/lib/edicao-na-mesa";
 import { planoDaTroca, descricaoDaTroca, type PlanoDaTroca } from "@/lib/escolhas-na-edicao";
 import { recusaDoPratoPesado } from "@/lib/balanca/protocolo-toledo";
+import { exigirSenhaDoGerente } from "@/lib/senha-do-gerente";
 
 /** Os campos do pedido que a decisão e o recálculo precisam. */
 const CAMPOS_DO_PEDIDO = {
@@ -244,6 +245,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (desconto) {
       const pode = descontoNaEdicao(order as any, avaliacao);
       if (!pode.pode) return NextResponse.json({ error: pode.motivo }, { status: 403 });
+      // "Dar desconto" da senha do gerente, se a loja ligou. A mesa recusa o
+      // desconto logo abaixo (é dado no fechamento, que pede a senha lá).
+      if (avaliacao.modo !== "MESA") {
+        const semSenha = await exigirSenhaDoGerente(req, lojaId, "darDesconto");
+        if (semSenha) return semSenha;
+      }
     }
 
     // ── Mesa: tirar e mudar quantidade, pela regra da tela de Mesas ──────

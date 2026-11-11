@@ -54,6 +54,7 @@ import ComboModal from "@/components/customer/ComboModal";
 import MotivoDoCancelamento from "@/components/MotivoDoCancelamento";
 import { motivoValido } from "@/lib/motivo-do-cancelamento";
 import { cortesiaNaEdicao, MOTIVOS_DE_CORTESIA } from "@/lib/cortesia";
+import { comSenhaDoGerente, useSenhaDoGerente } from "@/components/SenhaDoGerente";
 
 type ItemDoPedido = {
   id: string;
@@ -215,6 +216,9 @@ export default function EditarPedidoPainel({
 }) {
   const avaliacao = useMemo(() => avaliarEdicaoNoPainel(pedido, operador), [pedido, operador]);
   const modo: ModoDeEdicao = avaliacao.modo;
+  // Desconto e cortesia podem pedir a senha do gerente ("Dar desconto",
+  // Minha Loja → Senha do gerente): quem decide é o servidor.
+  const { pedirSenha, modalDaSenha } = useSenhaDoGerente();
   /** Marketplace e pedido próprio editam itens do mesmo jeito. O que muda é o dinheiro. */
   const ehMarketplace = modo === "MARKETPLACE";
   /** Rodada de mesa: só tira e muda quantidade; a conta da mesa acompanha. */
@@ -258,11 +262,12 @@ export default function EditarPedidoPainel({
     setAjustando(true);
     setErro("");
     try {
-      const res = await fetch(`/api/store/orders/${encodeURIComponent(pedido.id)}/desconto`, {
+      const res = await comSenhaDoGerente((cab) => fetch(`/api/store/orders/${encodeURIComponent(pedido.id)}/desconto`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...cab },
         body: JSON.stringify({ novo: Number(String(ajusteTexto).replace(",", ".").trim() || "0") }),
-      });
+      }), pedirSenha);
+      if (!res) return; // o gerente cancelou a senha
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { setErro(data.error || "Não consegui ajustar o desconto."); return; }
       setAjusteAberto(false);
@@ -291,11 +296,12 @@ export default function EditarPedidoPainel({
     setDandoCortesia(true);
     setErroDaCortesia("");
     try {
-      const res = await fetch(`/api/store/orders/${encodeURIComponent(pedido.id)}/cortesia`, {
+      const res = await comSenhaDoGerente((cab) => fetch(`/api/store/orders/${encodeURIComponent(pedido.id)}/cortesia`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...cab },
         body: JSON.stringify({ itemId, quantidade: cortesiaQtd, motivo: cortesiaMotivo.trim() }),
-      });
+      }), pedirSenha);
+      if (!res) return; // o gerente cancelou a senha
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { setErroDaCortesia(data.error || "Não consegui registrar a cortesia."); return; }
       setCortesiaDe(null);
@@ -542,11 +548,12 @@ export default function EditarPedidoPainel({
       if (descontoValido && descontoNovo) corpo.desconto = descontoNovo;
       if (tiraAlgo) corpo.motivo = motivo.trim();
 
-      const res = await fetch(`/api/store/orders/${pedido.id}/itens`, {
+      const res = await comSenhaDoGerente((cab) => fetch(`/api/store/orders/${pedido.id}/itens`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...cab },
         body: JSON.stringify(corpo),
-      });
+      }), pedirSenha);
+      if (!res) { setErro("Nada foi alterado — sem a senha do gerente o desconto não passa."); return; }
       const data = await res.json().catch(() => ({}) as any);
       if (!res.ok) {
         setErro(data?.error || "Não consegui salvar a alteração.");
@@ -1399,6 +1406,7 @@ export default function EditarPedidoPainel({
           />
         );
       })()}
+      {modalDaSenha}
     </div>
   );
 }

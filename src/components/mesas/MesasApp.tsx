@@ -1162,9 +1162,11 @@ export default function MesasApp({
 
     setActionLoading(true);
     try {
-      const res = await chamar(`/api/store/table-sessions/${selectedTable.openSession.id}/close`, {
+      const mesaId = selectedTable.openSession.id;
+      // Com desconto, a senha do gerente pode ser pedida ("Dar desconto").
+      const res = await comSenhaDoGerente((cab) => chamar(`/api/store/table-sessions/${mesaId}/close`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...cab },
         body: JSON.stringify({
           // As baixas já estão gravadas na mesa, uma a uma. O servidor usa o
           // que está no banco e ignora esta lista quando há algo lá — mandar
@@ -1177,7 +1179,8 @@ export default function MesasApp({
           // "CPF na nota" da conta (opcional): vai para a nota da mesa.
           cpfCnpj: conta?.notaFiscal?.perguntar ? lerDocumentoDoCliente(documentoDaConta) : null,
         }),
-      });
+      }), pedirSenha);
+      if (!res) return; // o gerente cancelou a senha: a mesa continua aberta
       if (res.ok) {
         showToast(`✅ ${nomeDaMesa(selectedTable)} fechada com sucesso!`);
         setShowCloseModal(false);
@@ -1350,12 +1353,17 @@ export default function MesasApp({
     if (valor <= 0) { showToast("⚠️ Informe quanto cobrar na maquininha"); return; }
     setEnviandoParaMaquininha(true);
     try {
-      const res = await chamar(`/api/store/table-sessions/${sessionId}/maquininha`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ valor, terminalId: maquininhaEscolhida, guestId: donoPagamento,
-          conta: { taxa: useServiceFee ? serviceFee : 0, gorjeta: Number(waiterTip) || 0, desconto: descontoDaMesa > 0 ? desconto : null } }),
-      });
+      // Com desconto, a senha do gerente pode ser pedida ("Dar desconto").
+      const res = await comSenhaDoGerente(
+        (cab) => chamar(`/api/store/table-sessions/${sessionId}/maquininha`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...cab },
+          body: JSON.stringify({ valor, terminalId: maquininhaEscolhida, guestId: donoPagamento,
+            conta: { taxa: useServiceFee ? serviceFee : 0, gorjeta: Number(waiterTip) || 0, desconto: descontoDaMesa > 0 ? desconto : null } }),
+        }),
+        pedirSenha,
+      );
+      if (!res) return; // o gerente cancelou a senha: nada foi para a maquininha
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setValorPagamento("");

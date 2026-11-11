@@ -27,6 +27,7 @@ import { carregarRodadaDaMesa } from "@/lib/edicao-na-mesa";
 import { valorDoAcrescimoGravado } from "@/lib/acrescimo-no-credito";
 import { motivoDoCorpo, MINIMO_DO_MOTIVO } from "@/lib/motivo-do-cancelamento";
 import { cortesiaNaEdicao, planejarCortesia } from "@/lib/cortesia";
+import { exigirSenhaDoGerente } from "@/lib/senha-do-gerente";
 
 export const dynamic = "force-dynamic";
 
@@ -80,6 +81,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
     const plano = planejarCortesia(order.items as any, { itemId: corpo?.itemId, quantidade: corpo?.quantidade });
     if (!plano.ok) return NextResponse.json({ error: plano.erro }, { status: 400 });
+    // Cortesia é desconto de 100% no item: o "Dar desconto" da senha do
+    // gerente vale aqui também — senão era o caminho para contornar a senha.
+    const semSenha = await exigirSenhaDoGerente(req, order.franchiseeId, "darDesconto");
+    if (semSenha) return semSenha;
 
     // O total refeito dos itens como ficam (a cortesia a R$ 0,00), mantendo
     // desconto, taxa de entrega e acréscimo no crédito — a conta da edição.

@@ -2,8 +2,12 @@
  * /api/store-settings/senha-do-gerente — a SENHA DO GERENTE da loja
  * (Minha Loja → Senha do gerente; regra em lib/senha-do-gerente-regras.ts).
  *
- *   GET  → { temSenha, exige, acoes, podeMudar }   qualquer conta da loja (nunca o hash)
- *   PUT  { senhaAtual?, novaSenha?, removerSenha?, exige? }   só o DONO
+ *   GET  → { temSenha, exige, fechamentoCego, acoes, podeMudar }   qualquer conta da loja (nunca o hash)
+ *   PUT  { senhaAtual?, novaSenha?, removerSenha?, exige?, fechamentoCego? }   só o DONO
+ *
+ * O `fechamentoCego` (lib/senha-do-gerente-regras.ts) mora aqui porque é o
+ * lugar que só o dono grava — e, com senha cadastrada, só com ela: desligar o
+ * fechamento cego é exatamente o que o caixa logado na conta do dono faria.
  *
  * ── Só o dono, e com a senha atual ──────────────────────────────────────────
  * Funcionário (conta de "Equipe & permissões", com ownerId) não muda nada —
@@ -22,7 +26,7 @@ import { prisma } from "@/lib/prisma";
 import {
   ACOES_PROTEGIDAS, algumaLigada, lerExigeSenha, problemaDaNovaSenha,
 } from "@/lib/senha-do-gerente-regras";
-import { gravarConfigDaSenha, lerConfigDaSenha, resumoDaSenha, senhaAtualConfere } from "@/lib/senha-do-gerente";
+import { fechamentoCegoLigado, gravarConfigDaSenha, lerConfigDaSenha, resumoDaSenha, senhaAtualConfere } from "@/lib/senha-do-gerente";
 
 export const dynamic = "force-dynamic";
 
@@ -74,10 +78,14 @@ export async function PUT(req: Request) {
   }
 
   const exige = lerExigeSenha(body?.exige ?? atual?.exige ?? null);
+  // Ausente no corpo (tela antiga, sem F5) = fica como está.
+  const fechamentoCego = typeof body?.fechamentoCego === "boolean"
+    ? body.fechamentoCego
+    : await fechamentoCegoLigado(s.lojaId).catch(() => false);
 
   // ── Apagar a senha: desliga tudo ──────────────────────────────────────────
   if (body?.removerSenha === true) {
-    await gravarConfigDaSenha({ lojaId: s.lojaId, senha: null, exige, quem: s.quem });
+    await gravarConfigDaSenha({ lojaId: s.lojaId, senha: null, exige, fechamentoCego, quem: s.quem });
     return NextResponse.json({ ok: true, ...(await resumoDaSenha(s.lojaId)) });
   }
 
@@ -94,11 +102,11 @@ export async function PUT(req: Request) {
   }
 
   try {
-    await gravarConfigDaSenha({ lojaId: s.lojaId, senha, exige, quem: s.quem });
+    await gravarConfigDaSenha({ lojaId: s.lojaId, senha, exige, fechamentoCego, quem: s.quem });
   } catch (err: any) {
     console.error("[Senha do gerente] gravar:", err?.message);
     return NextResponse.json({ error: "Não deu para salvar agora. Tente de novo." }, { status: 500 });
   }
-  console.log(`[Senha do gerente] loja ${s.lojaId}: ${senha ? "senha trocada, " : ""}exige ${JSON.stringify(exige)} — por ${s.quem}`);
+  console.log(`[Senha do gerente] loja ${s.lojaId}: ${senha ? "senha trocada, " : ""}exige ${JSON.stringify(exige)}, fechamento cego ${fechamentoCego ? "ligado" : "desligado"} — por ${s.quem}`);
   return NextResponse.json({ ok: true, ...(await resumoDaSenha(s.lojaId)) });
 }

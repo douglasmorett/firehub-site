@@ -11,6 +11,7 @@ import {
   empilharEdicao,
   type RegistroDeEdicao,
 } from "@/lib/edicao-de-pedido";
+import { exigirSenhaDoGerente } from "@/lib/senha-do-gerente";
 
 /**
  * PATCH /api/store/orders/[id]/desconto { novo: number, motivo?: string }
@@ -71,6 +72,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       novo: Number(String(corpo?.novo ?? "").replace(",", ".")),
     });
     if (conta.problema) return NextResponse.json({ error: conta.problema }, { status: 400 });
+    // Aumentar o desconto é dar desconto (senha do gerente, se a loja ligou);
+    // diminuir ou zerar é desfazer, e passa livre.
+    if (conta.novo > conta.atual + 0.005) {
+      const semSenha = await exigirSenhaDoGerente(req, lojaId, "darDesconto");
+      if (semSenha) return semSenha;
+    }
 
     const motivo = String(corpo?.motivo || "").trim().slice(0, 80);
     const quem = `${operador.name || operador.email || "?"} (${(operador.role || "").toUpperCase() === "STAFF" ? "funcionário" : "dono"})`;

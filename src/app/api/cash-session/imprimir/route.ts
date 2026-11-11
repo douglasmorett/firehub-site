@@ -22,6 +22,7 @@ import { cupomDeAberturaDeCaixa, cupomDeFechamentoDeCaixa } from "@/lib/cupom-do
 import { enfileirarCupomDoCaixa, assistenteOuvindoAFila } from "@/lib/imprimir-caixa";
 import { calcularEsperadoDoTurno } from "@/lib/esperado-do-turno";
 import { conferenciaGravada } from "@/lib/conferencia-do-caixa";
+import { caixaCegoPara } from "@/lib/senha-do-gerente";
 import type { CashSession } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +33,7 @@ export async function POST(req: Request) {
 
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true, ownerId: true, storeName: true, storeTimezone: true },
+    select: { id: true, ownerId: true, role: true, storeName: true, storeTimezone: true },
   });
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
   const lojaId = user.ownerId || user.id;
@@ -47,6 +48,11 @@ export async function POST(req: Request) {
     where: { id: sessionId, franchiseeId: lojaId },
   });
   if (!caixa) return NextResponse.json({ error: "Caixa não encontrado." }, { status: 404 });
+  // Fechamento cego: o papel do caixa AINDA ABERTO traz o retrato do turno
+  // (vendas em dinheiro, faturado) — para o funcionário, só depois de fechar.
+  if (tipo === "FECHAMENTO" && caixa.status === "OPEN" && (await caixaCegoPara(user))) {
+    return NextResponse.json({ error: "Com o fechamento cego ligado, o papel do fechamento só sai depois de encerrar o caixa." }, { status: 403 });
+  }
 
   const dono = await prisma.user.findUnique({
     where: { id: lojaId },

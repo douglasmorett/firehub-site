@@ -287,6 +287,15 @@ export async function POST(
       );
     }
 
+    // ── DESCONTO NA CONTA ("Dar desconto" da senha do gerente) ────────────
+    // Depois das conferências da conta, como a do fiado: ninguém digita senha
+    // para ouvir em seguida que falta dinheiro. Mesma senha do cabeçalho: com
+    // fiado e desconto ligados, o gerente digita uma vez só.
+    if (descontoEmReais > 0) {
+      const semSenha = await exigirSenhaDoGerente(req, targetFranchiseeId, "darDesconto");
+      if (semSenha) return semSenha;
+    }
+
     // O lançamento gravado: a tela de Mesas abre o comprovante do fiado
     // (imprimir para assinar / assinar na tela) com ele.
     let fiadoGravado: { id: string; employeeId: string } | null = null;
