@@ -1068,7 +1068,11 @@ export async function POST(req: Request) {
     // Criar pedido
     // Multimarcas: cada item com o nome da marca na frente, agrupado por marca —
     // é o que a comanda, o KDS e o painel mostram (lib/multimarcas/itens.ts).
-    const itensParaGravar = (await aplicarMarcasNosItens(franchisee.id, orderItems as any[], menuProducts as any)) as typeof orderItems;
+    // `marca` de cada item: a marca em que o cliente o pôs na sacola (decide a
+    // categoria que está em mais de uma marca). orderItems segue a ordem de
+    // `items` (os brindes entram no fim, sem marca).
+    const marcaEscolhida = items.map((i: any) => (typeof i?.marca === "string" ? i.marca : null));
+    const itensParaGravar = (await aplicarMarcasNosItens(franchisee.id, orderItems as any[], menuProducts as any, marcaEscolhida)) as typeof orderItems;
 
     const criarPedido = (db: Pick<typeof prisma, "customerOrder">) => db.customerOrder.create({
       data: {

@@ -8,6 +8,7 @@ import { limparConfig, marcaDaCategoria, mapaDeCategorias } from "../src/lib/mul
 import { categoriaEntraNaMarca, marcasNoCardapio, siglaDaMarca } from "../src/lib/multimarcas/no-cardapio";
 import { itensComMarca } from "../src/lib/multimarcas/itens";
 import { notasPorMarca } from "../src/lib/multimarcas/carga";
+import { corParaTexto, textoSobreCor } from "../src/lib/multimarcas/vitrine";
 
 let casos = 0;
 const ok = (f: () => void) => { f(); casos++; };
@@ -18,7 +19,7 @@ const suja = {
   cor: "vermelho",
   marcas: [
     { id: "smash", nome: "Smash da Vila", tipo: "Hambúrguer", cor: "#1f1f23", logo: "javascript:alert(1)", capa: "/uploads/lojas/a.webp", categorias: ["Burguers", " burguers ", "Combos"] },
-    // Mesmo id e uma categoria que já é da primeira: id muda, categoria fica com a primeira.
+    // Mesmo id e uma categoria que já é da primeira: id muda, e a categoria fica nas duas (Lucas, 11/11).
     { id: "smash", nome: "", categorias: ["COMBOS", "Frango"], logo: "http://inseguro.com/x.png", capa: "https://cdn.exemplo.com/c.webp" },
   ],
   banners: [
@@ -33,7 +34,7 @@ ok(() => assert.equal(c.cor, "#E8590C"));
 ok(() => assert.equal(c.marcas.length, 2));
 ok(() => assert.notEqual(c.marcas[0].id, c.marcas[1].id));
 ok(() => assert.deepEqual(c.marcas[0].categorias, ["Burguers", "Combos"]));
-ok(() => assert.deepEqual(c.marcas[1].categorias, ["Frango"]));
+ok(() => assert.deepEqual(c.marcas[1].categorias, ["COMBOS", "Frango"]));
 ok(() => assert.equal(c.marcas[0].logo, null)); // javascript: não passa
 ok(() => assert.equal(c.marcas[0].capa, "/uploads/lojas/a.webp"));
 ok(() => assert.equal(c.marcas[1].logo, null)); // http não passa
@@ -69,6 +70,12 @@ ok(() => assert.equal(marcaDaCategoria(c, "  BURGUERS")?.id, "smash"));
 ok(() => assert.equal(marcaDaCategoria(c, "Bebidas"), null));
 const comOculta = { marcas: [...c.marcas.slice(0, 1), { ...c.marcas[1], oculta: true }] };
 ok(() => assert.equal(mapaDeCategorias(comOculta).has("frango"), false));
+ok(() => assert.deepEqual(mapaDeCategorias(c).get("combos"), ["smash", c.marcas[1].id])); // nas duas, na ordem da página
+ok(() => assert.deepEqual(mapaDeCategorias(comOculta).get("combos"), ["smash"])); // marca escondida não conta
+ok(() => assert.equal(marcaDaCategoria(c, "Combos"), null)); // de várias marcas: nenhuma "dona"
+// Config gravada no formato antigo (cada categoria numa marca só) sai igual.
+const antiga = { marcas: [{ id: "a", nome: "A", categorias: ["Lanches", "Bebidas"] }, { id: "b", nome: "B", categorias: ["Pizzas"] }] };
+ok(() => assert.deepEqual(limparConfig(antiga).marcas.map((m) => m.categorias), [["Lanches", "Bebidas"], ["Pizzas"]]));
 
 // ─── cardápio aberto por uma marca ───
 const mm = marcasNoCardapio(c)!;
@@ -78,6 +85,9 @@ ok(() => assert.equal(categoriaEntraNaMarca(mm, "smash", "Frango"), false)); // 
 ok(() => assert.equal(categoriaEntraNaMarca(mm, outra, "Frango"), true));
 ok(() => assert.equal(categoriaEntraNaMarca(mm, "smash", "Bebidas"), true)); // para acompanhar entra em todas
 ok(() => assert.equal(categoriaEntraNaMarca(mm, outra, "Bebidas"), true));
+ok(() => assert.equal(categoriaEntraNaMarca(mm, "smash", "Combos"), true)); // em duas marcas: entra nas duas
+ok(() => assert.equal(categoriaEntraNaMarca(mm, outra, "combos "), true));
+ok(() => assert.equal(categoriaEntraNaMarca({ marcas: [...mm.marcas, { ...mm.marcas[0], id: "terceira", categorias: [] }] }, "terceira", "Combos"), false)); // e só nelas
 ok(() => assert.equal(marcasNoCardapio({ marcas: [{ ...c.marcas[0], oculta: true }] }), null));
 ok(() => assert.equal(siglaDaMarca("Smash da Vila"), "SV"));
 ok(() => assert.equal(siglaDaMarca("Braseou! Burguers na Brasa"), "BB"));
@@ -90,7 +100,8 @@ const itens = [
   { menuProductId: "p1", productName: "Smash em dobro", quantity: 2 },
   { menuProductId: "p4", productName: "Combo casal", quantity: 1 },
 ];
-const marcados = itensComMarca(itens, categoria, c);
+// Combos está nas duas marcas: o cliente pôs o combo dentro da Smash (`marca` do item).
+const marcados = itensComMarca(itens, categoria, c, [null, null, null, "smash"]);
 ok(() => assert.deepEqual(marcados.map((i) => i.productName), [
   "[SMASH DA VILA] Smash em dobro", "[SMASH DA VILA] Combo casal", "[MARCA 2] Box M", "Coca lata",
 ]));
@@ -103,6 +114,13 @@ const soBebida = [{ menuProductId: "p2", productName: "Coca lata" }];
 ok(() => assert.equal(itensComMarca(soBebida, categoria, c), soBebida));
 // Item sem produto (brinde) fica no fim, sem marca.
 ok(() => assert.equal(itensComMarca([{ menuProductId: null, productName: "Brinde" }, { menuProductId: "p1", productName: "Smash" }], categoria, c)[1].productName, "Brinde"));
+// Categoria de duas marcas, escolhido na outra: vai com a outra.
+ok(() => assert.equal(itensComMarca([{ menuProductId: "p4", productName: "Combo casal" }], categoria, c, [outra])[0].productName, "[MARCA 2] Combo casal"));
+// Sem a marca (sacola antiga) ou com uma marca em que a categoria não está: fica como "para acompanhar".
+ok(() => assert.equal(itensComMarca([{ menuProductId: "p4", productName: "Combo casal" }], categoria, c)[0].productName, "Combo casal"));
+ok(() => assert.equal(itensComMarca([{ menuProductId: "p4", productName: "Combo casal" }], categoria, c, ["fantasma"])[0].productName, "Combo casal"));
+// Categoria de uma marca só: a escolha não muda nada (vale a dona).
+ok(() => assert.equal(itensComMarca([{ menuProductId: "p1", productName: "Smash" }], categoria, c, [outra])[0].productName, "[SMASH DA VILA] Smash"));
 
 // ─── nota por marca ───
 const mapa = mapaDeCategorias(c);
@@ -115,5 +133,17 @@ const notas = notasPorMarca([
 ok(() => assert.deepEqual(notas.get("smash"), { media: 4.5, total: 2 }));
 ok(() => assert.deepEqual(notas.get(outra), { media: 3.5, total: 2 }));
 ok(() => assert.equal(notas.size, 2));
+// Categoria em duas marcas conta para as duas.
+const notasCombo = notasPorMarca([{ rating: 5, categorias: ["Combos"] }], mapa);
+ok(() => assert.deepEqual([notasCombo.get("smash")?.total, notasCombo.get(outra)?.total], [1, 1]));
+
+// ─── cor livre e contraste (Lucas, 11/11: o amarelo da marca) ───
+ok(() => assert.equal(limparConfig({ cor: "#ffc800" }).cor, "#FFC800"));
+ok(() => assert.equal(textoSobreCor("#FFC800"), "#1F1F23")); // amarelo: texto escuro
+ok(() => assert.equal(textoSobreCor("#E8590C"), "#FFFFFF")); // o laranja de sempre continua branco
+ok(() => assert.equal(textoSobreCor("#1F1F23"), "#FFFFFF"));
+ok(() => assert.equal(corParaTexto("#1864AB"), "#1864AB")); // cor escura já se lê: não muda
+ok(() => assert.notEqual(corParaTexto("#FFC800"), "#FFC800")); // amarelo como texto escurece
+ok(() => assert.equal(textoSobreCor(corParaTexto("#FFC800")), "#FFFFFF")); // ...até dar contraste com o branco
 
 console.log(`✅ teste-multimarcas-pagina: ${casos} casos ok`);

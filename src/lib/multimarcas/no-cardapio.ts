@@ -18,13 +18,19 @@ export function marcasNoCardapio(config: Pick<ConfigDaPagina, "marcas">): Marcas
 }
 
 /**
- * A categoria aparece no cardápio aberto pela marca? Sim se é da marca, ou se
- * não é de nenhuma marca ("para acompanhar": bebida, sobremesa). Puro.
+ * A categoria aparece no cardápio aberto pela marca? Sim se é da marca (ela
+ * pode estar em várias), ou se não é de nenhuma marca ("para acompanhar":
+ * bebida, sobremesa). Puro.
  */
 export function categoriaEntraNaMarca(mm: MarcasNoCardapio, marcaId: string, categoria: string | null | undefined): boolean {
   const k = chave(categoria);
-  for (const m of mm.marcas) if (m.categorias.some((c) => chave(c) === k)) return m.id === marcaId;
-  return true;
+  let deAlguma = false;
+  for (const m of mm.marcas) {
+    if (!m.categorias.some((c) => chave(c) === k)) continue;
+    if (m.id === marcaId) return true;
+    deAlguma = true;
+  }
+  return !deAlguma;
 }
 
 /** "Smash da Vila" → "SV". */

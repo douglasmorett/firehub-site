@@ -50,8 +50,13 @@ export type ConfigDaVitrine = {
 
 export type ProdutoDaVitrine = {
   id: string;
-  /** Id da marca, ou MARCA_DOS_EXTRAS para o que acompanha qualquer marca. */
+  /** Id da marca, ou MARCA_DOS_EXTRAS para o que acompanha qualquer marca. Em mais de uma marca: a primeira. */
   marca: string;
+  /**
+   * Todas as marcas em que o produto aparece: a categoria pode estar em várias
+   * (bebida só em duas das cinco — Lucas, 11/11/2026). Vazio ou ausente = só `marca`.
+   */
+  marcas?: string[];
   categoria: string;
   nome: string;
   descricao: string;
@@ -63,3 +68,36 @@ export type ProdutoDaVitrine = {
 export const MARCA_DOS_EXTRAS = "extras";
 
 export const reais = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+/** As marcas do produto (a primeira é `marca`). Para acompanhar: [MARCA_DOS_EXTRAS]. */
+export const marcasDoProduto = (p: Pick<ProdutoDaVitrine, "marca" | "marcas">): string[] => (p.marcas?.length ? p.marcas : [p.marca]);
+
+// ─── Contraste ───────────────────────────────────────────────────────────
+// A cor é livre (Lucas, 11/11/2026: o amarelo da marca dele). Texto branco em
+// cima de amarelo some, e amarelo como texto no fundo branco também.
+
+/** Luminância relativa (WCAG) de "#RRGGBB"; null se não for uma cor assim. */
+function luminancia(cor: string): number | null {
+  if (!/^#[0-9a-f]{6}$/i.test(cor)) return null;
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(cor.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+const contraComBranco = (l: number) => 1.05 / (l + 0.05);
+
+/** O texto EM CIMA da cor (botão, selo, iniciais): branco, ou escuro quando a cor é clara (amarelo). */
+export function textoSobreCor(cor: string): string {
+  const l = luminancia(cor);
+  return l !== null && contraComBranco(l) < 3 ? "#1F1F23" : "#FFFFFF";
+}
+
+/** A cor usada COMO TEXTO no fundo branco (nome da marca, "+"): cor clara escurece até dar para ler. */
+export function corParaTexto(cor: string): string {
+  if (luminancia(cor) === null) return cor;
+  let [r, g, b] = [1, 3, 5].map((i) => parseInt(cor.slice(i, i + 2), 16));
+  let atual = cor;
+  for (let i = 0; i < 20 && contraComBranco(luminancia(atual)!) < 3; i++) {
+    [r, g, b] = [r, g, b].map((c) => Math.round(c * 0.9));
+    atual = `#${[r, g, b].map((c) => c.toString(16).padStart(2, "0")).join("")}`.toUpperCase();
+  }
+  return atual;
+}
