@@ -554,10 +554,22 @@ export default function CustomerStorePage({
       const id = (new URLSearchParams(window.location.search).get("produto") || "").trim();
       if (!id) return;
       const achado = menuProducts.find((p) => p.id === id);
+      // Tira o ?produto= da URL de base: o modal põe de volta enquanto está
+      // aberto, e fechar não deixa um link que reabre o produto no F5.
+      const semProduto = new URL(window.location.href);
+      semProduto.searchParams.delete("produto");
+      window.history.replaceState(window.history.state, "", semProduto.toString());
       if (achado) setComboProduct(achado);
     } catch { /* sem URL legível: segue no cardápio */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  /** O link que abre direto o produto (lido no efeito acima). */
+  const linkDoProduto = (id: string) => {
+    if (typeof window === "undefined") return undefined;
+    const u = new URL(window.location.origin + window.location.pathname);
+    u.searchParams.set("produto", id);
+    return u.toString();
+  };
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // Modais especiais de alto engajamento
@@ -5825,6 +5837,7 @@ export default function CustomerStorePage({
             comboGroups: comboProduct.comboGroups || [],
             isCombo: comboProduct.isCombo
           }}
+          linkDoProduto={mesa ? undefined : linkDoProduto(comboProduct.id)}
           onClose={() => setComboProduct(null)}
           onConfirm={(selections, extraSum, qty, comboNotes) => {
             const temGrupos = Boolean(comboProduct.comboGroups?.length);

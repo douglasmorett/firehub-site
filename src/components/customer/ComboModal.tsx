@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useMemo, useEffect, useRef } from "react";
-import { X, Plus, Minus, Check, Search } from "lucide-react";
+import { X, Plus, Minus, Check, Search, Share2 } from "lucide-react";
 import { precoMinimoDoProduto, somaDosAdicionais, regraDoGrupo, precoDaOpcaoNaTela, opcaoDisponivelNaTela, grupoAguardaEscolha } from "@/lib/preco-combo";
 import { useAvisoDoCardapio } from "./AvisoDoCardapio";
 import { itemFixoDoGrupo } from "@/lib/combo-e-pergunta";
@@ -148,6 +148,13 @@ interface ComboModalProps {
   rotuloDoBotao?: string;
   /** Campo de busca nas perguntas com 10+ opções (as telas da mesa e do balcão). */
   buscaNasOpcoes?: boolean;
+  /**
+   * Só no cardápio da loja: o link que abre direto este produto (?produto=).
+   * Com ele, a barra do navegador mostra esse link enquanto o produto está
+   * aberto e aparece o botão de compartilhar (lojista manda a oferta no
+   * WhatsApp, no Stories). Mesa e balcão não passam: lá não há o que mandar.
+   */
+  linkDoProduto?: string;
 }
 
 /**
@@ -170,7 +177,8 @@ interface ComboModalProps {
  */
 const semAcento = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
-export default function ComboModal({ product, onClose, onConfirm, inicial, rotuloDoBotao, buscaNasOpcoes }: ComboModalProps) {
+export default function ComboModal({ product, onClose, onConfirm, inicial, rotuloDoBotao, buscaNasOpcoes, linkDoProduto }: ComboModalProps) {
+  const [linkCopiado, setLinkCopiado] = useState(false);
   const groups = product.comboGroups || [];
   const [comboQty, setComboQty] = useState(() => Math.max(1, Math.min(99, Math.floor(Number(inicial?.qty) || 1))));
   const [notes, setNotes] = useState(inicial?.notes || "");
@@ -203,7 +211,9 @@ export default function ComboModal({ product, onClose, onConfirm, inicial, rotul
   // extra no history é consumida no unmount quando o fechamento veio do X.
   useEffect(() => {
     let fechadoPeloBack = false;
-    try { window.history.pushState({ fhProduto: true }, ""); } catch {}
+    // Com o link do produto, a mesma entrada leva a URL dele: a barra mostra o
+    // link certo para copiar, e voltar/fechar devolve a do cardápio.
+    try { window.history.pushState({ fhProduto: true }, "", linkDoProduto || undefined); } catch {}
     const onPop = () => { fechadoPeloBack = true; onCloseRef.current(); };
     window.addEventListener("popstate", onPop);
     return () => {
@@ -463,6 +473,35 @@ export default function ComboModal({ product, onClose, onConfirm, inicial, rotul
         >
           <X size={20} />
         </button>
+
+        {linkDoProduto && (
+          <button
+            type="button"
+            onClick={async () => {
+              // Celular: a folha de compartilhar do sistema (WhatsApp etc.).
+              // Computador: copia o link. Cancelar a folha não é erro.
+              try {
+                if (navigator.share) { await navigator.share({ title: product.name, url: linkDoProduto }); return; }
+              } catch (e: any) { if (e?.name === "AbortError") return; }
+              try {
+                await navigator.clipboard.writeText(linkDoProduto);
+                setLinkCopiado(true);
+                setTimeout(() => setLinkCopiado(false), 2500);
+              } catch { window.prompt("Copie o link do produto:", linkDoProduto); }
+            }}
+            aria-label="Compartilhar este produto"
+            title="Compartilhar este produto"
+            style={{
+              position: "absolute", top: "12px", right: "64px", zIndex: 10, height: "44px", minHeight: "44px",
+              padding: "0 14px", borderRadius: "22px", backgroundColor: "rgba(255, 255, 255, 0.92)",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.18)", border: "none", cursor: "pointer", display: "flex",
+              alignItems: "center", gap: "6px", color: "#1E293B", fontSize: "14px", fontWeight: 700, boxSizing: "border-box",
+            }}
+          >
+            {linkCopiado ? <Check size={18} /> : <Share2 size={18} />}
+            {linkCopiado ? "Link copiado!" : "Compartilhar"}
+          </button>
+        )}
 
         {/* SCROLLABLE BODY */}
         <div style={{ flex: 1, overflowY: "auto", paddingBottom: "1rem", WebkitOverflowScrolling: "touch" }}>
