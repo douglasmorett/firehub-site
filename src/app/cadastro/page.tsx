@@ -3,6 +3,7 @@ import { nomeDaLojaPeloCnpj } from "@/lib/slug-da-loja";
 import { diasDeTesteDoLink, TRIAL_PADRAO_DIAS } from "@/lib/trial-do-cadastro";
 import { useState, useEffect } from "react";
 import { VERSAO_DOS_TERMOS } from "@/lib/termos-versao";
+import { FIREHUB_PLAN } from "@/lib/firehub-billing";
 
 const API = "";
 const PORTAL = API;
@@ -90,6 +91,10 @@ export default function CadastroPage() {
   // Step 4 - Senha
   const [senha, setSenha] = useState("");
   const [termos, setTermos] = useState(false);
+  // Aceite à parte, a pedido do Douglas (11/11/2026): lojista que parou de usar
+  // e deixou o iFood/99 conectado seguia recebendo pedido depois do teste e
+  // contestava a mensalidade. Agora o aviso é explícito e obrigatório.
+  const [aceiteIntegracoes, setAceiteIntegracoes] = useState(false);
 
   // Step 5 - Sucesso
   const [createdStore, setCreatedStore] = useState("");
@@ -154,6 +159,7 @@ export default function CadastroPage() {
     e.preventDefault();
     if (senha.length < 6) { setError("Senha precisa ter pelo menos 6 caracteres."); return; }
     if (!termos) { setError("Aceite os termos para continuar."); return; }
+    if (!aceiteIntegracoes) { setError("Confirme que entendeu a regra das integrações depois do teste."); return; }
     setError("");
     if (!titularNome) setTitularNome(nome);
     if (!titularDoc) setTitularDoc(cpf.replace(/\D/g, "") || cnpjData?.cnpj || "");
@@ -460,6 +466,13 @@ export default function CadastroPage() {
                       Li e aceito os <a href="/termos" target="_blank" rel="noopener noreferrer" style={{ color: "#EF4444", fontWeight: 700 }}>Termos de Uso</a>
                       {" "}e a{" "}
                       <a href="/privacidade" target="_blank" rel="noopener noreferrer" style={{ color: "#EF4444", fontWeight: 700 }}>Política de Privacidade</a> do FireHub
+                    </span>
+                  </label>
+                  <label className="check-opt">
+                    <input type="checkbox" checked={aceiteIntegracoes} onChange={e => setAceiteIntegracoes(e.target.checked)} />
+                    <span>
+                      <strong>Entendi que, se eu não for continuar depois dos {trialDays} dias de teste grátis, preciso desconectar as integrações com o iFood e a 99Food</strong> (em Integrações).
+                      {" "}Se entrar qualquer pedido depois do teste, mesmo que um só, a mensalidade daquele mês será cobrada (mínimo de {FIREHUB_PLAN.MIN_MONTHLY.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}).
                     </span>
                   </label>
                   <button type="submit" className="btn" disabled={loading}>
