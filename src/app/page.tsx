@@ -723,8 +723,8 @@ export default function Home() {
         visual={<DisparoDemo />}
       />
 
-      {/* SEÇÃO INTEGRAÇÕES — só as que estão ligadas hoje. Keeta: código pronto,
-          desligada até a Keeta liberar o app. Facebook não é marketplace (é o
+      {/* SEÇÃO INTEGRAÇÕES — só as que estão ligadas hoje. Keeta: homologada e
+          em produção desde 11/11/2026. Facebook não é marketplace (é o
           Tráfego Pago, que tem seção própria). */}
       <section className="sec" style={{ background: "#FFFFFF", padding: "4rem 0", borderTop: "1px solid rgba(0,0,0,0.05)" }}>
         <div className="w">
@@ -740,6 +740,7 @@ export default function Home() {
               <div key={rep} style={{ display: "flex", gap: "4.5rem", alignItems: "center" }} aria-hidden={rep === 1}>
                 <div className="lp-logo"><img src="/images/logos/ifood.png" alt="iFood" /></div>
                 <div className="lp-logo"><img src="/images/logos/99.svg" alt="99Food" style={{ maxHeight: 36 }} /></div>
+                <div className="lp-logo"><img src="/images/logos/keeta.png" alt="Keeta" style={{ maxHeight: 34 }} /></div>
                 <div className="lp-logo"><img src="/images/logos/jotaja.png" alt="Jotajá" /></div>
                 <div className="lp-logo"><img src="/images/logos/brendi.webp" alt="Brendi" style={{ maxHeight: 34 }} /></div>
                 <div className="lp-logo"><img src="/images/logos/anotaai-logo.svg" alt="Anota AI" style={{ maxHeight: 34 }} /></div>
