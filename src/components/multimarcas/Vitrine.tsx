@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ArrowLeft, Bike, Check, ChevronRight, Clock, Minus, Plus, Search, ShoppingBag, Star, X } from "lucide-react";
-import { MARCA_DOS_EXTRAS, reais, type ConfigDaVitrine, type MarcaDaVitrine, type ProdutoDaVitrine } from "@/lib/multimarcas/vitrine";
+import { MARCA_DOS_EXTRAS, corParaTexto, marcasDoProduto, reais, textoSobreCor, type ConfigDaVitrine, type MarcaDaVitrine, type ProdutoDaVitrine } from "@/lib/multimarcas/vitrine";
 import s from "./Vitrine.module.css";
 
 /**
@@ -18,7 +18,8 @@ import s from "./Vitrine.module.css";
  *   dentro, com uma sacola de mentira e a tela "assim chega na cozinha".
  */
 
-type ItemDaSacola = { produtoId: string; qtd: number; obs: string };
+/** `marca`: a marca em que o item entrou (a categoria pode estar em várias). */
+type ItemDaSacola = { produtoId: string; qtd: number; obs: string; marca: string };
 type Tela = { tipo: "inicio" } | { tipo: "marca"; id: string } | { tipo: "pronto"; numero: number; itens: ItemDaSacola[]; total: number };
 
 type Catalogo = { produtos: ProdutoDaVitrine[]; porId: Map<string, ProdutoDaVitrine> };
@@ -45,7 +46,7 @@ export function iniciais(nome: string) {
 function LogoDaMarca({ marca, tamanho = 56 }: { marca: Pick<MarcaDaVitrine, "logo" | "cor" | "nome">; tamanho?: number }) {
   if (marca.logo) return <img className={s.logo} src={marca.logo} alt="" style={{ width: tamanho, height: tamanho }} />;
   return (
-    <div className={s.logoLetra} style={{ width: tamanho, height: tamanho, background: marca.cor, fontSize: tamanho * 0.36 }} aria-hidden>
+    <div className={s.logoLetra} style={{ width: tamanho, height: tamanho, background: marca.cor, color: textoSobreCor(marca.cor), fontSize: tamanho * 0.36 }} aria-hidden>
       {iniciais(marca.nome)}
     </div>
   );
@@ -116,9 +117,12 @@ export default function Vitrine({ config, produtos, embutida = false, publica }:
   const marcas = config.marcas.filter((m) => !m.oculta);
   const marcaPorId = useMemo(() => new Map(config.marcas.map((m) => [m.id, m])), [config.marcas]);
   const tipos = useMemo(() => [...new Set(marcas.map((m) => m.tipo).filter(Boolean))], [marcas]);
-  const estiloDaCor = { "--cor": config.cor } as CSSProperties;
+  // A cor é livre: o texto em cima dela e ela como texto se ajustam (amarelo pede texto escuro).
+  const estiloDaCor = { "--cor": config.cor, "--cor-texto": textoSobreCor(config.cor), "--cor-tinta": corParaTexto(config.cor) } as CSSProperties;
   // Na página pública, o que é "para acompanhar" abre na primeira marca (aparece em todas).
   const marcaDoProduto = (p: ProdutoDaVitrine) => (p.marca === MARCA_DOS_EXTRAS ? marcas[0]?.id ?? null : p.marca);
+  // A primeira marca visível do produto (ele pode estar em várias); null = para acompanhar.
+  const marcaDe = (p: ProdutoDaVitrine) => marcasDoProduto(p).map((id) => marcaPorId.get(id)).find((m) => m && !m.oculta) ?? null;
 
   function irPara(t: Tela) {
     setTela(t);
@@ -128,9 +132,11 @@ export default function Vitrine({ config, produtos, embutida = false, publica }:
   }
 
   function adicionar(p: ProdutoDaVitrine, qtd = 1, obs = "") {
+    // Dentro de uma marca, o item vai com ela; fora (busca, destaque), com a primeira dele.
+    const marca = tela.tipo === "marca" && marcasDoProduto(p).includes(tela.id) ? tela.id : p.marca;
     setSacola((atual) => {
-      const i = atual.findIndex((x) => x.produtoId === p.id && x.obs === obs);
-      if (i < 0) return [...atual, { produtoId: p.id, qtd, obs }];
+      const i = atual.findIndex((x) => x.produtoId === p.id && x.obs === obs && x.marca === marca);
+      if (i < 0) return [...atual, { produtoId: p.id, qtd, obs, marca }];
       const nova = [...atual];
       nova[i] = { ...nova[i], qtd: nova[i].qtd + qtd };
       return nova;
@@ -142,12 +148,12 @@ export default function Vitrine({ config, produtos, embutida = false, publica }:
 
   const subtotal = sacola.reduce((t, i) => t + (PRODUTO.get(i.produtoId)?.preco ?? 0) * i.qtd, 0);
   const qtdItens = publica ? qtdDaLoja : sacola.reduce((t, i) => t + i.qtd, 0);
-  const lojasNaSacola = [...new Set(sacola.map((i) => PRODUTO.get(i.produtoId)?.marca))].filter((m) => m && m !== MARCA_DOS_EXTRAS).length;
+  const lojasNaSacola = [...new Set(sacola.map((i) => i.marca))].filter((m) => m && m !== MARCA_DOS_EXTRAS).length;
   const taxa = config.entrega.taxa ?? 0;
 
   const termo = busca.trim().toLowerCase();
   const achados = termo.length >= 2
-    ? produtos.filter((p) => (p.marca === MARCA_DOS_EXTRAS || (marcaPorId.get(p.marca) && !marcaPorId.get(p.marca)!.oculta))
+    ? produtos.filter((p) => (p.marca === MARCA_DOS_EXTRAS || marcaDe(p))
         && (p.nome.toLowerCase().includes(termo) || p.descricao.toLowerCase().includes(termo) || p.categoria.toLowerCase().includes(termo)))
     : [];
 
@@ -155,6 +161,8 @@ export default function Vitrine({ config, produtos, embutida = false, publica }:
   const marcasAchadas = termo.length >= 2 ? marcas.filter((m) => m.nome.toLowerCase().includes(termo) || m.tipo.toLowerCase().includes(termo)) : [];
 
   const marcaAtual = tela.tipo === "marca" ? marcaPorId.get(tela.id) ?? null : null;
+  // Aberto de dentro de uma marca, a folha mostra essa marca (o item pode estar em várias).
+  const marcaDoAberto = aberto ? (marcaAtual && marcasDoProduto(aberto).includes(marcaAtual.id) ? marcaAtual : marcaDe(aberto)) : null;
   const abrirMarca = (id: string | null): Acao => (publica ? (id ? { href: linkDaMarca(publica, id) } : {}) : { onClick: () => { if (id) irPara({ tipo: "marca", id }); } });
   const abrirProduto = (p: ProdutoDaVitrine): Acao => (publica ? { href: linkDoProduto(publica, marcaDoProduto(p), p.id) } : { onClick: () => setAberto(p) });
   const abrirSacola: Acao = publica ? { href: linkDaSacola(publica) } : { onClick: () => setSacolaAberta(true) };
@@ -205,8 +213,8 @@ export default function Vitrine({ config, produtos, embutida = false, publica }:
               <h2 className={s.tituloSecao}>{achados.length ? `${achados.length} ite${achados.length > 1 ? "ns" : "m"}` : marcasAchadas.length ? "Nenhum item com esse nome" : "Nada encontrado"}</h2>
               <div className={s.listaProdutos}>
                 {achados.map((p) => (
-                  <LinhaDoProduto key={p.id} p={p} marca={marcaPorId.get(p.marca) ?? null} mostrarMarca
-                    fechada={!!marcaPorId.get(p.marca) && !marcaPorId.get(p.marca)!.aberta}
+                  <LinhaDoProduto key={p.id} p={p} marca={marcaDe(p)} mostrarMarca
+                    fechada={!!marcaDe(p) && !marcaDe(p)!.aberta}
                     toque={abrirProduto(p)} onAdicionar={publica ? undefined : () => adicionar(p)} />
                 ))}
               </div>
@@ -267,8 +275,8 @@ export default function Vitrine({ config, produtos, embutida = false, publica }:
       )}
 
       {aberto && (
-        <FolhaDoProduto p={aberto} marca={marcaPorId.get(aberto.marca) ?? null}
-          fechada={!!marcaPorId.get(aberto.marca) && !marcaPorId.get(aberto.marca)!.aberta}
+        <FolhaDoProduto p={aberto} marca={marcaDoAberto}
+          fechada={!!marcaDoAberto && !marcaDoAberto.aberta}
           onFechar={() => setAberto(null)}
           onAdicionar={(qtd, obs) => { adicionar(aberto, qtd, obs); setAberto(null); }} />
       )}
@@ -351,7 +359,7 @@ function CartaoDaMarca({ marca, config, toque }: { marca: MarcaDaVitrine; config
 
 function Destaques({ marcaPorId, escolhidos, toque }: { marcaPorId: Map<string, MarcaDaVitrine>; escolhidos?: string[]; toque: (p: ProdutoDaVitrine) => Acao }) {
   const { produtos, porId } = useCatalogo();
-  const visivel = (p: ProdutoDaVitrine) => p.marca === MARCA_DOS_EXTRAS || (marcaPorId.get(p.marca) && !marcaPorId.get(p.marca)!.oculta);
+  const visivel = (p: ProdutoDaVitrine) => p.marca === MARCA_DOS_EXTRAS || marcasDoProduto(p).some((id) => marcaPorId.get(id) && !marcaPorId.get(id)!.oculta);
   // Os itens que o dono escolheu no editor, na ordem dele. Sem escolha: um
   // produto com foto por marca visível, para mostrar a variedade da rede.
   const vistas = new Set<string>();
@@ -370,7 +378,7 @@ function Destaques({ marcaPorId, escolhidos, toque }: { marcaPorId: Map<string, 
       <div className={s.carrossel}>
         {lista.map((p) => (
           <Toque key={p.id} className={s.miniProduto} {...toque(p)}>
-            {p.foto ? <img src={p.foto} alt="" loading="lazy" /> : <span className={s.miniSemFoto} style={{ background: marcaPorId.get(p.marca)?.cor }}>{iniciais(p.nome)}</span>}
+            {p.foto ? <img src={p.foto} alt="" loading="lazy" /> : <span className={s.miniSemFoto} style={marcaPorId.get(p.marca) ? { background: marcaPorId.get(p.marca)!.cor, color: textoSobreCor(marcaPorId.get(p.marca)!.cor) } : undefined}>{iniciais(p.nome)}</span>}
             <span className={s.miniMarca}>{marcaPorId.get(p.marca)?.nome}</span>
             <strong>{p.nome}</strong>
             <span className={s.miniPreco}>{reais(p.preco)}</span>
@@ -387,7 +395,7 @@ function PaginaDaMarca({ marca, config, onAbrir, onAdicionar }: {
   marca: MarcaDaVitrine; config: ConfigDaVitrine; onAbrir: (p: ProdutoDaVitrine) => void; onAdicionar: (p: ProdutoDaVitrine) => void;
 }) {
   const { produtos: todos } = useCatalogo();
-  const produtos = todos.filter((p) => p.marca === marca.id);
+  const produtos = todos.filter((p) => marcasDoProduto(p).includes(marca.id));
   const extras = todos.filter((p) => p.marca === MARCA_DOS_EXTRAS);
   const categorias = [...new Set(produtos.map((p) => p.categoria))].sort((a, b) => Number(b === "Destaques") - Number(a === "Destaques"));
   const categoriasExtras = [...new Set(extras.map((p) => p.categoria))];
@@ -470,11 +478,11 @@ function LinhaDoProduto({ p, marca, mostrarMarca, fechada, toque, onAdicionar }:
       {/* Na página pública não há o "+": a foto também é o link do produto. */}
       {!onAdicionar && toque.href ? (
         <a href={toque.href} className={s.produtoFoto} aria-hidden tabIndex={-1}>
-          {p.foto ? <img src={p.foto} alt="" loading="lazy" /> : <span className={s.semFoto} style={{ background: marca?.cor ?? "#868E96" }}>{iniciais(p.nome)}</span>}
+          {p.foto ? <img src={p.foto} alt="" loading="lazy" /> : <span className={s.semFoto} style={{ background: marca?.cor ?? "#868E96", color: textoSobreCor(marca?.cor ?? "#868E96") }}>{iniciais(p.nome)}</span>}
         </a>
       ) : (
         <div className={s.produtoFoto}>
-          {p.foto ? <img src={p.foto} alt="" loading="lazy" /> : <span className={s.semFoto} style={{ background: marca?.cor ?? "#868E96" }}>{iniciais(p.nome)}</span>}
+          {p.foto ? <img src={p.foto} alt="" loading="lazy" /> : <span className={s.semFoto} style={{ background: marca?.cor ?? "#868E96", color: textoSobreCor(marca?.cor ?? "#868E96") }}>{iniciais(p.nome)}</span>}
           {!fechada && onAdicionar && (
             <button className={s.mais} onClick={onAdicionar} aria-label={`Adicionar ${p.nome}`}><Plus size={18} /></button>
           )}
@@ -524,7 +532,7 @@ function FolhaDoProduto({ p, marca, fechada, onFechar, onAdicionar }: {
 function agruparPorMarca(itens: ItemDaSacola[], PRODUTO: Map<string, ProdutoDaVitrine>) {
   const grupos = new Map<string, { item: ItemDaSacola; idx: number }[]>();
   itens.forEach((item, idx) => {
-    const m = PRODUTO.get(item.produtoId)?.marca ?? MARCA_DOS_EXTRAS;
+    const m = PRODUTO.get(item.produtoId) ? item.marca : MARCA_DOS_EXTRAS;
     if (!grupos.has(m)) grupos.set(m, []);
     grupos.get(m)!.push({ item, idx });
   });

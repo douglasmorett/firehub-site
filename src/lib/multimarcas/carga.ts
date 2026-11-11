@@ -14,17 +14,18 @@ import { MARCA_DOS_EXTRAS, type ConfigDaVitrine, type ProdutoDaVitrine } from ".
 
 /**
  * Nota de cada marca: a média das avaliações dos pedidos que tiveram item da
- * marca (um pedido com duas marcas conta para as duas). Mesmas regras do
+ * marca (um pedido com duas marcas conta para as duas; categoria que está em
+ * várias marcas conta para cada uma delas). Mesmas regras do
  * cardápio: só se a loja mostra avaliações, e só as de nota mínima que ela
  * escolheu. Puro, para o teste.
  */
 export function notasPorMarca(
   avaliacoes: { rating: number; categorias: (string | null | undefined)[] }[],
-  mapa: Map<string, string>,
+  mapa: Map<string, string[]>,
 ): Map<string, { media: number; total: number }> {
   const soma = new Map<string, { s: number; n: number }>();
   for (const a of avaliacoes) {
-    const marcas = new Set(a.categorias.map((c) => mapa.get(chaveDaCategoria(c || ""))).filter(Boolean) as string[]);
+    const marcas = new Set(a.categorias.flatMap((c) => mapa.get(chaveDaCategoria(c || "")) ?? []));
     for (const m of marcas) {
       const x = soma.get(m) ?? { s: 0, n: 0 };
       x.s += a.rating;
@@ -67,7 +68,8 @@ export async function vitrineDaLoja(franchisee: any, config: ConfigDaPagina): Pr
   const ordem = new Map(((cardapio.storeCategories as any[]) || []).map((c, i) => [chaveDaCategoria(c.name), i]));
   const produtos: ProdutoDaVitrine[] = ordenarComoALoja(((cardapio.menuProducts as any[]) || []), ordem).map((p: any) => ({
     id: String(p.id),
-    marca: mapa.get(chaveDaCategoria(p.category)) ?? MARCA_DOS_EXTRAS,
+    marca: mapa.get(chaveDaCategoria(p.category))?.[0] ?? MARCA_DOS_EXTRAS,
+    marcas: mapa.get(chaveDaCategoria(p.category)) ?? [],
     categoria: String(p.category || ""),
     nome: String(p.name || ""),
     descricao: String(p.description || ""),

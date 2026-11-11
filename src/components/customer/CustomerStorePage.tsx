@@ -85,6 +85,7 @@ import { FaixaDoClube, ModalDoClube, ClubeNaSacola } from "./clube/ClubeNoCardap
 import ConviteDoApp from "./clube/ConviteDoApp";
 import { descontoDoClube as calcularDescontoDoClube } from "@/lib/clube/regras";
 import { categoriaEntraNaMarca, siglaDaMarca, type MarcasNoCardapio } from "@/lib/multimarcas/no-cardapio";
+import { textoSobreCor } from "@/lib/multimarcas/vitrine";
 import { ehRetirada, etapaDoAcompanhamento } from "@/lib/status-para-o-cliente";
 import { codigoGuardado, guardarCodigoDoPedido } from "@/lib/codigo-do-pedido-no-navegador";
 
@@ -153,6 +154,9 @@ type CartItem = MenuProduct & {
   /** O id do MenuProduct de verdade. `id` da linha do carrinho ganha sufixo
    *  `_<timestamp>[_<n>]` quando é combo ou tem observação. */
   productId?: string;
+  /** Multimarcas: a marca aberta quando o item entrou na sacola (a comanda usa
+   *  quando a categoria está em mais de uma marca — lib/multimarcas/itens.ts). */
+  marca?: string;
 };
 
 // ── O ID DO PRODUTO A PARTIR DA LINHA DO CARRINHO ─────────────────────────
@@ -1389,10 +1393,12 @@ export default function CustomerStorePage({
     }
     if (!cabeNoEstoque(product, qty || 1)) return;
     const finalPrice = product.price + extraSum;
+    const daMarca = marcaAtiva ? { marca: marcaAtiva.id } : {};
     setCart(prev => {
       if (cs) {
         return [...prev, {
           ...product,
+          ...daMarca,
           id: product.id + '_' + Date.now(),
           productId: product.id,
           price: finalPrice,
@@ -1406,6 +1412,7 @@ export default function CustomerStorePage({
       if (itemNotes && itemNotes.trim()) {
         return [...prev, {
           ...product,
+          ...daMarca,
           id: product.id + '_' + Date.now(),
           productId: product.id,
           price: finalPrice,
@@ -1415,7 +1422,7 @@ export default function CustomerStorePage({
       }
       const ex = prev.find(i => i.id === product.id && !i.comboSelections && !(i as any).notes);
       if (ex) return prev.map(i => (i.id === product.id && !i.comboSelections && !(i as any).notes) ? { ...i, quantity: i.quantity + (qty || 1) } : i);
-      return [...prev, { ...product, productId: product.id, price: finalPrice, quantity: qty || 1 }];
+      return [...prev, { ...product, ...daMarca, productId: product.id, price: finalPrice, quantity: qty || 1 }];
     });
     trackPixelEvent("AddToCart", { content_name: product.name, value: finalPrice * (qty || 1), currency: "BRL" });
     marcarNoFunil("carrinho");
@@ -2844,7 +2851,7 @@ export default function CustomerStorePage({
           ...(clubeApp.sessao && !mesa ? { sessaoDoCliente: clubeApp.sessao } : {}),
           // A instalação do app (apps/loja): prova de que o pedido é de dentro do aplicativo.
           ...(clubeApp.noApp && instalacaoDoApp() ? { instalacaoDoApp: instalacaoDoApp() } : {}),
-          items: cart.map(i => ({ menuProductId: idDoProduto(i), quantity: i.quantity, comboSelections: i.comboSelections || null, notes: i.notes || "" })),
+          items: cart.map(i => ({ menuProductId: idDoProduto(i), quantity: i.quantity, comboSelections: i.comboSelections || null, notes: i.notes || "", ...(i.marca ? { marca: i.marca } : {}) })),
           // Cookies do GA4 desta pessoa. O `purchase` que o SERVIDOR manda
           // (src/lib/ga-purchase.ts) precisa deles para cair no mesmo visitante
           // e na mesma sessão — sem eles a venda vira "Direct" e o anúncio que
@@ -5089,7 +5096,7 @@ export default function CustomerStorePage({
         <div className="store-header-inner">
           {marcaAtiva ? (
             marcaAtiva.logo ? <img src={marcaAtiva.logo} alt="Logo" className="store-logo" /> : (
-              <div className="store-logo-placeholder" style={{ background: marcaAtiva.cor, color: "#fff", fontWeight: 800, fontSize: 22 }}>{siglaDaMarca(marcaAtiva.nome)}</div>
+              <div className="store-logo-placeholder" style={{ background: marcaAtiva.cor, color: textoSobreCor(marcaAtiva.cor), fontWeight: 800, fontSize: 22 }}>{siglaDaMarca(marcaAtiva.nome)}</div>
             )
           ) : franchisee.storeLogo ? (
             <img src={franchisee.storeLogo} alt="Logo" className="store-logo" />

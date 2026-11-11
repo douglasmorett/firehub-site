@@ -7,13 +7,15 @@
  * marca aparece em todas (bebida, sobremesa): a seção "Onde cada categoria
  * aparece" mostra isso como a opção "Todas as marcas" (Lucas, 23/10/2026).
  * Destaques e banners se escolhem pelo item, com busca (Lucas, 25/10/2026).
+ * Uma categoria pode ficar em duas ou mais marcas, e a cor da página é livre
+ * (Lucas, 11/11/2026: bebida só no Frangoso e no Braseou; o amarelo da marca).
  * Grava em PUT /api/store/multimarcas/pagina (lib/multimarcas/pagina.ts).
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Check, ChevronDown, Copy, ExternalLink, Eye, EyeOff, ImagePlus, Loader2, Plus, Search, Sparkles, Star, Trash2, X } from "lucide-react";
 import Vitrine from "@/components/multimarcas/Vitrine";
-import { MARCA_DOS_EXTRAS, reais, type ConfigDaVitrine, type ProdutoDaVitrine } from "@/lib/multimarcas/vitrine";
+import { MARCA_DOS_EXTRAS, marcasDoProduto, reais, textoSobreCor, type ConfigDaVitrine, type ProdutoDaVitrine } from "@/lib/multimarcas/vitrine";
 import type { BannerDaPagina, ConfigDaPagina, MarcaDaPagina } from "@/lib/multimarcas/pagina";
 import s from "./Editor.module.css";
 
@@ -28,7 +30,7 @@ type Dados = {
   vitrine: { config: ConfigDaVitrine; produtos: ProdutoDaVitrine[] };
 };
 
-const CORES = ["#E8590C", "#C92A2A", "#1F1F23", "#2B8A3E", "#1864AB", "#7048E8", "#F08C00", "#C2255C"];
+const CORES = ["#E8590C", "#C92A2A", "#1F1F23", "#2B8A3E", "#1864AB", "#7048E8", "#F08C00", "#FAB005", "#C2255C"];
 const TIPOS = ["Hambúrguer", "Pizza", "Frango", "Marmita", "Açaí", "Japonês", "Pastel", "Esfiha", "Doces", "Saudável", "Lanches", "Bebidas"];
 const chave = (n: string) => n.trim().toLowerCase();
 const LIMITE_DE_DESTAQUES = 20;
@@ -75,6 +77,26 @@ function CampoDeImagem({ valor, rotulo, quadrado, onMudar, onErro }: {
   );
 }
 
+/** As sugestões, o seletor do navegador e o código da cor (ex.: #FFC800), para usar a cor exata da marca. */
+function EscolhaDeCor({ valor, onMudar }: { valor: string; onMudar: (cor: string) => void }) {
+  // O que está sendo digitado; null = mostra a cor atual. Só vale quando vira um código completo.
+  const [digitado, setDigitado] = useState<string | null>(null);
+  return (
+    <div className={s.cores}>
+      {CORES.map((c) => <button key={c} className={c === valor ? s.corAtiva : s.cor} style={{ background: c }} onClick={() => { setDigitado(null); onMudar(c); }} aria-label={c} />)}
+      <input type="color" value={valor} onChange={(e) => { setDigitado(null); onMudar(e.target.value.toUpperCase()); }} aria-label="Escolher outra cor" title="Escolher outra cor" />
+      <input className={s.codigoDaCor} value={digitado ?? valor} maxLength={7} placeholder="#FFC800" aria-label="Código da cor" spellCheck={false}
+        onBlur={() => setDigitado(null)}
+        onChange={(e) => {
+          const v = e.target.value.trim();
+          setDigitado(v);
+          const hex = v.startsWith("#") ? v : `#${v}`;
+          if (/^#[0-9a-f]{6}$/i.test(hex)) onMudar(hex.toUpperCase());
+        }} />
+    </div>
+  );
+}
+
 export default function EditorDoMultimarcas({ onAviso }: { onAviso: (tipo: "ok" | "erro", titulo: string, detalhe?: string) => void }) {
   const [dados, setDados] = useState<Dados | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -108,9 +130,10 @@ export default function EditorDoMultimarcas({ onAviso }: { onAviso: (tipo: "ok" 
     return () => window.removeEventListener("beforeunload", h);
   }, [mudou]);
 
-  const donoDaCategoria = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const marca of config?.marcas ?? []) for (const c of marca.categorias) m.set(chave(c), marca.id);
+  /** As marcas de cada categoria (pode ser mais de uma); fora do mapa = todas as marcas. */
+  const marcasDaCategoria = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const marca of config?.marcas ?? []) for (const c of marca.categorias) m.set(chave(c), [...(m.get(chave(c)) ?? []), marca.id]);
     return m;
   }, [config]);
 
@@ -127,9 +150,12 @@ export default function EditorDoMultimarcas({ onAviso }: { onAviso: (tipo: "ok" 
         nota: notas.get(m.id)?.nota ?? null, avaliacoes: notas.get(m.id)?.avaliacoes ?? 0, aberta,
       })),
     };
-    const produtos = dados.vitrine.produtos.map((p) => ({ ...p, marca: donoDaCategoria.get(chave(p.categoria)) ?? MARCA_DOS_EXTRAS }));
+    const produtos = dados.vitrine.produtos.map((p) => {
+      const ids = marcasDaCategoria.get(chave(p.categoria)) ?? [];
+      return { ...p, marca: ids[0] ?? MARCA_DOS_EXTRAS, marcas: ids };
+    });
     return { config: vc, produtos };
-  }, [dados, config, donoDaCategoria]);
+  }, [dados, config, marcasDaCategoria]);
 
   if (erro) return <div className={s.erro}>{erro}</div>;
   if (!dados || !config || !previa) return <div className={s.carregando}><Loader2 size={18} className={s.girando} /> Carregando a página das suas marcas…</div>;
@@ -154,13 +180,10 @@ export default function EditorDoMultimarcas({ onAviso }: { onAviso: (tipo: "ok" 
     setAberta(nova.id);
   }
 
-  /** A categoria vai só para uma marca (`destino` = id) ou para todas (`destino` vazio = sem marca). */
-  function moverCategoria(nome: string, destino: string) {
+  /** "Todas as marcas": a categoria sai de todas (sem marca, aparece em todas). */
+  function categoriaEmTodas(nome: string) {
     const k = chave(nome);
-    const marcas = config!.marcas.map((m) => {
-      const sem = m.categorias.filter((c) => chave(c) !== k);
-      return m.id === destino ? { ...m, categorias: [...sem, nome] } : sem.length === m.categorias.length ? m : { ...m, categorias: sem };
-    });
+    const marcas = config!.marcas.map((m) => (m.categorias.some((c) => chave(c) === k) ? { ...m, categorias: m.categorias.filter((c) => chave(c) !== k) } : m));
     mudar({ ...config!, marcas });
   }
 
@@ -181,13 +204,13 @@ export default function EditorDoMultimarcas({ onAviso }: { onAviso: (tipo: "ok" 
     });
   }
 
-  /** Marca a categoria nesta marca (tirando de outra, se estava lá) ou desmarca. */
+  /** Põe ou tira a categoria desta marca; nas outras marcas ela fica como está (pode estar em várias). */
   function alternarCategoria(i: number, nome: string) {
     const k = chave(nome);
     const marcas = config!.marcas.map((m, idx) => {
+      if (idx !== i) return m;
       const tem = m.categorias.some((c) => chave(c) === k);
-      if (idx === i) return { ...m, categorias: tem ? m.categorias.filter((c) => chave(c) !== k) : [...m.categorias, nome] };
-      return tem ? { ...m, categorias: m.categorias.filter((c) => chave(c) !== k) } : m;
+      return { ...m, categorias: tem ? m.categorias.filter((c) => chave(c) !== k) : [...m.categorias, nome] };
     });
     mudar({ ...config!, marcas });
   }
@@ -214,13 +237,13 @@ export default function EditorDoMultimarcas({ onAviso }: { onAviso: (tipo: "ok" 
   const produtoPorId = new Map(previa.produtos.map((p) => [p.id, p]));
 
   // A lista de itens para escolher destaque e banner: agrupada por marca (na
-  // ordem das marcas) e "Todas as marcas" no fim. A busca acha pelo nome do
-  // item, da categoria ou da marca.
+  // ordem das marcas; item de várias marcas aparece em cada uma) e "Todas as
+  // marcas" no fim. A busca acha pelo nome do item, da categoria ou da marca.
   const termo = chave(buscaItem);
   const grupos = [...config.marcas.map((m) => ({ id: m.id, nome: m.nome })), { id: MARCA_DOS_EXTRAS, nome: "Todas as marcas" }]
     .map((g) => ({
       ...g,
-      itens: previa.produtos.filter((p) => p.marca === g.id && (!termo
+      itens: previa.produtos.filter((p) => marcasDoProduto(p).includes(g.id) && (!termo
         || chave(p.nome).includes(termo) || chave(p.categoria).includes(termo) || chave(g.nome).includes(termo))),
     }))
     .filter((g) => g.itens.length > 0);
@@ -267,7 +290,7 @@ export default function EditorDoMultimarcas({ onAviso }: { onAviso: (tipo: "ok" 
               <div key={m.id} className={`${s.marca} ${m.oculta ? s.apagado : ""}`}>
                 <div className={s.marcaCabeca}>
                   <button className={s.marcaResumo} onClick={() => setAberta(aberta === m.id ? null : m.id)} aria-expanded={aberta === m.id}>
-                    {m.logo ? <img src={m.logo} alt="" /> : <span className={s.marcaSigla} style={{ background: m.cor }}>{m.nome.slice(0, 2).toUpperCase()}</span>}
+                    {m.logo ? <img src={m.logo} alt="" /> : <span className={s.marcaSigla} style={{ background: m.cor, color: textoSobreCor(m.cor) }}>{m.nome.slice(0, 2).toUpperCase()}</span>}
                     <span>
                       <b>{m.nome}</b>
                       <small className={m.categorias.length ? undefined : s.textoAlerta}>
@@ -305,13 +328,14 @@ export default function EditorDoMultimarcas({ onAviso }: { onAviso: (tipo: "ok" 
                     <span className={s.rotulo}>Categorias desta marca</span>
                     <div className={s.categorias}>
                       {dados.categorias.map((c) => {
-                        const dono = donoDaCategoria.get(chave(c.nome));
-                        const minha = dono === m.id;
-                        const deOutra = dono && !minha ? marcaPorId.get(dono) : null;
+                        const ids = marcasDaCategoria.get(chave(c.nome)) ?? [];
+                        const minha = ids.includes(m.id);
+                        const outras = ids.filter((id) => id !== m.id).map((id) => marcaPorId.get(id)?.nome).filter(Boolean).join(", ");
                         return (
-                          <button key={c.nome} className={minha ? s.chipMarcado : s.chip} onClick={() => alternarCategoria(i, c.nome)} title={deOutra ? `Está em ${deOutra.nome} — tocar traz para esta marca` : undefined}>
+                          <button key={c.nome} className={minha ? s.chipMarcado : s.chip} onClick={() => alternarCategoria(i, c.nome)}
+                            title={outras ? `Também em ${outras} (lá continua)` : undefined}>
                             {minha && <Check size={13} />} {c.emoji} {c.nome} <small>{c.produtos}</small>
-                            {deOutra && <em>{deOutra.nome}</em>}
+                            {outras && <em>{minha ? `+ ${outras}` : outras}</em>}
                           </button>
                         );
                       })}
@@ -327,19 +351,26 @@ export default function EditorDoMultimarcas({ onAviso }: { onAviso: (tipo: "ok" 
             <section className={s.bloco}>
               <div>
                 <h2>2. Onde cada categoria aparece</h2>
-                <p className={s.dica}>Bebida, sobremesa, acompanhamento: deixe em <b>Todas as marcas</b> e elas aparecem no cardápio de todas. A ordem é a do seu cardápio (Cardápio › Reordenar).</p>
+                <p className={s.dica}>Bebida, sobremesa, acompanhamento: deixe em <b>Todas</b> e elas aparecem no cardápio de todas as marcas. Para mostrar só em algumas, toque nas marcas (pode marcar duas ou mais). A ordem é a do seu cardápio (Cardápio › Reordenar).</p>
               </div>
               <div className={s.tabelaCategorias}>
                 {dados.categorias.map((c) => {
-                  const dono = donoDaCategoria.get(chave(c.nome)) ?? "";
+                  const ids = marcasDaCategoria.get(chave(c.nome)) ?? [];
                   return (
-                    <label key={c.nome} className={s.linhaCategoria}>
+                    <div key={c.nome} className={s.linhaCategoria}>
                       <span>{c.emoji} {c.nome} <small>{c.produtos} ite{c.produtos === 1 ? "m" : "ns"}</small></span>
-                      <select value={dono} onChange={(e) => moverCategoria(c.nome, e.target.value)} className={dono ? undefined : s.selectTodas}>
-                        <option value="">⭐ Todas as marcas</option>
-                        {config.marcas.map((m) => <option key={m.id} value={m.id}>Só em {m.nome}</option>)}
-                      </select>
-                    </label>
+                      <div className={s.marcasDaCategoria} role="group" aria-label={`Onde ${c.nome} aparece`}>
+                        <button className={ids.length ? s.chip : s.chipTodas} onClick={() => categoriaEmTodas(c.nome)} aria-pressed={!ids.length}>⭐ Todas</button>
+                        {config.marcas.map((m, i) => {
+                          const tem = ids.includes(m.id);
+                          return (
+                            <button key={m.id} className={tem ? s.chipMarcado : s.chip} onClick={() => alternarCategoria(i, c.nome)} aria-pressed={tem}>
+                              {tem && <Check size={13} />} {m.nome}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   );
                 })}
               </div>
@@ -455,9 +486,8 @@ export default function EditorDoMultimarcas({ onAviso }: { onAviso: (tipo: "ok" 
               <input value={config.frase} maxLength={120} placeholder="Ex.: Cinco marcas, uma cozinha. Peça de todas numa sacola só." onChange={(e) => mudar({ ...config, frase: e.target.value })} />
             </label>
             <div className={s.campo}>Cor dos botões
-              <div className={s.cores}>
-                {CORES.map((c) => <button key={c} className={c === config.cor ? s.corAtiva : s.cor} style={{ background: c }} onClick={() => mudar({ ...config, cor: c })} aria-label={c} />)}
-              </div>
+              <EscolhaDeCor valor={config.cor} onMudar={(cor) => mudar({ ...config, cor })} />
+              <small className={s.dicaDaCor}>Escolha uma sugestão, toque no quadrado para outra cor ou digite o código da cor da sua marca. Com cor clara, o texto dos botões fica escuro sozinho.</small>
             </div>
           </section>
         </div>

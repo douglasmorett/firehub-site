@@ -7,7 +7,10 @@
  * tem de sair como UM pedido, com UMA entrega (Douglas, 17/10/2026). Sendo a
  * mesma loja, a sacola, o checkout, o painel, a impressora e o caixa são os de
  * sempre. Categoria que não é de nenhuma marca (bebida, sobremesa) aparece em
- * todas, como "para acompanhar".
+ * todas, como "para acompanhar". Uma categoria pode estar em mais de uma marca
+ * (bebida só no Frangoso e no Braseou — Lucas, 11/11/2026): basta estar na
+ * lista de cada uma. A config antiga (cada categoria numa marca só) já é um
+ * caso desse formato, então nada muda no que está gravado.
  *
  * O produto liga à categoria pelo NOME (MenuProduct.category), então a marca
  * guarda nomes; a comparação ignora caixa e espaços nas pontas.
@@ -25,7 +28,7 @@ export type MarcaDaPagina = {
   cor: string;
   logo: string | null;
   capa: string | null;
-  /** Nomes das categorias do cardápio que são desta marca. */
+  /** Nomes das categorias do cardápio que são desta marca (a mesma pode estar em outras marcas). */
   categorias: string[];
   oculta: boolean;
 };
@@ -82,17 +85,17 @@ const id = (v: unknown, prefixo: string, i: number) => {
 
 /**
  * A config que vem da tela (ou do banco), limpa: textos cortados, cores e
- * imagens validadas, ids únicos, e cada categoria numa marca só (a primeira
- * que a reivindicou). Puro, para o teste.
+ * imagens validadas, ids únicos, e cada categoria uma vez por marca (pode
+ * repetir em outra marca). Puro, para o teste.
  */
 export function limparConfig(bruto: unknown, nomeDaLoja = "Minhas marcas"): ConfigDaPagina {
   const b = (bruto && typeof bruto === "object" ? bruto : {}) as any;
-  const usadas = new Set<string>();
   const ids = new Set<string>();
   const marcas: MarcaDaPagina[] = (Array.isArray(b.marcas) ? b.marcas : []).slice(0, LIMITES.marcas).map((m: any, i: number) => {
     let mid = id(m?.id, "m", i);
     while (ids.has(mid)) mid = `${mid}x`;
     ids.add(mid);
+    const usadas = new Set<string>();
     const categorias: string[] = [];
     for (const c of Array.isArray(m?.categorias) ? m.categorias : []) {
       const nome = texto(c, 80);
@@ -138,20 +141,26 @@ export function limparConfig(bruto: unknown, nomeDaLoja = "Minhas marcas"): Conf
   };
 }
 
-/** Marca de cada categoria (chave normalizada → id da marca). Categoria fora do mapa = "para acompanhar". */
-export function mapaDeCategorias(config: Pick<ConfigDaPagina, "marcas">): Map<string, string> {
-  const m = new Map<string, string>();
+/**
+ * As marcas visíveis de cada categoria (chave normalizada → ids, na ordem da
+ * página). Categoria fora do mapa = "para acompanhar" (todas as marcas).
+ */
+export function mapaDeCategorias(config: Pick<ConfigDaPagina, "marcas">): Map<string, string[]> {
+  const m = new Map<string, string[]>();
   for (const marca of config.marcas) {
     if (marca.oculta) continue;
-    for (const c of marca.categorias) m.set(chaveDaCategoria(c), marca.id);
+    for (const c of marca.categorias) {
+      const k = chaveDaCategoria(c);
+      m.set(k, [...(m.get(k) ?? []), marca.id]);
+    }
   }
   return m;
 }
 
-/** A marca de um produto pela categoria dele (null = para acompanhar ou nenhuma). */
+/** A marca de um produto pela categoria dele, se for de UMA marca só (null = para acompanhar, de nenhuma ou de várias). */
 export function marcaDaCategoria(config: Pick<ConfigDaPagina, "marcas">, categoria: string | null | undefined): MarcaDaPagina | null {
-  const id = mapaDeCategorias(config).get(chaveDaCategoria(categoria || ""));
-  return id ? config.marcas.find((m) => m.id === id) ?? null : null;
+  const ids = mapaDeCategorias(config).get(chaveDaCategoria(categoria || ""));
+  return ids?.length === 1 ? config.marcas.find((m) => m.id === ids[0]) ?? null : null;
 }
 
 // ─── Banco ───────────────────────────────────────────────────────────────
