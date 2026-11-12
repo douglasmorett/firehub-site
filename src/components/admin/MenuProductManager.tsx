@@ -700,16 +700,20 @@ export default function MenuProductManager({
    * vai junto porque a categoria virtual (só no texto do produto) não tem id —
    * antes era 404 e "Erro ao excluir" (Pizzou153, 14/10/2026).
    */
-  const [apagarCategoria, setApagarCategoria] = useState<{ id: string; name: string; produtos: number; destino: string } | null>(null);
+  // `confirma`: o que a pessoa digitou para excluir JUNTO os produtos (EXCLUIR).
+  const [apagarCategoria, setApagarCategoria] = useState<{ id: string; name: string; produtos: number; destino: string; confirma?: string } | null>(null);
 
-  const handleDeleteCategory = async (catId: string, catName: string, destino?: string) => {
-    if (!destino && !confirm(`Tem certeza que deseja excluir a categoria "${catName}"?`)) return;
+  const handleDeleteCategory = async (catId: string, catName: string, destino?: string, apagarProdutos?: boolean) => {
+    if (!destino && !apagarProdutos && !confirm(`Tem certeza que deseja excluir a categoria "${catName}"?`)) return;
     setDeletingCatId(catId);
     try {
       const res = await fetch("/api/admin/categories", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: catId, name: catName, ...(destino ? { destino } : {}) }),
+        body: JSON.stringify({
+          id: catId, name: catName,
+          ...(apagarProdutos ? { apagarProdutos: true, confirmacao: "EXCLUIR" } : destino ? { destino } : {}),
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
@@ -720,10 +724,12 @@ export default function MenuProductManager({
         }
         if (selectedCategoryFilter === catName) setSelectedCategoryFilter("TODAS");
         setApagarCategoria(null);
-        showToast(data.movidos
+        showToast(data.apagados
+          ? `🗑️ Categoria "${catName}" e ${data.apagados} produto(s) excluídos`
+          : data.movidos
           ? `🗑️ Categoria "${catName}" excluída — ${data.movidos} produto(s) foram para "${data.moverPara}"`
           : `🗑️ Categoria "${catName}" excluída!`);
-        if (data.movidos) router.refresh();
+        if (data.movidos || data.apagados) router.refresh();
       } else if (res.status === 409 && typeof data.produtos === "number") {
         const outra = dynCategories.find(c => c.id !== catId && !isIntegrationCategory(c.name));
         setApagarCategoria({ id: catId, name: catName, produtos: data.produtos, destino: outra?.name || "" });
@@ -4950,7 +4956,7 @@ export default function MenuProductManager({
               🗑️ Excluir &quot;{apagarCategoria.name}&quot;
             </h3>
             <p style={{ margin: "0 0 1rem", fontSize: "0.88rem", color: "#475569", lineHeight: 1.5 }}>
-              Esta categoria tem {apagarCategoria.produtos} produto{apagarCategoria.produtos === 1 ? "" : "s"}. Escolha para qual categoria eles vão — nenhum produto é apagado.
+              Esta categoria tem {apagarCategoria.produtos} produto{apagarCategoria.produtos === 1 ? "" : "s"}. Escolha para qual categoria eles vão, ou exclua tudo junto lá embaixo.
             </p>
             <label style={{ fontSize: "0.8rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: "6px" }}>
               Mover os produtos para
@@ -4977,6 +4983,25 @@ export default function MenuProductManager({
               >
                 {deletingCatId === apagarCategoria.id ? "Movendo..." : "Mover e excluir"}
               </button>
+            </div>
+            {/* Excluir JUNTO os produtos (Lucas/Frangoso, 12/11/2026): só com a palavra digitada. */}
+            <div style={{ marginTop: "1.25rem", paddingTop: "1rem", borderTop: "1px dashed #FECACA" }}>
+              <p style={{ margin: "0 0 8px", fontSize: "0.84rem", color: "#B91C1C", fontWeight: 700, lineHeight: 1.45 }}>
+                ⚠️ Atenção: excluindo assim, os {apagarCategoria.produtos} produto{apagarCategoria.produtos === 1 ? "" : "s"} desta categoria também serão excluídos. Para confirmar, digite EXCLUIR.
+              </p>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <input className="input-field" value={apagarCategoria.confirma || ""} placeholder="EXCLUIR"
+                  aria-label="Digite EXCLUIR para excluir a categoria com os produtos"
+                  onChange={e => setApagarCategoria({ ...apagarCategoria, confirma: e.target.value })}
+                  style={{ flex: 1, height: "42px", boxSizing: "border-box" }} />
+                <button
+                  onClick={() => handleDeleteCategory(apagarCategoria.id, apagarCategoria.name, undefined, true)}
+                  disabled={(apagarCategoria.confirma || "").trim().toUpperCase() !== "EXCLUIR" || deletingCatId === apagarCategoria.id}
+                  style={{ padding: "0 14px", borderRadius: "10px", border: "1.5px solid #B91C1C", background: "#FFF", color: "#B91C1C", fontWeight: 800, cursor: (apagarCategoria.confirma || "").trim().toUpperCase() !== "EXCLUIR" ? "not-allowed" : "pointer", opacity: (apagarCategoria.confirma || "").trim().toUpperCase() !== "EXCLUIR" ? 0.5 : 1 }}
+                >
+                  {deletingCatId === apagarCategoria.id ? "Excluindo..." : "Excluir tudo"}
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
+import { avisarKeetaDoCardapio } from "@/lib/keeta/cardapio";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -371,7 +372,7 @@ export async function DELETE(req: NextRequest) {
   if (!scope) return error;
   if (!podeComoNaTela(scope.quem, "/store/cardapio")) return semCardapio();
 
-  const { id, name, destino } = await req.json();
+  const { id, name, destino, apagarProdutos, confirmacao } = await req.json();
   const idReal = id && !String(id).startsWith("virtual-") ? String(id) : null;
   if (!idReal && !String(name ?? "").trim()) {
     return NextResponse.json({ error: "ID obrigatório" }, { status: 400 });
@@ -395,6 +396,42 @@ export async function DELETE(req: NextRequest) {
   const categorias = await prisma.menuCategory.findMany({ where: { franchiseeId: loja }, select: { id: true, name: true } });
   const linha = existing ?? categorias.find((c) => chaveDaCategoria(c.name) === chaveDaCategoria(nome)) ?? null;
   const ids = await produtosDaCategoria(loja, nome);
+
+  // ── EXCLUIR A CATEGORIA COM OS PRODUTOS ──────────────────────────────────
+  // Lucas/Frangoso, 12/11/2026: ao reorganizar o cardápio importado, mover
+  // item por item antes de apagar a categoria era trabalho dobrado. Com a
+  // palavra EXCLUIR digitada, os produtos vão junto. O produto que já tem
+  // pedido no histórico não pode sumir do banco (o pedido aponta para ele):
+  // fica inativo e marcado como `origemIntegracao = "EXCLUIDO"`, a mesma
+  // marca que já tira os espelhos de toda tela de venda e do painel
+  // (lib/cardapio-interno.ts, SEM_PRODUTO_DE_INTEGRACAO) — some do cardápio e
+  // não ressuscita a categoria pelo texto, sem perder o histórico.
+  if (apagarProdutos) {
+    if (String(confirmacao ?? "").trim().toUpperCase() !== "EXCLUIR") {
+      return NextResponse.json({ error: "Digite EXCLUIR para confirmar." }, { status: 400 });
+    }
+    // Só o produto da loja: espelho de integração (origemIntegracao) não é
+    // cardápio e não pode perder a origem.
+    const reais = await prisma.menuProduct.findMany({
+      where: { id: { in: ids }, franchiseeId: loja, origemIntegracao: null },
+      select: { id: true },
+    });
+    let apagados = 0;
+    let arquivados = 0;
+    for (const { id: produtoId } of reais) {
+      try {
+        await prisma.comboGroupItem.deleteMany({ where: { menuProductId: produtoId, comboGroup: { menuProduct: { franchiseeId: loja } } } });
+        await prisma.menuProduct.delete({ where: { id: produtoId } });
+        apagados++;
+      } catch {
+        await prisma.menuProduct.update({ where: { id: produtoId }, data: { active: false, origemIntegracao: "EXCLUIDO" } });
+        arquivados++;
+      }
+    }
+    if (linha) await prisma.menuCategory.delete({ where: { id: linha.id } }).catch(() => {});
+    after(() => avisarKeetaDoCardapio(loja).catch((e) => console.error("[Keeta] aviso do cardápio:", e?.message || e)));
+    return NextResponse.json({ success: true, apagados: apagados + arquivados });
+  }
 
   // O destino pode ser virtual também; se tiver linha, vale o nome dela.
   const nomeDestino = String(destino ?? "").trim();
