@@ -108,7 +108,14 @@ class ImpressoraBluetoothModule : Module() {
     if (atual != null && atual.isConnected && conectadoEm == endereco) return atual
     fechar()
     val a = exigirAdaptador()
-    a.cancelDiscovery()
+    // cancelDiscovery() pede BLUETOOTH_SCAN no Android 12+, que o app não
+    // declara (só imprime em impressora já pareada). Sem o try, a SecurityException
+    // virava "Permita Dispositivos por perto" com a permissão dada — Bruno/Holy
+    // Top, Samsung S24 Ultra, 12/11/2026. É só otimização: sem busca, nada a cancelar.
+    try {
+      a.cancelDiscovery()
+    } catch (_: SecurityException) {
+    }
     val aparelho = a.getRemoteDevice(endereco)
     val novo = try {
       aparelho.createRfcommSocketToServiceRecord(serial).also { it.connect() }
