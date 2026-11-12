@@ -153,6 +153,15 @@ export default function TabletNaMesaClient() {
           <InterruptorDoModulo nome="o Tablet na mesa" preco={estado.preco} precoTexto={PRECO_TEXTO} estado={{ ...estado, cortesia: false }}
             salvando={salvando} onLigar={() => setTermoAberto(true)} onDesligar={() => ligar(false)} onContinuar={() => ligar(true)} />
 
+          {/* Loja isenta (demonstração do vendedor): liberada, mas mostra o que o lojista vê e paga. */}
+          {estado.isento && (
+            <>
+              <p style={{ ...S.sub, fontWeight: 700, color: "#0F172A" }}>Na sua conta está liberado sem custo. Para o lojista é assim:</p>
+              <Oferta diasDeTeste={dados.diasDeTeste} jaTestou={false} mesas={dados.mesas.length} />
+              <ResumoDaCobranca preco={PRECO_POR_TABLET} precoTexto={PRECO_TEXTO} diasDeTeste={dados.diasDeTeste} comTeste paraOLojista />
+            </>
+          )}
+
           {!estado.isento && (
             <div style={S.mes}>
               <Receipt size={20} color="#EA580C" />
@@ -232,7 +241,7 @@ function AdicionarTablet({ mesas, onEscolher }: { mesas: Mesa[]; onEscolher: (ta
   );
 }
 
-function Oferta({ diasDeTeste, jaTestou, mesas, onAtivar }: { diasDeTeste: number; jaTestou: boolean; mesas: number; onAtivar: () => void }) {
+function Oferta({ diasDeTeste, jaTestou, mesas, onAtivar }: { diasDeTeste: number; jaTestou: boolean; mesas: number; onAtivar?: () => void }) {
   const [quantos, setQuantos] = useState(Math.max(1, Math.min(mesas || 10, 40)));
   const recursos = [
     { icone: <ChefHat size={20} />, titulo: "Pedido direto na cozinha", texto: "Sai na impressora e no KDS como o pedido do garçom, já com o número da mesa e o preço do salão." },
@@ -249,9 +258,11 @@ function Oferta({ diasDeTeste, jaTestou, mesas, onAtivar }: { diasDeTeste: numbe
           <p style={{ margin: 0, color: "#57534E", lineHeight: 1.55 }}>
             Um tablet em cada mesa com o seu cardápio, fotos e combos. O cliente escolhe, manda, e o pedido entra na conta da mesa na hora. Ninguém espera o garçom passar para pedir a segunda rodada.
           </p>
-          <button type="button" style={{ ...S.cta, marginTop: 16, height: 52, fontSize: 16 }} onClick={onAtivar}>
-            {jaTestou ? "Ativar o Tablet na mesa" : `Testar ${diasDeTeste} dias grátis`}
-          </button>
+          {onAtivar && (
+            <button type="button" style={{ ...S.cta, marginTop: 16, height: 52, fontSize: 16 }} onClick={onAtivar}>
+              {jaTestou ? "Ativar o Tablet na mesa" : `Testar ${diasDeTeste} dias grátis`}
+            </button>
+          )}
         </div>
         <div style={S.preco}>
           <div style={{ fontSize: 14, color: "#57534E" }}>Por tablet ativo</div>

@@ -466,7 +466,11 @@ function StatusDaAssinatura({ dados }: { dados: DadosDoBill }) {
   const linhas: [string, string][] = [];
   if (dados.ligadoDesde) linhas.push(["Ligado desde", dataBr(dados.ligadoDesde)]);
   if (estado.isento) {
-    linhas.push(["Cobrança", "Isenta — não entra no boleto"]);
+    // Loja isenta (demonstração do vendedor): liberada, mas mostra o que o lojista vê e paga.
+    linhas.push(["Na sua conta", "Liberado sem custo — não entra no boleto. Para o lojista é assim:"]);
+    linhas.push(["Preço", `${fmtR(dados.preco)} por mês, numa linha própria do boleto da mensalidade do FireHub`]);
+    linhas.push(["Teste grátis", `${dados.diasDeTeste} dias na primeira ativação; desligou no teste, não paga nada`]);
+    linhas.push(["Depois do teste", "o mês entra inteiro no boleto; desligando, fica liberado até o fim do mês e o seguinte não é cobrado"]);
   } else {
     linhas.push(["Preço desta loja", `${fmtR(dados.preco)} por mês`]);
     if (estado.emTeste && estado.testeAte) linhas.push(["Grátis até", dataBr(estado.testeAte)]);

@@ -130,6 +130,15 @@ export default function CotacaoClient() {
                 onLigar={() => {}} onDesligar={() => ligar(false)} onContinuar={() => ligar(true)} />
             </div>
           )}
+          {/* Loja isenta (demonstração do vendedor): liberada, mas mostra o que o lojista vê e paga. */}
+          {e.isento && (
+            <div className="cot-sem-impressao">
+              <p style={{ ...S.texto, marginTop: 6, fontWeight: 700, color: "#0F172A" }}>Na sua conta está liberado sem custo. Para o lojista é assim:</p>
+              <Oferta dados={dados} salvando={salvando} onAtivar={() => {}} />
+              <ResumoDaCobranca preco={dados.preco} diasDeTeste={dados.diasDeTeste} comTeste paraOLojista />
+              <ComoFunciona />
+            </div>
+          )}
           <FaixaDaAgenda dados={dados} onAviso={setAviso} onAgenda={() => irPara("agenda")} onPediu={mudou} />
           <PassoAPasso dados={dados} irPara={irPara} />
 
@@ -257,7 +266,7 @@ function Oferta({ dados, salvando, onAtivar }: { dados: DadosDaCotacao; salvando
             <span style={{ fontSize: 36, fontWeight: 900, color: COR }}>{reais(dados.preco)}</span>
             <span style={{ fontSize: 15, fontWeight: 700, color: "#334155" }}>por mês · {comTeste ? `${dados.diasDeTeste} dias grátis para testar` : "sem taxa de instalação"}</span>
           </div>
-          {dados.podeContratar ? (
+          {dados.estado.isento ? null : dados.podeContratar ? (
             <button type="button" onClick={onAtivar} disabled={salvando} style={{ ...S.botao, marginTop: 16, width: "100%", height: 52, fontSize: 17, fontWeight: 900 }}>
               {comTeste ? `Testar ${dados.diasDeTeste} dias grátis` : "Ativar a cotação automática"}
             </button>

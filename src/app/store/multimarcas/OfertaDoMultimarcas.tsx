@@ -318,10 +318,19 @@ function ComoFunciona() {
 
 // ─── 8. Preço ────────────────────────────────────────────────────────────
 
-function Preco({ dados, comTeste, botao, salvando, onAtivar }: { dados: DadosDoMultimarcas; comTeste: boolean; botao: string; salvando: boolean; onAtivar: () => void }) {
+/** Loja isenta (demonstração do vendedor): o "Quanto custa" que o lojista vê, sem o botão de ativar. */
+export function PrecoParaOLojista({ dados }: { dados: DadosDoMultimarcas }) {
+  return (
+    <div className={s.oferta}>
+      <Preco dados={dados} comTeste botao={null} salvando onAtivar={() => {}} />
+    </div>
+  );
+}
+
+function Preco({ dados, comTeste, botao, salvando, onAtivar }: { dados: DadosDoMultimarcas; comTeste: boolean; botao: string | null; salvando: boolean; onAtivar: () => void }) {
   const m = dados.mensalidade;
   return (
-    <section className={s.secao} id="preco">
+    <section className={s.secao} id="preco" style={botao ? undefined : { marginTop: 12 }}>
       <span className={s.sobretitulo}>Quanto custa</span>
       <h2>Um valor fixo, separado da mensalidade.</h2>
       <p className={s.sub}>Uma coisa não mexe na outra.</p>
@@ -350,9 +359,11 @@ function Preco({ dados, comTeste, botao, salvando, onAtivar }: { dados: DadosDoM
       <div className={s.exemplo}>
         <strong>Exemplo:</strong> sua loja paga {reais(m.teto)} de mensalidade. Com o Multimarcas, o boleto vem com {reais(m.teto)} (mensalidade) + {reais(dados.preco)} (Multimarcas) = <strong>{reais(m.teto + dados.preco)}</strong>.
       </div>
-      <div className={s.ctaCentro}>
-        <button className={s.cta} onClick={onAtivar} disabled={salvando}>{botao} <ArrowRight size={18} /></button>
-      </div>
+      {botao && (
+        <div className={s.ctaCentro}>
+          <button className={s.cta} onClick={onAtivar} disabled={salvando}>{botao} <ArrowRight size={18} /></button>
+        </div>
+      )}
     </section>
   );
 }

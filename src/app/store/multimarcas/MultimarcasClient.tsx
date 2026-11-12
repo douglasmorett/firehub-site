@@ -19,7 +19,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { LayoutGrid, Link2 } from "lucide-react";
-import OfertaDoMultimarcas from "./OfertaDoMultimarcas";
+import OfertaDoMultimarcas, { PrecoParaOLojista } from "./OfertaDoMultimarcas";
 import EditorDoMultimarcas from "./EditorDoMultimarcas";
 import InterruptorDoModulo from "@/components/modulos/InterruptorDoModulo";
 import ResumoDaCobranca from "@/components/modulos/ResumoDaCobranca";
@@ -158,6 +158,15 @@ function Ativo({ dados, previa, onAviso, salvando, onDesligar, onContinuar }: {
           onLigar={() => {}} onDesligar={onDesligar} onContinuar={onContinuar} />
       ) : (
         <p className={s.sub}>Ligar e desligar o Multimarcas é com o dono da loja. Você pode montar as marcas aqui embaixo.</p>
+      )}
+
+      {/* Loja isenta (demonstração do vendedor): liberada, mas mostra o que o lojista vê e paga. */}
+      {e.isento && (
+        <>
+          <p className={s.sub}><b>Na sua conta está liberado sem custo. Para o lojista é assim:</b></p>
+          <PrecoParaOLojista dados={dados} />
+          <ResumoDaCobranca preco={dados.preco} diasDeTeste={dados.diasDeTeste} comTeste paraOLojista />
+        </>
       )}
 
       {previa ? (

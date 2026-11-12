@@ -163,7 +163,7 @@ function Oferta({ dados, salvando, onAtivar }: { dados: Dados; salvando: boolean
         {reais(m.minimo)} e teto de {reais(m.teto)}), e as vendas pesadas entram nela como qualquer pedido. O equipamento é
         comprado pela loja (lista abaixo); o FireHub não vende nem aluga equipamento.
       </p>
-      {dados.podeContratar ? (
+      {dados.estado.isento ? null : dados.podeContratar ? (
         <button type="button" onClick={onAtivar} disabled={salvando} style={{
           marginTop: 16, width: "100%", padding: "14px", borderRadius: 12, border: "none", background: COR, color: "#fff",
           fontSize: 16, fontWeight: 900, cursor: "pointer", fontFamily: "inherit",
@@ -188,6 +188,15 @@ function Ativo({ dados, salvando, onDesligar, onContinuar, onProdutos, onAviso }
           <InterruptorDoModulo nome="o módulo Balança" preco={dados.preco} estado={dados.estado} salvando={salvando}
             onLigar={() => {}} onDesligar={onDesligar} onContinuar={onContinuar} />
         </div>
+      )}
+
+      {/* Loja isenta (demonstração do vendedor): liberada, mas mostra o que o lojista vê e paga. */}
+      {dados.estado.isento && (
+        <>
+          <p style={{ ...texto, marginTop: 16, fontWeight: 700, color: "#0F172A" }}>Na sua conta está liberado sem custo. Para o lojista é assim:</p>
+          <Oferta dados={dados} salvando={salvando} onAtivar={() => {}} />
+          <ResumoDaCobranca preco={dados.preco} diasDeTeste={dados.diasDeTeste} comTeste paraOLojista />
+        </>
       )}
 
       <section style={{ ...cartao, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", borderColor: "#99F6E4" }}>

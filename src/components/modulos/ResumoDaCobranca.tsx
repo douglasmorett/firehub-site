@@ -9,7 +9,7 @@
 
 const reais = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-export default function ResumoDaCobranca({ preco, precoTexto, diasDeTeste, comTeste, cortesia }: {
+export default function ResumoDaCobranca({ preco, precoTexto, diasDeTeste, comTeste, cortesia, paraOLojista }: {
   preco: number;
   /** O preço por extenso, quando não é fixo ("R$ 29,90 por tablet usado no mês"). */
   precoTexto?: string;
@@ -17,15 +17,19 @@ export default function ResumoDaCobranca({ preco, precoTexto, diasDeTeste, comTe
   /** Primeira ativação: tem os dias grátis. */
   comTeste: boolean;
   cortesia?: boolean;
+  /** Loja isenta (demonstração do vendedor): fora do termo, a regra que o lojista pagante vê. */
+  paraOLojista?: boolean;
 }) {
   const valor = precoTexto ?? reais(preco);
   const hoje = new Date();
   const fimDoTeste = new Date(hoje.getTime() + diasDeTeste * 24 * 60 * 60 * 1000).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
   const mes = hoje.toLocaleDateString("pt-BR", { month: "long" });
   return (
-    <div style={{ margin: "14px 20px 0", padding: "12px 14px", borderRadius: 12, background: comTeste || cortesia ? "#F0FDF4" : "#FFFBEB", border: `1px solid ${comTeste || cortesia ? "#BBF7D0" : "#FDE68A"}`, fontSize: 14, lineHeight: 1.55, color: "#1E293B" }}>
+    <div style={{ margin: paraOLojista ? "14px 0 0" : "14px 20px 0", padding: "12px 14px", borderRadius: 12, background: comTeste || cortesia || paraOLojista ? "#F0FDF4" : "#FFFBEB", border: `1px solid ${comTeste || cortesia || paraOLojista ? "#BBF7D0" : "#FDE68A"}`, fontSize: 14, lineHeight: 1.55, color: "#1E293B" }}>
       <div style={{ fontWeight: 900, marginBottom: 4 }}>Como fica a cobrança</div>
-      {cortesia ? (
+      {paraOLojista ? (
+        <div>Na primeira ativação são <b>{diasDeTeste} dias grátis</b>. Se continuar ligado depois disso, o mês em que o teste acabar entra <b>inteiro</b> no boleto da mensalidade, numa linha própria: <b>{valor}</b>. Desligou antes do fim do teste, não paga nada.</div>
+      ) : cortesia ? (
         <div>Com o Aplicativo da loja ativo no Android e no iPhone, <b>não é cobrado</b> (cortesia).</div>
       ) : comTeste ? (
         <div>Hoje começam <b>{diasDeTeste} dias grátis, até {fimDoTeste}</b>. Se continuar ligado depois disso, o mês em que o teste acabar entra <b>inteiro</b> no boleto: <b>{valor}</b>. Para não pagar nada, desligue antes de {fimDoTeste}.</div>

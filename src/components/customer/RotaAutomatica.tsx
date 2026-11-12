@@ -244,26 +244,26 @@ function JanelaDaRotaAutomatica({
             </div>
           </Secao>
 
-          {!cobranca.isento && (
-            <Secao titulo="Cobrança">
-              <div style={{ background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: 12, padding: "12px 14px", fontSize: "0.9rem", lineHeight: 1.5 }}>
-                {ligada ? (
-                  emTeste ? (
-                    <p style={{ margin: 0 }}><b>Teste grátis até {dataCurta(cobranca.testeAte)}.</b> Depois, R$ {cobranca.preco} por mês na fatura do FireHub. Se desligar antes do fim do teste, para na hora e não paga nada (o teste não volta).</p>
-                  ) : (
-                    <p style={{ margin: 0 }}><b>R$ {cobranca.preco} por mês</b> na fatura do FireHub. Se desligar, fica funcionando até o último dia do mês: o mês já está no boleto, inteiro, sem proporcional nem devolução.</p>
-                  )
-                ) : cobranca.jaTestou ? (
-                  <p style={{ margin: 0 }}>Você já usou o teste grátis. Ao ligar, <b>este mês entra inteiro</b> na fatura do FireHub: <b>R$ {cobranca.preco}</b>. Depois, R$ {cobranca.preco} por mês enquanto estiver ligada.</p>
+          {/* Loja isenta (demonstração do vendedor): liberada, mas mostra o que o lojista vê e paga. */}
+          <Secao titulo="Cobrança">
+            <div style={{ background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: 12, padding: "12px 14px", fontSize: "0.9rem", lineHeight: 1.5 }}>
+              {cobranca.isento && <p style={{ margin: "0 0 6px", fontWeight: 800 }}>Na sua conta está liberado sem custo. Para o lojista é assim:</p>}
+              {ligada && !cobranca.isento ? (
+                emTeste ? (
+                  <p style={{ margin: 0 }}><b>Teste grátis até {dataCurta(cobranca.testeAte)}.</b> Depois, R$ {cobranca.preco} por mês na fatura do FireHub. Se desligar antes do fim do teste, para na hora e não paga nada (o teste não volta).</p>
                 ) : (
-                  <>
-                    <p style={{ margin: "0 0 6px" }}><b>{cobranca.diasDeTeste} dias grátis</b> para testar com a sua operação. Depois disso, <b>R$ {cobranca.preco} por mês</b> na fatura do FireHub, junto com a mensalidade.</p>
-                    <p style={{ margin: 0 }}>Desligar durante o teste: para na hora, R$ 0 (o teste não volta). Desligar depois do teste: fica até o último dia do mês e o mês entra inteiro, sem proporcional.</p>
-                  </>
-                )}
-              </div>
-            </Secao>
-          )}
+                  <p style={{ margin: 0 }}><b>R$ {cobranca.preco} por mês</b> na fatura do FireHub. Se desligar, fica funcionando até o último dia do mês: o mês já está no boleto, inteiro, sem proporcional nem devolução.</p>
+                )
+              ) : cobranca.jaTestou && !cobranca.isento ? (
+                <p style={{ margin: 0 }}>Você já usou o teste grátis. Ao ligar, <b>este mês entra inteiro</b> na fatura do FireHub: <b>R$ {cobranca.preco}</b>. Depois, R$ {cobranca.preco} por mês enquanto estiver ligada.</p>
+              ) : (
+                <>
+                  <p style={{ margin: "0 0 6px" }}><b>{cobranca.diasDeTeste} dias grátis</b> para testar com a sua operação. Depois disso, <b>R$ {cobranca.preco} por mês</b> na fatura do FireHub, junto com a mensalidade.</p>
+                  <p style={{ margin: 0 }}>Desligar durante o teste: para na hora, R$ 0 (o teste não volta). Desligar depois do teste: fica até o último dia do mês e o mês entra inteiro, sem proporcional.</p>
+                </>
+              )}
+            </div>
+          </Secao>
 
           {!ligada && (
             <label style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: "0.9rem", fontWeight: 700, color: "#334155", cursor: "pointer" }}>

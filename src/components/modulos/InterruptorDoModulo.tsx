@@ -68,7 +68,7 @@ export default function InterruptorDoModulo({ nome, preco, precoTexto, estado, s
   let cor = "#16A34A";
   if (e.isento) {
     titulo = `${cap(nome)} liberado`;
-    texto = "Liberado para a sua conta, sem cobrança. Fica sempre ligado.";
+    texto = <>Liberado para a sua conta, sem cobrança. Fica sempre ligado. Para o lojista: {precoTexto ?? `${valor} por mês`}, no boleto da mensalidade.</>;
   } else if (marcado) {
     cor = "#D97706";
     titulo = `${cap(nome)} desliga em ${dia(e.desligaEm!)}`;
