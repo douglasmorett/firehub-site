@@ -37,7 +37,13 @@ type Estado = {
 
 const Contexto = createContext<Estado | null>(null);
 
-/** Pede "Dispositivos por perto" (Android 12+); antes disso a permissão vem da instalação. */
+/**
+ * Pede "Dispositivos por perto" (Android 12+); antes disso a permissão vem da instalação.
+ * Só PEDE: quem decide se falta permissão é o módulo nativo (SecurityException →
+ * "SEM_PERMISSAO"). Em alguns Android a resposta daqui volta negada com a
+ * permissão já dada nos ajustes, e barrar por ela travava a impressora
+ * (Bruno/Holy Top, 12/11/2026).
+ */
 export async function permitirBluetooth(): Promise<boolean> {
   if (Platform.OS !== "android" || Number(Platform.Version) < 31) return true;
   const r = await PermissionsAndroid.request("android.permission.BLUETOOTH_CONNECT" as any);
@@ -153,7 +159,7 @@ export function ImpressaoProvider({ children }: { children: ReactNode }) {
     if (!impressora) return;
     setErro(null);
     try {
-      if (!(await permitirBluetooth())) throw new Error("Permita o acesso a \"Dispositivos por perto\" para o FireHub.");
+      await permitirBluetooth().catch(() => false);
       await ImpressoraBluetooth.imprimir(impressora.endereco, papelDeTeste(impressora.largura));
       setSituacao("Teste impresso.");
     } catch (e: any) {

@@ -28,7 +28,7 @@ export default function TelaDaImpressora() {
       return;
     }
     try {
-      if (!(await permitirBluetooth())) throw new Error("Permita o acesso a \"Dispositivos por perto\" para o FireHub.");
+      await permitirBluetooth().catch(() => false);
       setPareadas(await ImpressoraBluetooth.pareadas());
     } catch (e: any) {
       setProblema(e?.message || "Não consegui ver as impressoras.");
@@ -77,6 +77,11 @@ export default function TelaDaImpressora() {
 
         <Text style={estilos.secao}>Impressoras pareadas neste celular</Text>
         {problema && <Text style={estilos.erro}>{problema}</Text>}
+        {problema?.includes("Dispositivos por perto") && (
+          <Pressable style={[estilos.opcao, { marginBottom: 8, alignSelf: "flex-start" }]} onPress={() => Linking.openSettings()}>
+            <Text style={estilos.opcaoTexto}>Abrir os ajustes do app</Text>
+          </Pressable>
+        )}
         {pareadas?.map((p) => (
           <Pressable
             key={p.endereco}
