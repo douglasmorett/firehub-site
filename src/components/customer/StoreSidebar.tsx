@@ -19,7 +19,7 @@ import Link, { useLinkStatus } from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
-  BarChart2, Bike, PlayCircle, BookOpen, Bot, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList,
+  BarChart2, Bike, PlayCircle, BookOpen, Bot, CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList,
   Contact, Gauge, Home, LayoutGrid, LifeBuoy, LineChart, LogOut, MapPin, Menu, Mic, Monitor, Package, PieChart, Printer, Puzzle, Receipt,
   Scale, Send, ShoppingBag, ShoppingCart, Smartphone, Store, TabletSmartphone, Tag, Timer, Truck, Tv, UtensilsCrossed, Users, Wallet,
   X, Zap, type LucideIcon,
@@ -33,7 +33,7 @@ import SairDaConta from "@/components/SairDaConta";
 import { AtalhoDoOutroPainel } from "@/components/paineis/TrocarDePainel";
 
 const ICONES: Record<string, LucideIcon> = {
-  BarChart2, Bike, BookOpen, Bot, CheckCircle2, ClipboardList, Contact, Gauge, Home, LayoutGrid, LifeBuoy, LineChart, MapPin,
+  BarChart2, Bike, BookOpen, Bot, CalendarDays, CheckCircle2, ClipboardList, Contact, Gauge, Home, LayoutGrid, LifeBuoy, LineChart, MapPin,
   Mic, Monitor, Package, PieChart, Printer, Puzzle, Receipt, Scale, Send, ShoppingBag, ShoppingCart, Store,
   Smartphone, TabletSmartphone, Tag, Timer, Truck, Tv, UtensilsCrossed, Users, Wallet, Zap,
 };

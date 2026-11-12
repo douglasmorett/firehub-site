@@ -6,7 +6,7 @@ import { AtalhoDoOutroPainel } from "@/components/paineis/TrocarDePainel";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import TutorialDaTela from "@/components/TutorialDaTela";
-import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, X, AlertTriangle, History, PieChart, Package, Monitor, Bot, Send, Puzzle, Receipt, CheckCircle2, Tag, TabletSmartphone, Trash2, LineChart, Copy, Check, QrCode, Mic, Smartphone, LayoutGrid } from "lucide-react";
+import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, X, AlertTriangle, History, PieChart, Package, Monitor, Bot, Send, Puzzle, Receipt, CheckCircle2, Tag, TabletSmartphone, Trash2, LineChart, Copy, Check, QrCode, Mic, Smartphone, LayoutGrid, CalendarDays } from "lucide-react";
 import { useState, useTransition, useEffect, useRef, useCallback } from "react";
 import StoreSelector from "./StoreSelector";
 import SimularPedidos from "./SimularPedidos";
@@ -49,6 +49,8 @@ const NAV_ITEMS = [
   // no menu batia num 404 e o modulo inteiro parecia morto.
   { href: "/store/meta-ads", label: "Tráfego Pago", icon: PieChart, badge: "EM TESTES" },
   { href: "/store/motoboys", label: "Motoboys", icon: Bike },
+  // Escala da equipe: turnos, vagas e link de inscrição (lib/escala-da-equipe).
+  { href: "/store/escala", label: "Escala da equipe", icon: CalendarDays, badge: "NOVO" },
   { href: "/store/garcons", label: "Garçons", icon: Users },
   { href: "/store/funcionarios", label: "Fiado", icon: Users },
   { href: "/store/minha-loja", label: "Minha Loja", icon: Store },

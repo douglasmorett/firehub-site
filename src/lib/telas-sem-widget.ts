@@ -40,6 +40,8 @@ export const TELAS_SEM_WIDGET = [
    * WhatsApp dela, no texto, com a mensagem certa.
    */
   "/prazos",
+  /** O link de inscrição da escala (/escala/<código>): é a equipe da loja se inscrevendo, não lojista. */
+  "/escala/",
 ];
 
 export function ehTelaSemWidget(pathname: string | null | undefined): boolean {

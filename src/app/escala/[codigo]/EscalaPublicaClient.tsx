@@ -1,0 +1,328 @@
+"use client";
+
+/**
+ * A página do link de inscrição (/escala/<código>) — feita para o celular de
+ * quem está no grupo da equipe.
+ *
+ *  1. A pessoa digita o WhatsApp. Se for de motoboy, funcionário ou freelancer
+ *     da loja, a página diz "Olá, João" e usa esse cadastro; se não, pede nome
+ *     e função (vira freelancer "veio pelo link" na primeira inscrição).
+ *  2. Vê as vagas abertas das próximas semanas, por dia, e filtra por função.
+ *  3. "Quero esta vaga" — o servidor trava a vaga (duas pessoas na última:
+ *     só uma entra) e devolve a chave de desistir, que fica SÓ neste aparelho.
+ *  4. "Minhas inscrições": desistir só com essa chave e dentro do prazo da
+ *     loja — ninguém tira o colega digitando o telefone dele.
+ *
+ * O telefone e as chaves ficam no localStorage (com try/catch: aba anônima
+ * só não lembra). De quem já se inscreveu aparece só o primeiro nome.
+ */
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { FUNCOES, chaveDaFuncao, diaPorExtenso, horarioDoTurno, prazoFalado, somarDias, telefoneUtilizavel } from "@/lib/escala-da-equipe/regras";
+
+type TurnoAberto = { id: string; data: string; inicio: string; fim: string; funcao: string; obs: string | null; vagas: number; faltam: number; nomes: string[] };
+type Dados = {
+  loja: { nome: string; logo: string | null }; hoje: string;
+  regras: { linkAtivo: boolean; prazoInscricaoHoras: number; permiteDesistir: boolean; prazoDesistenciaHoras: number };
+  turnos: TurnoAberto[];
+};
+type MinhaInscricao = { inscricaoId: string; turnoId: string; data: string; inicio: string; fim: string; funcao: string; podeDesistir: boolean };
+type Identidade = { conhecido: false } | { conhecido: true; pessoa: { nome: string; tipo: string }; inscricoes: MinhaInscricao[] };
+type Aviso = { tipo: "ok" | "erro"; texto: string };
+
+const COR = "#0F766E";
+
+function ler(chave: string): string | null {
+  try { return window.localStorage.getItem(chave); } catch { return null; }
+}
+function gravar(chave: string, valor: string | null) {
+  try { if (valor == null) window.localStorage.removeItem(chave); else window.localStorage.setItem(chave, valor); } catch { /* aba anônima: só não lembra */ }
+}
+
+async function chamar<T>(url: string, corpo?: unknown): Promise<T> {
+  const r = await fetch(url, corpo === undefined ? { cache: "no-store" } : { method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(j.error || "Não deu certo. Tente de novo."), { codigo: j.codigo });
+  return j as T;
+}
+
+export default function EscalaPublicaClient({ codigo, loja }: { codigo: string; loja: { nome: string; logo: string | null } }) {
+  const api = `/api/escala/${codigo}`;
+  const CHAVE_TEL = `escala:${codigo}:telefone`, CHAVE_CHAVES = `escala:${codigo}:chaves`, CHAVE_NOVO = `escala:${codigo}:novo`;
+
+  const [dados, setDados] = useState<Dados | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [telefone, setTelefone] = useState("");
+  const [identidade, setIdentidade] = useState<Identidade | null>(null);
+  const [nome, setNome] = useState(""), [funcao, setFuncao] = useState("");
+  const [chaves, setChaves] = useState<Record<string, string>>({});
+  const [filtro, setFiltro] = useState<string>("");
+  const [ocupado, setOcupado] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<Aviso | null>(null);
+  const [desistindo, setDesistindo] = useState<string | null>(null);
+
+  const carregar = useCallback(async () => {
+    try { setDados(await chamar<Dados>(api)); setErro(null); } catch (e: any) { setErro(e.message); }
+  }, [api]);
+
+  const identificar = useCallback(async (tel: string, silencioso = false) => {
+    if (!telefoneUtilizavel(tel)) { if (!silencioso) setAviso({ tipo: "erro", texto: "Digite o WhatsApp com DDD (ex.: 22 99999-1234)." }); return; }
+    setOcupado("identificar");
+    try {
+      const r = await chamar<Identidade>(api, { acao: "identificar", telefone: tel });
+      setIdentidade(r);
+      gravar(CHAVE_TEL, tel);
+    } catch (e: any) {
+      if (!silencioso) setAviso({ tipo: "erro", texto: e.message });
+    } finally {
+      setOcupado(null);
+    }
+  }, [api, CHAVE_TEL]);
+
+  useEffect(() => {
+    carregar();
+    const tel = ler(CHAVE_TEL);
+    try { setChaves(JSON.parse(ler(CHAVE_CHAVES) || "{}") || {}); } catch { setChaves({}); }
+    try { const n = JSON.parse(ler(CHAVE_NOVO) || "null"); if (n) { setNome(n.nome || ""); setFuncao(n.funcao || ""); } } catch {}
+    if (tel) { setTelefone(tel); identificar(tel, true); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!aviso) return;
+    const t = setTimeout(() => setAviso(null), aviso.tipo === "erro" ? 9000 : 6000);
+    return () => clearTimeout(t);
+  }, [aviso]);
+
+  const funcoes = useMemo(() => [...new Set((dados?.turnos || []).map((t) => t.funcao))], [dados]);
+  const turnos = (dados?.turnos || []).filter((t) => !filtro || chaveDaFuncao(t.funcao) === chaveDaFuncao(filtro));
+  const dias = [...new Set(turnos.map((t) => t.data))].sort();
+  const minhas = identidade?.conhecido ? identidade.inscricoes : [];
+  const estou = new Set(minhas.map((i) => i.turnoId));
+
+  function sair() {
+    gravar(CHAVE_TEL, null);
+    setIdentidade(null);
+    setTelefone("");
+  }
+
+  async function quero(t: TurnoAberto) {
+    if (!identidade) { setAviso({ tipo: "erro", texto: "Primeiro digite o seu WhatsApp lá em cima." }); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+    if (!identidade.conhecido && (nome.trim().length < 2 || !funcao)) { setAviso({ tipo: "erro", texto: "Escreva o seu nome e escolha a sua função lá em cima." }); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+    setOcupado(t.id);
+    try {
+      const r = await chamar<{ inscricaoId: string; chave: string | null }>(api, { acao: "inscrever", telefone, turnoId: t.id, nome, funcao });
+      if (r.chave) {
+        const novas = { ...chaves, [r.inscricaoId]: r.chave };
+        setChaves(novas);
+        gravar(CHAVE_CHAVES, JSON.stringify(novas));
+      }
+      setAviso({ tipo: "ok", texto: `Pronto! Você está na escala: ${diaPorExtenso(t.data)}, ${horarioDoTurno(t.inicio, t.fim)} (${t.funcao}).` });
+      await Promise.all([carregar(), identificar(telefone, true)]);
+    } catch (e: any) {
+      setAviso({ tipo: "erro", texto: e.message });
+      carregar();
+    } finally {
+      setOcupado(null);
+    }
+  }
+
+  async function desistir(i: MinhaInscricao) {
+    setOcupado(i.inscricaoId);
+    try {
+      await chamar(api, { acao: "desistir", inscricaoId: i.inscricaoId, chave: chaves[i.inscricaoId] });
+      const novas = { ...chaves };
+      delete novas[i.inscricaoId];
+      setChaves(novas);
+      gravar(CHAVE_CHAVES, JSON.stringify(novas));
+      setAviso({ tipo: "ok", texto: "Você saiu do turno. A vaga voltou para o grupo." });
+      await Promise.all([carregar(), identificar(telefone, true)]);
+    } catch (e: any) {
+      setAviso({ tipo: "erro", texto: e.message });
+    } finally {
+      setOcupado(null);
+      setDesistindo(null);
+    }
+  }
+
+  const regras = dados?.regras;
+
+  return (
+    <main className="escp">
+      <style>{CSS}</style>
+      {aviso && <div role={aviso.tipo === "erro" ? "alert" : "status"} className={`escp-aviso ${aviso.tipo}`} onClick={() => setAviso(null)}>{aviso.texto}</div>}
+
+      <header className="escp-topo">
+        {loja.logo ? <img src={loja.logo} alt="" className="escp-logo" /> : <div className="escp-logo vazio">📅</div>}
+        <div>
+          <div className="escp-loja">{loja.nome}</div>
+          <h1>Escala da equipe</h1>
+        </div>
+      </header>
+
+      <div className="escp-corpo">
+        {regras && (
+          <p className="escp-regras">
+            Escolha o seu turno. Inscrição {prazoFalado(regras.prazoInscricaoHoras)}
+            {regras.permiteDesistir ? `; desistência pelo link ${prazoFalado(regras.prazoDesistenciaHoras)}` : "; para desistir, fale com a loja"}.
+          </p>
+        )}
+
+        <section className="escp-cartao">
+          {!identidade ? (
+            <form onSubmit={(e) => { e.preventDefault(); identificar(telefone); }}>
+              <label className="escp-rotulo" htmlFor="escp-tel">Seu WhatsApp</label>
+              <div className="escp-linha">
+                <input id="escp-tel" className="escp-campo" inputMode="tel" autoComplete="tel" placeholder="22 99999-1234" value={telefone} onChange={(e) => setTelefone(e.target.value)} />
+                <button type="submit" className="escp-botao" disabled={ocupado === "identificar"}>{ocupado === "identificar" ? "…" : "Entrar"}</button>
+              </div>
+              <p className="escp-dica">Não precisa de senha nem de app. O número só serve para a loja saber quem é você.</p>
+            </form>
+          ) : identidade.conhecido ? (
+            <div className="escp-linha" style={{ alignItems: "center" }}>
+              <div style={{ flex: 1 }}>
+                <div className="escp-ola">Olá, {identidade.pessoa.nome}! 👋</div>
+                <div className="escp-dica" style={{ margin: 0 }}>{identidade.pessoa.tipo} · {telefone}</div>
+              </div>
+              <button type="button" className="escp-leve" onClick={sair}>Não sou eu</button>
+            </div>
+          ) : (
+            <div>
+              <div className="escp-linha" style={{ alignItems: "center" }}>
+                <div className="escp-ola" style={{ flex: 1 }}>Primeira vez por aqui?</div>
+                <button type="button" className="escp-leve" onClick={sair}>Trocar número</button>
+              </div>
+              <p className="escp-dica">Não achamos {telefone} na equipe da loja. Diga quem é você — vale para as próximas vezes.</p>
+              <label className="escp-rotulo" htmlFor="escp-nome">Seu nome</label>
+              <input id="escp-nome" className="escp-campo" value={nome} maxLength={80} autoComplete="name" onChange={(e) => { setNome(e.target.value); gravar(CHAVE_NOVO, JSON.stringify({ nome: e.target.value, funcao })); }} />
+              <label className="escp-rotulo" style={{ marginTop: 10 }}>Sua função</label>
+              <div className="escp-chips">
+                {FUNCOES.map((f) => (
+                  <button key={f} type="button" className={`escp-chip ${funcao === f ? "on" : ""}`} onClick={() => { setFuncao(f); gravar(CHAVE_NOVO, JSON.stringify({ nome, funcao: f })); }}>{f}</button>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+
+        {minhas.length > 0 && (
+          <section className="escp-cartao">
+            <h2>Minhas inscrições</h2>
+            {minhas.map((i) => {
+              const temChave = !!chaves[i.inscricaoId];
+              return (
+                <div key={i.inscricaoId} className="escp-minha">
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="escp-dia">{diaPorExtenso(i.data)}{i.data === dados?.hoje ? " · hoje" : i.data === (dados && somarDias(dados.hoje, 1)) ? " · amanhã" : ""}</div>
+                    <div><b>{horarioDoTurno(i.inicio, i.fim)}</b> · {i.funcao}</div>
+                  </div>
+                  {i.podeDesistir && temChave ? (
+                    desistindo === i.inscricaoId ? (
+                      <div className="escp-linha">
+                        <button type="button" className="escp-leve" onClick={() => setDesistindo(null)}>Voltar</button>
+                        <button type="button" className="escp-botao perigo" disabled={ocupado === i.inscricaoId} onClick={() => desistir(i)}>Confirmar</button>
+                      </div>
+                    ) : <button type="button" className="escp-leve" onClick={() => setDesistindo(i.inscricaoId)}>Desistir</button>
+                  ) : (
+                    <span className="escp-miudo">{!regras?.permiteDesistir || !i.podeDesistir ? "Não pode ir? Fale com a loja." : "Feita em outro aparelho — para sair, fale com a loja."}</span>
+                  )}
+                </div>
+              );
+            })}
+          </section>
+        )}
+
+        {erro && <section className="escp-cartao erro">{erro}</section>}
+        {regras && !regras.linkAtivo && <section className="escp-cartao">⏸️ A loja fechou as inscrições pelo link por enquanto.</section>}
+
+        {regras?.linkAtivo && (
+          <>
+            <div className="escp-titulo-vagas">
+              <h2>Vagas abertas</h2>
+              {funcoes.length > 1 && (
+                <div className="escp-chips">
+                  <button type="button" className={`escp-chip ${!filtro ? "on" : ""}`} onClick={() => setFiltro("")}>Todas</button>
+                  {funcoes.map((f) => <button key={f} type="button" className={`escp-chip ${filtro === f ? "on" : ""}`} onClick={() => setFiltro(f)}>{f}</button>)}
+                </div>
+              )}
+            </div>
+            {!dados ? <p className="escp-dica">Carregando…</p> : dias.length === 0 ? (
+              <section className="escp-cartao"><p className="escp-dica" style={{ margin: 0 }}>Nenhuma vaga aberta agora. Quando a loja abrir, aparece aqui — guarde este link.</p></section>
+            ) : dias.map((d) => (
+              <section key={d}>
+                <div className="escp-dia-cabeca">{diaPorExtenso(d)}{d === dados.hoje ? " · hoje" : d === somarDias(dados.hoje, 1) ? " · amanhã" : ""}</div>
+                {turnos.filter((t) => t.data === d).map((t) => (
+                  <div key={t.id} className="escp-turno">
+                    <div className="escp-turno-topo">
+                      <div>
+                        <div className="escp-hora">{horarioDoTurno(t.inicio, t.fim)}</div>
+                        <div className="escp-funcao">{t.funcao}</div>
+                      </div>
+                      <span className="escp-vagas">{t.faltam} vaga{t.faltam === 1 ? "" : "s"}</span>
+                    </div>
+                    {t.obs && <div className="escp-obs">📝 {t.obs}</div>}
+                    {t.nomes.length > 0 && <div className="escp-nomes">Já vão: {t.nomes.join(", ")}</div>}
+                    {estou.has(t.id) ? (
+                      <div className="escp-estou">✓ Você está neste turno</div>
+                    ) : (
+                      <button type="button" className="escp-botao cheio" disabled={!!ocupado} onClick={() => quero(t)}>
+                        {ocupado === t.id ? "Reservando…" : "Quero esta vaga"}
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </section>
+            ))}
+          </>
+        )}
+        <p className="escp-rodape">Escala pelo FireHub</p>
+      </div>
+    </main>
+  );
+}
+
+const CSS = `
+.escp { min-height: 100vh; background: #F0FDFA; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #0F172A; padding-bottom: 40px; }
+.escp-topo { background: linear-gradient(135deg, ${COR}, #115E59); color: #fff; padding: 22px 16px 26px; display: flex; gap: 14px; align-items: center; }
+.escp-topo h1 { margin: 0; font-size: 24px; font-weight: 900; }
+.escp-loja { font-size: 14px; opacity: .85; font-weight: 700; }
+.escp-logo { width: 56px; height: 56px; border-radius: 16px; object-fit: cover; background: #fff; flex-shrink: 0; }
+.escp-logo.vazio { display: flex; align-items: center; justify-content: center; font-size: 28px; background: rgba(255,255,255,.15); }
+.escp-corpo { max-width: 560px; margin: -14px auto 0; padding: 0 12px; }
+.escp-regras { background: #fff; border-radius: 14px; padding: 10px 14px; font-size: 13.5px; color: #475569; margin: 0 0 10px; box-shadow: 0 4px 14px rgba(15,23,42,.06); }
+.escp-cartao { background: #fff; border-radius: 16px; padding: 14px; margin-bottom: 12px; box-shadow: 0 4px 14px rgba(15,23,42,.06); }
+.escp-cartao.erro { color: #B91C1C; background: #FEF2F2; }
+.escp-cartao h2, .escp-titulo-vagas h2 { margin: 0 0 8px; font-size: 17px; font-weight: 900; }
+.escp-rotulo { display: block; font-size: 13px; font-weight: 800; color: #334155; margin-bottom: 6px; }
+.escp-linha { display: flex; gap: 8px; }
+.escp-campo { flex: 1; width: 100%; box-sizing: border-box; min-width: 0; height: 48px; padding: 0 14px; border-radius: 12px; border: 1.5px solid #CBD5E1; font-size: 17px; font-family: inherit; }
+.escp-campo:focus { outline: none; border-color: ${COR}; box-shadow: 0 0 0 3px #CCFBF1; }
+.escp-botao { height: 48px; padding: 0 20px; border-radius: 12px; border: 0; background: ${COR}; color: #fff; font-weight: 900; font-size: 16px; cursor: pointer; font-family: inherit; }
+.escp-botao:disabled { opacity: .6; }
+.escp-botao.cheio { width: 100%; margin-top: 10px; }
+.escp-botao.perigo { background: #DC2626; height: 40px; font-size: 14px; padding: 0 14px; }
+.escp-leve { height: 40px; padding: 0 14px; border-radius: 11px; border: 1.5px solid #CBD5E1; background: #fff; color: #334155; font-weight: 800; font-size: 14px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+.escp-dica { font-size: 13px; color: #64748B; margin: 8px 0 0; line-height: 1.45; }
+.escp-ola { font-size: 18px; font-weight: 900; }
+.escp-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.escp-chip { height: 36px; padding: 0 14px; border-radius: 999px; border: 1.5px solid #CBD5E1; background: #fff; font-weight: 800; font-size: 14px; color: #334155; cursor: pointer; font-family: inherit; }
+.escp-chip.on { background: ${COR}; border-color: ${COR}; color: #fff; }
+.escp-minha { display: flex; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid #F1F5F9; font-size: 14.5px; flex-wrap: wrap; }
+.escp-minha:first-of-type { border-top: 0; }
+.escp-dia { font-size: 12.5px; color: ${COR}; font-weight: 800; text-transform: capitalize; }
+.escp-miudo { font-size: 12px; color: #64748B; max-width: 170px; }
+.escp-titulo-vagas { margin: 18px 2px 8px; }
+.escp-dia-cabeca { font-size: 14px; font-weight: 900; color: #134E4A; text-transform: capitalize; margin: 14px 4px 6px; }
+.escp-turno { background: #fff; border-radius: 16px; padding: 14px; margin-bottom: 10px; box-shadow: 0 4px 14px rgba(15,23,42,.06); border-left: 5px solid ${COR}; }
+.escp-turno-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.escp-hora { font-size: 19px; font-weight: 900; }
+.escp-funcao { font-size: 15px; font-weight: 800; color: ${COR}; }
+.escp-vagas { background: #FEF3C7; color: #92400E; font-weight: 900; font-size: 13px; border-radius: 999px; padding: 5px 11px; white-space: nowrap; }
+.escp-obs { font-size: 13.5px; color: #475569; margin-top: 8px; }
+.escp-nomes { font-size: 13px; color: #64748B; margin-top: 6px; }
+.escp-estou { margin-top: 10px; background: #ECFDF5; color: #047857; font-weight: 900; border-radius: 12px; padding: 12px; text-align: center; }
+.escp-aviso { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 50; width: min(460px, calc(100vw - 24px)); border-radius: 14px; padding: 13px 15px; font-weight: 800; font-size: 14.5px; box-shadow: 0 10px 30px rgba(15,23,42,.2); cursor: pointer; }
+.escp-aviso.ok { background: #ECFDF5; color: #065F46; border-left: 5px solid #059669; }
+.escp-aviso.erro { background: #FEF2F2; color: #991B1B; border-left: 5px solid #DC2626; }
+.escp-rodape { text-align: center; font-size: 12px; color: #94A3B8; margin-top: 24px; }
+`;

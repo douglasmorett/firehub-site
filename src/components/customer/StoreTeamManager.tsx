@@ -12,6 +12,7 @@ export const STORE_MODULES = [
   { key: "cardapio",         label: "📖 Cardápio & Produtos",              desc: "Cadastro e alteração de preços e itens" },
   { key: "estoque",          label: "📦 Controle de Estoque",             desc: "Insumos, fichas técnicas e entradas/saídas" },
   { key: "motoboys",         label: "🛵 Gestão de Motoboys",              desc: "Atribuição e cadastro de motoboys próprios" },
+  { key: "escala",           label: "📅 Escala da equipe",                desc: "Montar os turnos, encaixar gente e imprimir a escala (custo e diárias ficam só com o dono)" },
   { key: "financeiro",       label: "💰 Relatórios Financeiros & DRE",    desc: "Acesso a faturamento, custos fixos e fluxo de caixa" },
   { key: "ifood",            label: "⚡ Integrações (iFood / Jotajá)",     desc: "Conexão e status das plataformas de delivery" },
   { key: "impressoras",      label: "🖨️ Configuração de Impressoras",     desc: "Vínculo e vias de impressão de cupons" },

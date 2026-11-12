@@ -104,6 +104,8 @@ export const MENU_DO_PAINEL: GrupoDoMenu[] = [
     titulo: "Equipe",
     itens: [
       { href: "/store/motoboys", label: "Motoboys", icone: "Bike" },
+      // Turnos, vagas e o link de inscrição para o grupo (lib/escala-da-equipe — incluso no plano, Douglas, 11/11/2026).
+      { href: "/store/escala", label: "Escala da equipe", icone: "CalendarDays", selo: "NOVO" },
       { href: "/store/garcons", label: "Garçons", icone: "Users" },
       { href: "/store/funcionarios", label: "Fiado", icone: "Wallet" },
       { href: "/store/firecheck", label: "Checklist e ponto", icone: "CheckCircle2", selo: "FIRECHECK" },

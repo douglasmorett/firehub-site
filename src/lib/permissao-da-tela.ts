@@ -30,6 +30,7 @@ type Permissao =
   | "cardapio"
   | "estoque"
   | "motoboys"
+  | "escala"
   | "financeiro"
   | "relatorios"
   | "ifood"
@@ -59,6 +60,10 @@ const TELAS: Array<{ prefixo: string; abre: Array<Permissao> | typeof LIVRE }> =
   { prefixo: "/store/caixa", abre: ["venda_presencial"] },
   { prefixo: "/store/roteirizacao", abre: ["motoboys"] },
   { prefixo: "/store/motoboys", abre: ["motoboys"] },
+  // Escala da equipe (lib/escala-da-equipe): caixinha própria — quem monta a
+  // escala nem sempre é quem despacha motoboy. Custo e diária a tela e a API
+  // só mostram ao dono.
+  { prefixo: "/store/escala", abre: ["escala"] },
 
   { prefixo: "/store/cardapio", abre: ["cardapio"] },
 
