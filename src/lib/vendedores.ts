@@ -21,6 +21,7 @@
  */
 import { randomInt } from "crypto";
 import { prisma } from "@/lib/prisma";
+import { gerarCodigoUnicoDoEmbaixador } from "@/lib/codigo-do-embaixador";
 
 /**
  * O vendedor leva `sellerPercent` desta loja? Não quando já ganha nela como
@@ -57,19 +58,10 @@ export function gerarSenhaTemporaria(): string {
   return `${s}${randomInt(1000, 10000)}`;
 }
 
-/** Código do link de convite (o vendedor também tem um, como embaixador), único na tabela. */
-export async function gerarCodigoUnico(nome: string): Promise<string> {
-  const base =
-    String(nome || "vendedor")
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[̀-ͯ]/g, "")
-      .replace(/[^a-z0-9]/g, "")
-      .slice(0, 20) || "vendedor";
-  for (let i = 0; i < 20; i++) {
-    const code = `${base}${randomInt(1000, 10000)}`;
-    const existe = await prisma.ambassador.findUnique({ where: { code }, select: { id: true } });
-    if (!existe) return code;
-  }
-  return `${base}${Date.now().toString(36)}`;
+/**
+ * Código do link de convite (o vendedor também tem um, como embaixador), único
+ * na tabela. Embaralhado, sem o nome da pessoa (Douglas, 12/11/2026).
+ */
+export async function gerarCodigoUnico(_nome: string): Promise<string> {
+  return gerarCodigoUnicoDoEmbaixador();
 }

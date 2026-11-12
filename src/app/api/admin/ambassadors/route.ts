@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { gerarCodigoUnicoDoEmbaixador } from "@/lib/codigo-do-embaixador";
 
 // GET: Lista todos os embaixadores com métricas de lojas indicadas
 export async function GET(req: NextRequest) {
@@ -53,12 +54,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Nome e e-mail são obrigatórios" }, { status: 400 });
     }
 
-    // Auto-generate code if not provided
-    if (!code) {
-      const base = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
-      const rand = Math.floor(1000 + Math.random() * 9000);
-      code = `${base}${rand}`;
-    }
+    // C\u00f3digo embaralhado, sem o nome de ningu\u00e9m (Douglas, 12/11/2026: o nome
+    // de quem indicou no link derruba a convers\u00e3o). Ignora o que vier no corpo.
+    code = await gerarCodigoUnicoDoEmbaixador();
 
     // Verifica se já existe email ou code
     const existing = await prisma.ambassador.findFirst({

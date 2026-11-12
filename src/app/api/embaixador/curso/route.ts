@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { CODIGO_DO_CURSO, COMISSAO_DO_CURSO, conferirCarteiraNoAsaas } from "@/lib/embaixador-do-curso";
+import { gerarCodigoUnicoDoEmbaixador } from "@/lib/codigo-do-embaixador";
 
 export const dynamic = "force-dynamic";
 
@@ -43,14 +44,13 @@ export async function POST(req: NextRequest) {
   const conferencia = await conferirCarteiraNoAsaas(walletId);
   if (!conferencia.ok) return NextResponse.json({ error: conferencia.motivo }, { status: 400 });
 
-  // Código do link de indicação: o primeiro nome + 4 números, como no admin.
-  const base = nome.split(" ")[0].toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "") || "parceiro";
+  // Código do link de indicação: embaralhado, sem o nome (Douglas, 12/11/2026).
   let code = "";
-  for (let i = 0; i < 5 && !code; i++) {
-    const tentativa = `${base}${Math.floor(1000 + Math.random() * 9000)}`;
-    if (!(await prisma.ambassador.findUnique({ where: { code: tentativa }, select: { id: true } }))) code = tentativa;
+  try {
+    code = await gerarCodigoUnicoDoEmbaixador();
+  } catch {
+    return NextResponse.json({ error: "Não consegui gerar o seu link agora. Tente de novo." }, { status: 500 });
   }
-  if (!code) return NextResponse.json({ error: "Não consegui gerar o seu link agora. Tente de novo." }, { status: 500 });
 
   await prisma.ambassador.create({
     data: {

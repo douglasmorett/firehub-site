@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
+import { gerarCodigoUnicoDoEmbaixador } from "@/lib/codigo-do-embaixador";
 
 /**
  * Promove um lojista a embaixador — o único caminho de entrada no programa.
@@ -105,29 +106,12 @@ export async function POST(req: NextRequest) {
   }
 }
 
-/** Código do link de convite, único na tabela. */
-async function gerarCodigo(codeInformado: string | undefined, nome: string) {
-  if (codeInformado) {
-    const limpo = String(codeInformado).toLowerCase().trim();
-    const existe = await prisma.ambassador.findUnique({ where: { code: limpo } });
-    if (existe) throw new Error(`Código ${limpo} já está em uso.`);
-    return limpo;
-  }
-
-  const base =
-    nome
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9]/g, "")
-      .slice(0, 20) || "embaixador";
-
-  for (let tentativa = 0; tentativa < 10; tentativa++) {
-    const candidato = `${base}${Math.floor(1000 + Math.random() * 9000)}`;
-    const existe = await prisma.ambassador.findUnique({ where: { code: candidato } });
-    if (!existe) return candidato;
-  }
-  throw new Error("Não foi possível gerar um código único.");
+/**
+ * Código do link de convite, único na tabela. Sempre embaralhado, sem o nome
+ * da loja (Douglas, 12/11/2026): o código informado à mão é ignorado.
+ */
+async function gerarCodigo(_codeInformado: string | undefined, _nome: string) {
+  return gerarCodigoUnicoDoEmbaixador();
 }
 
 function gerarSenha() {

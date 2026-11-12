@@ -12,6 +12,7 @@ import { VERSAO_DOS_TERMOS } from "@/lib/termos-versao";
 import { aoCadastrarLoja } from "@/lib/crm/contatos";
 import { avisarMetaTrialIniciado, cookiesDoMeta, idsDosEventosDoTrial } from "@/lib/meta-firehub";
 
+import { embaixadorPeloCodigo } from "@/lib/codigo-do-embaixador";
 // CORS headers for cross-origin requests from firehubfood.com.br
 export async function OPTIONS(req: NextRequest) {
   return NextResponse.json({}, { headers: getCorsHeaders(req) });
@@ -136,7 +137,8 @@ export async function POST(req: NextRequest) {
     let referredById = null;
     if (refCode) {
       const code = String(refCode).toLowerCase().trim();
-      const amb = await prisma.ambassador.findUnique({ where: { code } });
+      // Pelo código atual ou por um antigo (links com nome, de antes de 12/11/2026).
+      const amb = await embaixadorPeloCodigo(code);
       if (amb && amb.active) {
         ambassadorId = amb.id;
       } else {
