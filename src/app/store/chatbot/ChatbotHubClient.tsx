@@ -1261,7 +1261,7 @@ export default function ChatbotHubClient() {
                   type="text"
                   value={storePhoneInput}
                   onChange={(e) => setStorePhoneInput(e.target.value)}
-                  placeholder="Ex: 22 99885-1680"
+                  placeholder="Ex: 22 99999-0000"
                   style={{
                     width: "100%", padding: "10px 14px", borderRadius: "10px",
                     border: "1.5px solid #CBD5E1", fontSize: "0.95rem", fontWeight: 700,
@@ -2209,7 +2209,7 @@ export default function ChatbotHubClient() {
                   type="text"
                   value={testPhone}
                   onChange={e => setTestPhone(e.target.value)}
-                  placeholder="Ex: 22 99885-1680"
+                  placeholder="Ex: 22 99999-0000"
                   style={{ width: "100%", padding: "10px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.88rem" }}
                 />
               </div>
