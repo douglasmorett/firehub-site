@@ -15,6 +15,9 @@ import EditarInsumo, { type InsumoEditavel } from "@/components/cmv/EditarInsumo
 import PagamentoDaCompra, { pagamentoInicial, pagamentoParaApi, type EstadoDoPagamento } from "@/components/cmv/PagamentoDaCompra";
 import DesperdicioDoEstoque from "@/components/estoque/DesperdicioDoEstoque";
 import ControlaveisDoEstoque from "@/components/estoque/ControlaveisDoEstoque";
+import VisaoGeralDoEstoque from "@/components/estoque/VisaoGeralDoEstoque";
+import TabelaDeInsumos from "@/components/estoque/TabelaDeInsumos";
+import MargemDasFichas from "@/components/estoque/MargemDasFichas";
 import PausaPeloEstoque from "@/components/estoque/PausaPeloEstoque";
 import { MOTIVOS_DE_SAIDA } from "@/lib/relatorios/saidas-de-estoque";
 
@@ -98,7 +101,7 @@ interface NfeItem {
 }
 
 export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 0, recebidos: 0, baixas: 0, disponivel: false }, veControlaveis = false }: EstoqueClientProps) {
-  const [activeTab, setActiveTab] = useState<"items" | "lotes" | "nfe" | "history" | "recipes" | "desperdicio" | "controlaveis">("items");
+  const [activeTab, setActiveTab] = useState<"visao" | "items" | "lotes" | "nfe" | "history" | "recipes" | "desperdicio" | "controlaveis">("visao");
   const [mostrarScanner, setMostrarScanner] = useState(false);
   // O "Lançar perda / descarte" do topo abre o lançamento na aba (1 = abrir).
   const [pedidoDePerda, setPedidoDePerda] = useState(0);
@@ -112,7 +115,6 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
   
   // Onboarding
   const [showOnboarding, setShowOnboarding] = useState<boolean>(true);
-  const [expandedKpi, setExpandedKpi] = useState<"low" | "negative" | null>(null);
 
   // Data States
   const [items, setItems] = useState<StockItem[]>([]);
@@ -120,7 +122,6 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
   const [products, setProducts] = useState<MenuProduct[]>([]);
   
   // Search & Filter
-  const [itemSearch, setItemSearch] = useState<string>("");
   const [productSearch, setProductSearch] = useState<string>("");
   const [showOnlyWithoutRecipe, setShowOnlyWithoutRecipe] = useState<boolean>(false);
 
@@ -209,6 +210,8 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
     if (aba === "nfe") setActiveTab("nfe");
     if (aba === "desperdicio") setActiveTab("desperdicio");
     if (aba === "controlaveis" && veControlaveis) setActiveTab("controlaveis");
+    if (aba === "items" || aba === "insumos") setActiveTab("items");
+    if (aba === "recipes" || aba === "fichas") setActiveTab("recipes");
     const filtro = q.get("filtro");
     if (filtro && ["todos", "aguardando", "geladeira", "vencendo", "vencidos"].includes(filtro)) {
       setFiltroDeLote(filtro as any);
@@ -286,14 +289,6 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
     localStorage.setItem("estoque-onboarding-dismissed", "true");
   };
 
-  // KPIs Calculation
-  const totalItemsCount = items.length;
-  const negativeStockItems = items.filter(i => i.quantity < 0);
-  const lowStockItems = items.filter(i => i.minQuantity !== null && i.quantity <= i.minQuantity && i.quantity >= 0);
-  // Valor do estoque: saldo × custo do cadastro, a mesma conta da coluna "Valor em Estoque".
-  const valorDoEstoque = items.reduce((s, i) => s + (i.quantity > 0 && (i.unitCost || 0) > 0 ? i.quantity * (i.unitCost as number) : 0), 0);
-  const insumosSemCusto = items.filter(i => i.quantity > 0 && !((i.unitCost || 0) > 0)).length;
-  
   const validProducts = products.filter(p => !isHiddenIntegrationItem(p));
   const productsWithRecipe = validProducts.filter(p => p.recipeItems.length > 0);
   const recipeCoveragePct = validProducts.length > 0 
@@ -609,9 +604,6 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
   }
 
   // Derived Filtered Data
-  const filteredItems = items.filter(item => 
-    item.name.toLowerCase().includes(itemSearch.toLowerCase())
-  );
 
   const filteredProducts = validProducts.filter(prod => {
     const matchesSearch = prod.name.toLowerCase().includes(productSearch.toLowerCase());
@@ -656,9 +648,6 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
         <div style={{ minWidth: 0 }}>
           <div className="fh-micro">MÓDULO · ESTOQUE</div>
           <h1 className="fh-h1">Controle de estoque</h1>
-          <p className="fh-corpo">
-            Saldo dos insumos, fichas técnicas e a baixa automática de cada venda de <strong>{storeName}</strong>.
-          </p>
         </div>
         <div className="fh-cabecalho__acoes">
           {/* CMV real: a contagem e as compras (lib/cmv). */}
@@ -719,54 +708,8 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
         <ScanLine size={24} />
       </button>
 
-      {/* KPI DASHBOARD */}
-      {!loading && (
-        <div className="kpi-grid">
-          <div className="kpi-card">
-            <div className="kpi-icon-wrapper blue"><Database size={20} /></div>
-            <div className="kpi-info">
-              <span className="kpi-label">Total de Insumos</span>
-              <span className="kpi-value">{totalItemsCount}</span>
-            </div>
-          </div>
-          <div 
-            className="kpi-card warning clickable" 
-            onClick={() => setExpandedKpi(expandedKpi === "low" ? null : "low")}
-          >
-            <div className="kpi-icon-wrapper yellow"><AlertTriangle size={20} /></div>
-            <div className="kpi-info">
-              <span className="kpi-label">Estoque Baixo</span>
-              <span className="kpi-value">{lowStockItems.length}</span>
-            </div>
-            {expandedKpi === "low" ? <ChevronUp size={16} className="kpi-chevron"/> : <ChevronDown size={16} className="kpi-chevron"/>}
-          </div>
-          <div 
-            className="kpi-card danger clickable"
-            onClick={() => setExpandedKpi(expandedKpi === "negative" ? null : "negative")}
-          >
-            <div className="kpi-icon-wrapper red pulse"><TrendingDown size={20} /></div>
-            <div className="kpi-info">
-              <span className="kpi-label">Estoque Negativo</span>
-              <span className="kpi-value">{negativeStockItems.length}</span>
-            </div>
-            {expandedKpi === "negative" ? <ChevronUp size={16} className="kpi-chevron"/> : <ChevronDown size={16} className="kpi-chevron"/>}
-          </div>
-          <div className="kpi-card">
-            <div className="kpi-icon-wrapper purple"><ClipboardList size={20} /></div>
-            <div className="kpi-info">
-              <span className="kpi-label">Fichas Técnicas</span>
-              <span className="kpi-value">{recipeCoveragePct}% <span className="kpi-subtext">({productsWithRecipe.length}/{validProducts.length})</span></span>
-            </div>
-          </div>
-          <div className="kpi-card" title={insumosSemCusto ? `${insumosSemCusto} insumo(s) com saldo e sem custo ficam fora do valor` : "Saldo × custo de cada insumo"}>
-            <div className="kpi-icon-wrapper blue"><Database size={20} /></div>
-            <div className="kpi-info">
-              <span className="kpi-label">Valor do estoque</span>
-              <span className="kpi-value">{formatCurrency(valorDoEstoque)}{insumosSemCusto > 0 && <span className="kpi-subtext"> ({insumosSemCusto} sem custo)</span>}</span>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Os cinco cartões que ficavam aqui (total, baixo, negativo, % de fichas,
+          valor) agora estão na aba Visão geral, com o resto do que importa hoje. */}
 
       {/* ── OS DOIS NÚMEROS DO LOTE ──────────────────────────────────────────
           Só aparecem quando existe lote: numa loja que nunca imprimiu etiqueta,
@@ -808,36 +751,15 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
         </div>
       )}
 
-      {/* EXPANDABLE KPI LISTS */}
-      {expandedKpi === "low" && lowStockItems.length > 0 && (
-        <div className="kpi-expanded-panel warning-panel">
-          <h4>Itens com Estoque Baixo</h4>
-          <ul>
-            {lowStockItems.map(it => (
-              <li key={it.id}>
-                <span>{it.name}</span>
-                <strong>{formatQuantity(it.quantity, it.unit)} <span className="min-label">(Min: {it.minQuantity}{it.unit})</span></strong>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {expandedKpi === "negative" && negativeStockItems.length > 0 && (
-        <div className="kpi-expanded-panel danger-panel">
-          <h4>Itens com Estoque Negativo</h4>
-          <ul>
-            {negativeStockItems.map(it => (
-              <li key={it.id}>
-                <span>{it.name}</span>
-                <strong>{formatQuantity(it.quantity, it.unit)}</strong>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
       {/* DASHBOARD TABS */}
       <div className="tabs-container">
+        <button
+          className={`tab-link ${activeTab === "visao" ? "active" : ""}`}
+          onClick={() => setActiveTab("visao")}
+        >
+          <BarChart3 size={16} />
+          Visão geral
+        </button>
         <button 
           className={`tab-link ${activeTab === "items" ? "active" : ""}`}
           onClick={() => setActiveTab("items")}
@@ -1005,104 +927,20 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
             </div>
           )}
 
-          {/* TAB 1: ITEMS */}
+          {/* TAB VISÃO GERAL: o que importa hoje (components/estoque/VisaoGeralDoEstoque). */}
+          {activeTab === "visao" && <VisaoGeralDoEstoque onAbrirAba={(aba) => setActiveTab(aba)} />}
+
+          {/* TAB 1: ITEMS — tabela com consumo, cobertura, contagem, classe e ABC
+              (components/estoque/TabelaDeInsumos); R$ só para dados sensíveis. */}
           {activeTab === "items" && (
-            <>
-              <div className="search-bar">
-                <Search size={18} className="search-icon" />
-                <input 
-                  type="text" 
-                  placeholder="Pesquisar insumo (ex: Queijo, Carne moída)..." 
-                  value={itemSearch}
-                  onChange={e => setItemSearch(e.target.value)}
-                />
-              </div>
-
-              {filteredItems.length === 0 ? (
-                <div className="empty-state">
-                  <Package size={48} />
-                  <h3>Nenhum insumo encontrado</h3>
-                  <p>Cadastre um novo insumo clicando no botão "Novo Insumo" no topo da página.</p>
-                </div>
-              ) : (
-                <div className="items-table-wrapper">
-                  <table className="items-table">
-                    <thead>
-                      <tr>
-                        <th>Nome do Insumo</th>
-                        <th>Saldo Atual</th>
-                        <th>Estoque Mínimo</th>
-                        <th>Custo Unit.</th>
-                        <th>Valor em Estoque</th>
-                        <th>Status</th>
-                        <th style={{ textAlign: "right" }}>Ações</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredItems.map(item => {
-                        const isNegative = item.quantity < 0;
-                        const isLow = !isNegative && item.minQuantity !== null && item.quantity <= item.minQuantity;
-                        const unitCost = item.unitCost || 0;
-                        const stockValue = item.quantity > 0 ? (item.quantity * unitCost) : 0;
-
-                        return (
-                          <tr key={item.id} className={`${isNegative ? "negative-stock-tr" : ""} ${isLow ? "low-stock-tr" : ""}`}>
-                            <td className="name-col">
-                              {item.name}
-                              {String(item.tipo || "").toUpperCase() === "PREPARO" && <span className="badge badge-nfe" style={{ marginLeft: 6 }}>Preparo</span>}
-                              {item.contagemDiaria && <span className="badge badge-success" style={{ marginLeft: 6 }}>Conta todo dia</span>}
-                              {item.entraNoCmv === false && <span className="badge" style={{ marginLeft: 6 }}>Fora do CMV</span>}
-                            </td>
-                            <td className="qty-col">{formatQuantity(item.quantity, item.unit)}</td>
-                            <td>
-                              {item.minQuantity !== null ? formatQuantity(item.minQuantity, item.unit) : "—"}
-                              {item.idealQuantity != null && <div style={{ fontSize: "0.75rem", color: "#57534E" }}>ideal {formatQuantity(item.idealQuantity, item.unit)}</div>}
-                            </td>
-                            <td>{unitCost > 0 ? formatCurrency(unitCost) : "—"}</td>
-                            <td>{stockValue > 0 ? formatCurrency(stockValue) : "—"}</td>
-                            <td>
-                              {isNegative ? (
-                                <span className="status-label status-negative">
-                                  <AlertTriangle size={12} /> Estoque Negativo
-                                </span>
-                              ) : isLow ? (
-                                <span className="status-label status-low">
-                                  <AlertTriangle size={12} /> Estoque Baixo
-                                </span>
-                              ) : (
-                                <span className="status-label status-ok">Ok</span>
-                              )}
-                            </td>
-                            <td style={{ textAlign: "right" }}>
-                              <div className="action-buttons">
-                                <button 
-                                  className="btn-action btn-move" 
-                                  onClick={() => { setSelectedItem(item); setShowMoveModal(true); }}
-                                >
-                                  Movimentar
-                                </button>
-                                <button
-                                  className="btn-action btn-move"
-                                  onClick={() => setEditando(item)}
-                                >
-                                  Editar
-                                </button>
-                                <button 
-                                  className="btn-action btn-delete" 
-                                  onClick={() => handleDeleteItem(item.id)}
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </>
+            <TabelaDeInsumos
+              items={items}
+              veValor={veControlaveis}
+              versao={versaoDosSaldos}
+              onMovimentar={(id) => { const it = items.find((x) => x.id === id); if (it) { setSelectedItem(it); setShowMoveModal(true); } }}
+              onEditar={(id) => { const it = items.find((x) => x.id === id); if (it) setEditando(it); }}
+              onExcluir={(id) => handleDeleteItem(id)}
+            />
           )}
 
           {/* TAB 2: NF-E (ENTRADA COM IA) */}
@@ -1342,6 +1180,9 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           {/* TAB 4: RECIPES */}
           {activeTab === "recipes" && (
             <>
+              {veControlaveis && (
+                <MargemDasFichas onAbrirFicha={(id) => { const p = products.find((x) => x.id === id); if (p) openRecipeEditor(p); }} />
+              )}
               <div className="coverage-bar">
                 <div className="coverage-info">
                   <BarChart3 size={18} />
@@ -1699,8 +1540,10 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
 
       {/* COMPONENT CSS */}
       <style jsx global>{`
+        /* Tela larga: usa a largura que houver (o .fh-tela trava em 1440px). */
+        .estoque-container.fh-tela { max-width: none; }
         .estoque-container {
-          max-width: 1400px;
+          max-width: none;
           margin: 0 auto;
           padding: 1.5rem;
           font-family: Inter, system-ui, sans-serif;

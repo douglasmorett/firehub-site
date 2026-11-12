@@ -242,7 +242,6 @@ body { font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 9.5pt;
 .pagina > thead td { padding-bottom: 6px; }
 .cab { border-bottom: 2px solid #111; padding-bottom: 4px; font-size: 8.5pt; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .cab b { font-size: 11pt; }
-h1 { font-size: 15pt; margin: 4px 0 2px; }
 h2 { font-size: 11.5pt; margin: 14px 0 4px; padding: 3px 6px; background: #EEE; border-left: 4px solid #C92E09; break-after: avoid; }
 h3 { font-size: 10pt; margin: 8px 0 3px; }
 p.d { margin: 0 0 4px; color: #444; font-size: 8.5pt; }
@@ -261,7 +260,6 @@ tr.tot td { font-weight: bold; border-top: 1.5px solid #111; border-bottom: none
 </style></head><body>
 <button class="botao" onclick="window.print()">Imprimir / salvar PDF</button>
 <table class="pagina"><thead><tr><td>${cab}</td></tr></thead><tbody><tr><td>
-<h1>Relatório dos controláveis</h1>
 ${resumo}${top}${secoes}${avisos}
 </td></tr></tbody></table>
 </body></html>`;

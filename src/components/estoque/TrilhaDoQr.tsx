@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, Printer, ScanLine, ArrowDownToLine, ArrowUpFromLine, ChevronDown, ChevronUp, Smartphone } from "lucide-react";
 import Link from "next/link";
 
@@ -31,7 +31,20 @@ export default function TrilhaDoQr({
   const completo = fluxo.criadas > 0 && fluxo.recebidos > 0 && fluxo.baixas > 0;
   // Colapsa quando o fluxo fechou, mas NUNCA some: restaurante contrata gente
   // nova todo mês, e quem entrou ontem precisa do mesmo caminho.
-  const [aberta, setAberta] = useState(!completo);
+  // Loja que já usa etiqueta começa com ela recolhida (ocupava meia tela). A
+  // escolha de abrir ou fechar fica lembrada neste navegador.
+  const [aberta, setAbertaDeVerdade] = useState(!completo && fluxo.criadas === 0);
+  useEffect(() => {
+    try {
+      const salvo = localStorage.getItem("estoque-trilha-qr-aberta");
+      if (salvo === "1" || salvo === "0") setAbertaDeVerdade(salvo === "1");
+    } catch {}
+  }, []);
+  const setAberta = (f: (v: boolean) => boolean) => setAbertaDeVerdade((v) => {
+    const nova = f(v);
+    try { localStorage.setItem("estoque-trilha-qr-aberta", nova ? "1" : "0"); } catch {}
+    return nova;
+  });
 
   const passos = [
     {

@@ -238,10 +238,10 @@ async function montarPeriodo(lojaId: string, tz: string, de: string, ate: string
   };
 }
 
-export async function montarControlaveis(e: { lojaId: string; nomeDaLoja: string; tz: string; de: string; ate: string }): Promise<RelatorioDosControlaveis> {
+export async function montarControlaveis(e: { lojaId: string; nomeDaLoja: string; tz: string; de: string; ate: string; semAnterior?: boolean }): Promise<RelatorioDosControlaveis> {
   const atual = await montarPeriodo(e.lojaId, e.tz, e.de, e.ate, true);
   let anterior: RelatorioDosControlaveis["anterior"] = null;
-  if (diasNoPeriodo(e.de, e.ate) <= 186) {
+  if (!e.semAnterior && diasNoPeriodo(e.de, e.ate) <= 186) {
     const p = periodoAnterior(e.de, e.ate);
     const antes = await montarPeriodo(e.lojaId, e.tz, p.de, p.ate, false);
     anterior = { de: p.de, ate: p.ate, resumo: antes.resumo, comparacao: comparar(atual.resumo, antes.resumo) };
