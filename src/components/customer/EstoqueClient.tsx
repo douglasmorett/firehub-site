@@ -14,6 +14,7 @@ import Link from "next/link";
 import EditarInsumo, { type InsumoEditavel } from "@/components/cmv/EditarInsumo";
 import PagamentoDaCompra, { pagamentoInicial, pagamentoParaApi, type EstadoDoPagamento } from "@/components/cmv/PagamentoDaCompra";
 import DesperdicioDoEstoque from "@/components/estoque/DesperdicioDoEstoque";
+import ControlaveisDoEstoque from "@/components/estoque/ControlaveisDoEstoque";
 import PausaPeloEstoque from "@/components/estoque/PausaPeloEstoque";
 import { MOTIVOS_DE_SAIDA } from "@/lib/relatorios/saidas-de-estoque";
 
@@ -31,6 +32,8 @@ interface EstoqueClientProps {
       render: buscar por fetch faria a trilha piscar "nenhuma etiqueta criada"
       na cara de quem já criou trezentas. */
   fluxo: { criadas: number; recebidos: number; baixas: number; disponivel: boolean };
+  /** Vê dados sensíveis (lib/cmv/acesso.ts): só ele vê a aba Controláveis. */
+  veControlaveis?: boolean;
 }
 
 interface StockItem {
@@ -94,8 +97,8 @@ interface NfeItem {
   newItemUnit: string;
 }
 
-export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 0, recebidos: 0, baixas: 0, disponivel: false } }: EstoqueClientProps) {
-  const [activeTab, setActiveTab] = useState<"items" | "lotes" | "nfe" | "history" | "recipes" | "desperdicio">("items");
+export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 0, recebidos: 0, baixas: 0, disponivel: false }, veControlaveis = false }: EstoqueClientProps) {
+  const [activeTab, setActiveTab] = useState<"items" | "lotes" | "nfe" | "history" | "recipes" | "desperdicio" | "controlaveis">("items");
   const [mostrarScanner, setMostrarScanner] = useState(false);
   // O "Lançar perda / descarte" do topo abre o lançamento na aba (1 = abrir).
   const [pedidoDePerda, setPedidoDePerda] = useState(0);
@@ -205,6 +208,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
     // Compras › "Nota com foto" manda para cá.
     if (aba === "nfe") setActiveTab("nfe");
     if (aba === "desperdicio") setActiveTab("desperdicio");
+    if (aba === "controlaveis" && veControlaveis) setActiveTab("controlaveis");
     const filtro = q.get("filtro");
     if (filtro && ["todos", "aguardando", "geladeira", "vencendo", "vencidos"].includes(filtro)) {
       setFiltroDeLote(filtro as any);
@@ -881,6 +885,15 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           <Trash2 size={16} />
           Perdas e descarte
         </button>
+        {veControlaveis && (
+          <button
+            className={`tab-link ${activeTab === "controlaveis" ? "active" : ""}`}
+            onClick={() => setActiveTab("controlaveis")}
+          >
+            <ClipboardList size={16} />
+            Controláveis
+          </button>
+        )}
       </div>
 
       {/* LOADING STATE */}
@@ -1320,6 +1333,10 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
 
           {/* TAB DESPERDÍCIO: produto do cardápio (pela ficha) ou insumo, e os
               pedidos cancelados já produzidos (components/estoque/DesperdicioDoEstoque). */}
+          {/* TAB CONTROLÁVEIS: o relatório das perdas e diferenças em R$ e % da venda
+              (components/estoque/ControlaveisDoEstoque, só dados sensíveis). */}
+          {activeTab === "controlaveis" && veControlaveis && <ControlaveisDoEstoque />}
+
           {activeTab === "desperdicio" && <DesperdicioDoEstoque onLancou={recarregarSaldos} pedidoDeAbrir={pedidoDePerda} onAbriu={() => setPedidoDePerda(0)} />}
 
           {/* TAB 4: RECIPES */}
