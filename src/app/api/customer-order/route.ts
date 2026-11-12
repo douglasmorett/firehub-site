@@ -69,6 +69,7 @@ import { acrescimoNoCredito, etiquetaDoAcrescimo } from "@/lib/acrescimo-no-cred
 import { aplicarMarcasNosItens } from "@/lib/multimarcas/itens";
 import { ehPedidoDeEntrega, formaDesligada, formaRecusadaNaEntrega, TEXTO_ENTREGA_SO_ONLINE } from "@/lib/formas-do-cardapio";
 import { problemaDaFormaPropria } from "@/lib/formas-proprias";
+import { formaFechadaAgora, textoDoAte } from "@/lib/forma-fechada";
 import { lerSessaoDoCliente } from "@/lib/sessao-do-cliente";
 import { finalDoTelefone } from "@/lib/pedidos-do-telefone";
 import { descontoDoClube, ehDoAplicativo, etiquetaDoClube, instalacaoDoCorpo, veredictoDoClube } from "@/lib/clube/regras";
@@ -280,6 +281,21 @@ export async function POST(req: Request) {
       if (hoje >= pause.from && hoje <= pause.to) {
         const [a, m, d] = String(pause.to).split("-");
         return NextResponse.json({ error: `Loja em pausa até ${d}/${m}/${a}.` }, { status: 400 });
+      }
+    }
+
+    // ── SÓ A ENTREGA (OU SÓ A RETIRADA) FECHADA (lib/forma-fechada.ts) ─────
+    // A loja fechou uma forma pelo botão "Site" do painel. Mesa não conta como
+    // retirada aqui: fechar a retirada não para o salão. O agendado vale pelo
+    // horário DELE: encomenda para depois do prazo passa.
+    {
+      const fechada = formaFechadaAgora(franchisee.deliveryConfig, (instanteAgendado || new Date()).getTime());
+      const tipo = String(deliveryType || "").trim().toUpperCase();
+      const bate = fechada?.forma === "ENTREGA" ? ehPedidoDeEntrega(deliveryType) : fechada?.forma === "RETIRADA" && ["PICKUP", "TAKEOUT", "RETIRADA", "BALCAO", "BALCÃO"].includes(tipo);
+      if (fechada && bate) {
+        const qual = fechada.forma === "ENTREGA" ? "A entrega" : "A retirada";
+        const outra = fechada.forma === "ENTREGA" ? "Retirar no Balcão" : "Entrega";
+        return NextResponse.json({ error: `${qual} está fechada ${textoDoAte(fechada.ate, franchisee.storeTimezone)}. Escolha “${outra}”.` }, { status: 400 });
       }
     }
 

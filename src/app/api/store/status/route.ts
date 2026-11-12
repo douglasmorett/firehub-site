@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { formaFechadaAgora } from "@/lib/forma-fechada";
 
 // GET - retorna status da loja (público, por slug)
 export async function GET(req: Request) {
@@ -28,9 +29,10 @@ export async function GET(req: Request) {
   const targetId = currentUser.ownerId || currentUser.id;
   const user = await prisma.user.findUnique({
     where: { id: targetId },
-    select: { storeOpen: true, cashOpen: true },
+    select: { storeOpen: true, cashOpen: true, deliveryConfig: true },
   });
-  return NextResponse.json(user);
+  if (!user) return NextResponse.json({ error: "Não encontrado" }, { status: 404 });
+  return NextResponse.json({ storeOpen: user.storeOpen, cashOpen: user.cashOpen, formaFechada: formaFechadaAgora(user.deliveryConfig) });
 }
 
 // PATCH - toggle loja/caixa
@@ -50,10 +52,31 @@ export async function PATCH(req: Request) {
   if (!currentUser) return NextResponse.json({ error: "Não encontrado" }, { status: 404 });
   const targetId = currentUser.ownerId || currentUser.id;
 
+  // Fechar só a entrega ou só a retirada (lib/forma-fechada.ts): mesclado no
+  // deliveryConfig, que guarda frete, mínimo e roteirização de outras telas.
+  if (body.formaFechada !== undefined) {
+    const f = body.formaFechada;
+    let nova: any = null;
+    if (f) {
+      if (f.forma !== "ENTREGA" && f.forma !== "RETIRADA") return NextResponse.json({ error: "Forma inválida" }, { status: 400 });
+      const ate = new Date(f.ate);
+      if (!Number.isFinite(ate.getTime()) || ate.getTime() <= Date.now()) return NextResponse.json({ error: "Escolha até quando fica fechado" }, { status: 400 });
+      nova = { forma: f.forma, ate: ate.toISOString(), motivo: typeof f.motivo === "string" ? f.motivo.slice(0, 60) : undefined };
+    }
+    const atual = await prisma.user.findUnique({ where: { id: targetId }, select: { deliveryConfig: true, storeDeliveryOnly: true } });
+    if (nova?.forma === "ENTREGA" && atual?.storeDeliveryOnly) {
+      return NextResponse.json({ error: "Sua loja não faz retirada: para parar a entrega, feche o site todo." }, { status: 400 });
+    }
+    const cfg = atual?.deliveryConfig && typeof atual.deliveryConfig === "object" && !Array.isArray(atual.deliveryConfig)
+      ? (atual.deliveryConfig as Record<string, unknown>)
+      : {};
+    data.deliveryConfig = { ...cfg, formaFechada: nova };
+  }
+
   const user = await prisma.user.update({
     where: { id: targetId },
     data,
-    select: { storeOpen: true, cashOpen: true },
+    select: { storeOpen: true, cashOpen: true, deliveryConfig: true },
   });
-  return NextResponse.json(user);
+  return NextResponse.json({ storeOpen: user.storeOpen, cashOpen: user.cashOpen, formaFechada: formaFechadaAgora(user.deliveryConfig) });
 }

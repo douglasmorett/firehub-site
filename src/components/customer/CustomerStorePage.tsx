@@ -72,6 +72,7 @@ import { acrescimoNoCredito, percentualDoAcrescimoNoCredito } from "@/lib/acresc
 import { esquecerCliente, lembrarCliente, lerClienteLembrado } from "@/lib/cliente-lembrado";
 import { mesmoEndereco, primeiroNome, type ClienteReconhecido, type EnderecoReconhecido } from "@/lib/cliente-reconhecido";
 import { bandeirasDeValeLigadas, ehFormaPeloSite, entregaSoOnlineMarcada, formaLigada, TEXTO_ENTREGA_SO_ONLINE } from "@/lib/formas-do-cardapio";
+import { formaFechadaAgora, textoDoAte } from "@/lib/forma-fechada";
 import { rotuloDaForma, textosNoCanal } from "@/lib/formas-proprias";
 import { acharCupom, descontoDoCupomNosItens, MOTIVO_SEM_ITEM_COM_CUPOM } from "@/lib/cupons";
 import { formaRecusadaPeloCupom, textoDasFormasDoCupom } from "@/lib/cupom-por-forma";
@@ -1048,7 +1049,11 @@ export default function CustomerStorePage({
   const storeMinOrderPickup = pickupMinConfigured
     ? Number(delivConfig.minimumOrderValuePickup) || 0
     : minimoGeralDaEntrega;
-  const pickupAvailable = !franchisee.storeDeliveryOnly;
+  // A loja pode fechar SÓ a entrega ou SÓ a retirada pelo botão "Site" do
+  // painel (lib/forma-fechada.ts) — com prazo: passou, a forma volta sozinha.
+  const formaFechada = formaFechadaAgora(delivConfig);
+  const pickupAvailable = !franchisee.storeDeliveryOnly && formaFechada?.forma !== "RETIRADA";
+  const entregaAvailable = formaFechada?.forma !== "ENTREGA";
 
   // O mínimo que vale agora é o do caminho que o cliente escolheu.
   const storeMinOrder = deliveryType === "PICKUP" ? storeMinOrderPickup : storeMinOrderDelivery;
@@ -1058,7 +1063,9 @@ export default function CustomerStorePage({
   // Na sacola ele ainda não escolheu como recebe, então travar pelo mínimo da
   // entrega esconderia a retirada de quem já tinha direito a ela. Aqui só
   // barra o valor que não alcança nenhum dos dois caminhos.
-  const minOrderToLeaveCart = pickupAvailable
+  const minOrderToLeaveCart = !entregaAvailable
+    ? storeMinOrderPickup
+    : pickupAvailable
     ? Math.min(menorMinimoDaEntrega, storeMinOrderPickup)
     : menorMinimoDaEntrega;
   const isBelowCartMin = Boolean(minOrderToLeaveCart > 0 && cartTotal > 0 && cartTotal < minOrderToLeaveCart);
@@ -2283,6 +2290,24 @@ export default function CustomerStorePage({
     setTempoDaEntregaMin(null);
     setMedidaDaEntrega(null);
   };
+
+  // Forma fechada pela loja: o tipo escolhido pula para a que está aberta.
+  useEffect(() => {
+    if (mesa) return;
+    if (deliveryType === "DELIVERY" && !entregaAvailable && pickupAvailable) {
+      setDeliveryType("PICKUP");
+      esquecerCotacaoDaEntrega();
+      setDeliveryFee(0);
+      setDeliveryFeeCalculated(true);
+      setDeliveryAvailable(true);
+      setDeliveryMessage("Retirada no balcão selecionada.");
+    } else if (deliveryType === "PICKUP" && !pickupAvailable && entregaAvailable) {
+      setDeliveryType("DELIVERY");
+      setDeliveryFee(null);
+      setDeliveryFeeCalculated(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deliveryType, entregaAvailable, pickupAvailable, mesa]);
 
   // Tela desmontada: a cotação em voo é cancelada, e a resposta não chega a lugar nenhum.
   useEffect(() => () => cotacoes.cancelar(), [cotacoes]);
@@ -4068,7 +4093,13 @@ export default function CustomerStorePage({
             {/* TIPO DE ENTREGA */}
             <div>
               <label className="checkout-label">Como deseja receber seu pedido? *</label>
+              {formaFechada && (
+                <div style={{ background: "#FFF7ED", border: "1px solid #FED7AA", color: "#9A3412", borderRadius: 10, padding: "8px 12px", fontSize: "0.8rem", fontWeight: 600, marginBottom: 8 }}>
+                  {formaFechada.forma === "ENTREGA" ? "🛵 A entrega" : "🛍️ A retirada"} está fechada {textoDoAte(formaFechada.ate, franchisee.storeTimezone)}.
+                </div>
+              )}
               <div className="checkout-type-row">
+                {entregaAvailable && (
                 <button
                   type="button"
                   onClick={() => {
@@ -4097,10 +4128,11 @@ export default function CustomerStorePage({
                 >
                   🛵 Entrega (Delivery)
                 </button>
+                )}
                 {/* Loja "Somente Delivery" não oferece retirada: o botão
                     existia mesmo assim e o cliente escolhia um modo que a
                     loja não atende. */}
-                {!franchisee.storeDeliveryOnly && (
+                {pickupAvailable && (
                   <button
                     type="button"
                     onClick={() => {
@@ -5160,8 +5192,11 @@ export default function CustomerStorePage({
                 </button>
               )}
 
-              {franchisee.storeDeliveryOnly && (
+              {franchisee.storeDeliveryOnly && !formaFechada && (
                 <span className="store-delivery-tag">• Somente Delivery</span>
+              )}
+              {formaFechada && (
+                <span className="store-delivery-tag">• {formaFechada.forma === "ENTREGA" ? "Só retirada agora" : "Só entrega agora"}</span>
               )}
             </div>
           </div>
@@ -5355,8 +5390,8 @@ export default function CustomerStorePage({
         <AgendarNoCardapio
           dias={diasParaAgendar}
           tiposAceitos={[
-            ...(configDoAgendamento.entrega ? (["DELIVERY"] as const) : []),
-            ...(configDoAgendamento.retirada && !franchisee.storeDeliveryOnly ? (["PICKUP"] as const) : []),
+            ...(configDoAgendamento.entrega && entregaAvailable ? (["DELIVERY"] as const) : []),
+            ...(configDoAgendamento.retirada && pickupAvailable ? (["PICKUP"] as const) : []),
           ]}
           tipoAtual={deliveryType === "PICKUP" ? "PICKUP" : "DELIVERY"}
           horarioTexto={vaiAgendar && horarioAgendado ? textoDoAgendamento(horarioAgendado, franchisee.storeTimezone) : null}

@@ -10,6 +10,7 @@ import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, U
 import { useState, useTransition, useEffect, useRef, useCallback } from "react";
 import StoreSelector from "./StoreSelector";
 import SimularPedidos from "./SimularPedidos";
+import { textoDoAte, type FormaFechada } from "@/lib/forma-fechada";
 import VendasPorTipoDoCaixa, { type VendasPorTipo } from "./VendasPorTipoDoCaixa";
 import CancelamentosDoCaixa, { type CancelamentosDoTurno } from "./CancelamentosDoCaixa";
 import SecoesDoFechamentoNoPapel from "./SecoesDoFechamentoNoPapel";
@@ -160,6 +161,9 @@ export default function StoreTopNav({
   const [pauseDuration, setPauseDuration] = useState("1h");
   const [pauseReason, setPauseReason] = useState("Intervalo");
   const [pauseScope, setPauseScope] = useState<"site" | "site+ifood">("site+ifood");
+  // Fechar tudo, ou só a entrega / só a retirada do site (lib/forma-fechada.ts).
+  const [pauseForma, setPauseForma] = useState<"TUDO" | "ENTREGA" | "RETIRADA">("TUDO");
+  const [formaFechada, setFormaFechada] = useState<FormaFechada | null>(null);
   const [pauseCustomEnd, setPauseCustomEnd] = useState("");
   const [pausing, setPausing] = useState(false);
 
@@ -269,6 +273,7 @@ export default function StoreTopNav({
         .then(s => {
           if (!s || togglingRef.current) return;
           if (typeof s.storeOpen === "boolean") setStoreOpen(s.storeOpen);
+          if (s.formaFechada !== undefined) setFormaFechada(s.formaFechada);
           if (typeof s.cashOpen === "boolean") {
             // Outro aparelho abriu ou fechou o caixa: o Balcão e as Mesas desta
             // aba reperguntam na hora, em vez de esperar o relógio deles.
@@ -278,6 +283,7 @@ export default function StoreTopNav({
         })
         .catch(() => {});
     };
+    reler();
     const t = setInterval(reler, 60_000);
     return () => clearInterval(t);
   }, []);
@@ -788,13 +794,30 @@ export default function StoreTopNav({
 
   // ── STORE TOGGLE ─────────────────────────────────────────────────
   const handleStoreToggleClick = () => {
-    if (storeOpen) {
+    if (storeOpen && formaFechada) {
+      // Só uma forma fechada: o clique reabre ela.
+      reabrirForma();
+    } else if (storeOpen) {
       // Abrindo modal de pausa em vez de fechar direto
       setShowPauseModal(true);
     } else {
       // Reabrindo loja
       reopenStore();
     }
+  };
+
+  const reabrirForma = async () => {
+    setToggling("store");
+    const res = await fetch("/api/store/status", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ formaFechada: null }),
+    });
+    if (res.ok) {
+      setFormaFechada(null);
+      setAviso({ tipo: "ok", titulo: `${formaFechada?.forma === "RETIRADA" ? "Retirada" : "Entrega"} reaberta no site` });
+    }
+    setToggling(null);
   };
 
   const reopenStore = async () => {
@@ -836,6 +859,24 @@ export default function StoreTopNav({
   const confirmPause = async () => {
     setPausing(true);
     const endDate = getPauseEndDate();
+    // Só a entrega ou só a retirada: o site segue aberto com a outra forma.
+    if (pauseForma !== "TUDO") {
+      const r = await fetch("/api/store/status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ formaFechada: { forma: pauseForma, ate: endDate.toISOString(), motivo: pauseReason } }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) {
+        setFormaFechada(j.formaFechada ?? null);
+        setAviso({ tipo: "ok", titulo: pauseForma === "ENTREGA" ? "Entrega fechada — o site segue com retirada" : "Retirada fechada — o site segue com entrega", detalhe: `Volta sozinha em ${fmtDate(endDate)}. Para reabrir antes, clique em “Site”.` });
+      } else {
+        setAviso({ tipo: "erro", titulo: "Não deu para fechar", detalhe: j.error || "Tente de novo." });
+      }
+      setPausing(false);
+      setShowPauseModal(false);
+      return;
+    }
     // 1. Fechar site
     const res = await fetch("/api/store/status", {
       method: "PATCH",
@@ -863,7 +904,7 @@ export default function StoreTopNav({
     setShowPauseModal(false);
   };
 
-  const TogglePill = ({ label, isOn, onClick, disabled }: any) => (
+  const TogglePill = ({ label, isOn, onClick, disabled, texto }: any) => (
     <button onClick={onClick} disabled={disabled} style={{
       display: "inline-flex", alignItems: "center", gap: 6,
       padding: "6px 12px", borderRadius: 20,
@@ -875,12 +916,13 @@ export default function StoreTopNav({
       <span style={{ display:"inline-block", width:28, height:15, borderRadius:8, background: isOn ? "#5EEAD4" : "#64748B", position:"relative" }}>
         <span style={{ position:"absolute", top:2, left: isOn ? 15 : 2, width:11, height:11, borderRadius:"50%", background:"#fff", transition:"left 0.2s" }} />
       </span>
-      {label}{label === "Loja" ? (isOn ? " aberta" : " fechada") : (isOn ? " aberto" : " fechado")}
+      {texto ?? <>{label}{label === "Loja" ? (isOn ? " aberta" : " fechada") : (isOn ? " aberto" : " fechado")}</>}
     </button>
   );
 
   const SiteToggle = () => (
-    <TogglePill label="Site" isOn={storeOpen} onClick={handleStoreToggleClick} disabled={toggling === "store"} />
+    <TogglePill label="Site" isOn={storeOpen} onClick={handleStoreToggleClick} disabled={toggling === "store"}
+      texto={storeOpen && formaFechada ? (formaFechada.forma === "ENTREGA" ? "Site: só retirada" : "Site: só entrega") : undefined} />
   );
 
   const PAUSE_DURATIONS = [
@@ -937,6 +979,30 @@ export default function StoreTopNav({
               Pausa de <strong>{fmtDate(new Date())}</strong> até <strong>{fmtDate(pauseEnd)}</strong>
             </div>
 
+            {/* Tudo, ou só uma forma de compra do site */}
+            <p style={{ fontSize:"0.78rem", fontWeight:700, color:"#334155", margin:"0 0 8px" }}>Fechar o quê?</p>
+            <div style={{ display:"flex", gap:8, marginBottom:"1rem", flexWrap:"wrap" }}>
+              {(["TUDO", "ENTREGA", "RETIRADA"] as const).map(f => {
+                const active = pauseForma === f;
+                return (
+                  <button key={f} onClick={() => setPauseForma(f)} style={{
+                    flex:1, minWidth:120, padding:"10px 12px", borderRadius:12, cursor:"pointer", fontFamily:"inherit",
+                    border: active ? "2px solid #C92E09" : "1.5px solid #E2E8F0",
+                    background: active ? "#FEF2F2" : "#fff",
+                    color: active ? "#C92E09" : "#64748B", fontWeight: active ? 700 : 500, fontSize:"0.82rem",
+                  }}>
+                    {f === "TUDO" ? "Tudo" : f === "ENTREGA" ? "🛵 Só a entrega" : "🛍️ Só a retirada"}
+                  </button>
+                );
+              })}
+            </div>
+            {pauseForma !== "TUDO" && (
+              <div style={{ background:"#FFF7ED", border:"1px solid #FED7AA", borderRadius:10, padding:"10px 14px", marginBottom:"1rem", fontSize:"0.8rem", color:"#9A3412", fontWeight:600 }}>
+                O site continua aberto só com {pauseForma === "ENTREGA" ? "retirada no balcão" : "entrega"}. O iFood não muda.
+              </div>
+            )}
+
+            {pauseForma === "TUDO" && (<>
             {/* Escopo: site só ou site + iFood */}
             <p style={{ fontSize:"0.78rem", fontWeight:700, color:"#334155", margin:"0 0 8px" }}>O que pausar?</p>
             <div style={{ display:"flex", gap:8, marginBottom:"1rem" }}>
@@ -969,6 +1035,7 @@ export default function StoreTopNav({
                 </label>
               </div>
             )}
+            </>)}
 
             {/* Duração */}
             <p style={{ fontSize:"0.78rem", fontWeight:700, color:"#334155", margin:"0 0 8px" }}>Por quanto tempo a loja será fechada?</p>
@@ -1022,7 +1089,7 @@ export default function StoreTopNav({
               border:"none", borderRadius:14, fontWeight:900, fontSize:"1rem", cursor:"pointer", fontFamily:"inherit",
               opacity: pausing ? 0.7 : 1,
             }}>
-              {pausing ? "Pausando..." : `⏸️ Confirmar pausa${pauseScope === "site+ifood" ? " (Site + iFood)" : " (só Site)"}`}
+              {pausing ? "Pausando..." : pauseForma !== "TUDO" ? `⏸️ Fechar ${pauseForma === "ENTREGA" ? "a entrega" : "a retirada"}` : `⏸️ Confirmar pausa${pauseScope === "site+ifood" ? " (Site + iFood)" : " (só Site)"}`}
             </button>
           </div>
         </div>
@@ -1838,6 +1905,11 @@ export default function StoreTopNav({
       {!storeOpen && (
         <div style={{ background:"#C92E09", color:"#fff", textAlign:"center", padding:"6px", fontSize:"0.78rem", fontWeight:700 }}>
           🔴 LOJA FECHADA — Clientes não conseguem fazer pedidos
+        </div>
+      )}
+      {storeOpen && formaFechada && (
+        <div style={{ background:"#EA580C", color:"#fff", textAlign:"center", padding:"6px", fontSize:"0.78rem", fontWeight:700 }}>
+          🟠 {formaFechada.forma === "ENTREGA" ? "ENTREGA FECHADA — o site só aceita retirada" : "RETIRADA FECHADA — o site só aceita entrega"} {textoDoAte(formaFechada.ate)}. Para reabrir, clique em “Site”.
         </div>
       )}
 
