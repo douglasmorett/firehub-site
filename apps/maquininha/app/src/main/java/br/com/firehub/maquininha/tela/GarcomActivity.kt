@@ -34,9 +34,13 @@ import br.com.firehub.maquininha.garcom.ModoGarcom
 import br.com.firehub.maquininha.garcom.Produto
 import br.com.firehub.maquininha.garcom.numero
 import br.com.firehub.maquininha.garcom.texto
+import br.com.firehub.maquininha.pagamento.Adquirente
 import br.com.firehub.maquininha.servico.ServicoDeCobranca
 import org.json.JSONArray
 import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -140,6 +144,15 @@ class GarcomActivity : AppCompatActivity() {
     @Volatile
     private var enviandoPedido = false
 
+    /** Conta indo para a impressora: o segundo toque não imprime outra. */
+    private var imprimindo = false
+
+    /**
+     * Resultado da impressão que chegou com esta tela atrás (a tela da
+     * adquirente fica na frente enquanto imprime): mostrado quando ela volta.
+     */
+    private var recadoDaImpressao: Pair<Boolean, String>? = null
+
     private val ouvinte = EstadoDoTerminal.Ouvinte { situacao -> chegouCobranca(situacao) }
 
     // --------------------------------------------------------- ciclo de vida
@@ -184,6 +197,8 @@ class GarcomActivity : AppCompatActivity() {
         ServicoDeCobranca.ligar(this)
         // Ao voltar de uma cobrança, a tela de cima recarrega (a mesa mudou).
         pilha.lastOrNull()?.let { mostrar(it) }
+        recadoDaImpressao?.let { (ok, texto) -> if (ok) informar(texto) else avisar(texto) }
+        recadoDaImpressao = null
         if (!jaConferiuOAcesso && pilha.lastOrNull() !is Tela.Login) conferirAcesso()
     }
 
@@ -821,6 +836,13 @@ class GarcomActivity : AppCompatActivity() {
             conteudo.addView(caixa)
         }
 
+        // Conta para o cliente conferir antes de pagar, na bobina da maquininha.
+        if (Adquirente.cobrador.imprime && conta.linhas.isNotEmpty()) {
+            conteudo.addView(pecas.botao(getString(R.string.garcom_imprimir_conta), principal = false, alturaDp = 52, margemTopo = 12) {
+                imprimirConta(mesa, conta)
+            })
+        }
+
         conteudo.addView(pecas.botao(getString(R.string.garcom_atualizar), principal = false, alturaDp = 52, margemTopo = 12) {
             mostrar(tela)
         })
@@ -845,6 +867,125 @@ class GarcomActivity : AppCompatActivity() {
 
     private fun formatarPct(pct: Double): String =
         if (pct == Math.floor(pct)) pct.toLong().toString() else pct.toString().replace('.', ',')
+
+    // ========================================================= IMPRIMIR CONTA
+
+    /**
+     * Imprime a conta que está na tela, na impressora da própria maquininha,
+     * para o cliente conferir antes de pagar. Não passa pelo servidor.
+     *
+     * Usa a mesma ponte da cobrança, que atende uma chamada por vez: com
+     * cobrança na tela da maquininha, o garçom espera ela acabar.
+     *
+     * A tela da adquirente vem para a frente durante a impressão e, quando
+     * fecha, o Android mostra a tela de operação (a ponte mora na task dela).
+     * Por isso o resultado não passa por `emSegundoPlano`, que o descartaria
+     * com esta tela parada: fica guardado e esta tela é trazida de volta.
+     */
+    private fun imprimirConta(mesa: MesaAberta, conta: ContaDaMesa) {
+        if (imprimindo) return
+        if (ModoGarcom.ehCobranca(EstadoDoTerminal.situacao)) {
+            avisar(getString(R.string.garcom_imprimir_ocupada))
+            return
+        }
+        val texto = contaParaImprimir(mesa, conta)
+        imprimindo = true
+        mostrarCarregando(getString(R.string.garcom_imprimindo))
+        val app = applicationContext
+        try {
+            rede.execute {
+                val motivo = try {
+                    Adquirente.cobrador.imprimir(texto)
+                } catch (erro: Throwable) {
+                    erro.message ?: erro.javaClass.simpleName
+                }
+                principal.post {
+                    imprimindo = false
+                    if (isFinishing || isDestroyed) return@post
+                    val recado = if (motivo == null) true to getString(R.string.garcom_conta_impressa) else false to motivo
+                    if (iniciada) {
+                        esconderCarregando()
+                        if (recado.first) informar(recado.second) else avisar(recado.second)
+                    } else {
+                        recadoDaImpressao = recado
+                        startActivity(Intent(app, GarcomActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    }
+                }
+            }
+        } catch (erro: java.util.concurrent.RejectedExecutionException) {
+            // Activity sendo destruída.
+            imprimindo = false
+        }
+    }
+
+    /** A conta em texto para a bobina de 58 mm (~32 colunas). */
+    private fun contaParaImprimir(mesa: MesaAberta, conta: ContaDaMesa): String {
+        val l = ArrayList<String>()
+        val traco = "-".repeat(COLUNAS_DA_BOBINA)
+        CofreDoToken.lojaNome(this)?.let { loja -> quebrar(loja.uppercase()).forEach { l += centralizar(it) } }
+        l += centralizar(getString(R.string.garcom_conta_impressa_titulo))
+        l += traco
+        l += quebrar(nomeDaMesa(mesa))
+        CofreDoGarcom.nome(this)?.let { l += quebrar(getString(R.string.garcom_logado_como, it)) }
+        l += SimpleDateFormat("dd/MM/yyyy HH:mm", Locale("pt", "BR")).format(Date())
+        l += traco
+        for ((nome, qtd, valor) in conta.linhas) l += colunas(qtd.toString() + "x " + nome, Dinheiro.formatarReais(valor))
+        l += traco
+        l += colunas(getString(R.string.garcom_consumo), Dinheiro.formatarReais(conta.consumo))
+        if (conta.desconto > 0.0) {
+            l += colunas(getString(R.string.garcom_desconto), "- " + Dinheiro.formatarReais(conta.desconto))
+        }
+        if (conta.taxaValor > 0.0) {
+            l += colunas(getString(R.string.garcom_taxa, formatarPct(conta.taxaPct)), Dinheiro.formatarReais(conta.taxaValor))
+        }
+        if (conta.gorjeta > 0.0) l += colunas(getString(R.string.garcom_gorjeta), Dinheiro.formatarReais(conta.gorjeta))
+        l += colunas(getString(R.string.garcom_total).uppercase(), Dinheiro.formatarReais(conta.total))
+        if (conta.pago > 0.0) l += colunas(getString(R.string.garcom_ja_pago), Dinheiro.formatarReais(conta.pago))
+        l += colunas(getString(R.string.garcom_falta_pagar).uppercase(), Dinheiro.formatar(conta.falta))
+        l += traco
+        l += centralizar(getString(R.string.garcom_nao_e_fiscal))
+        // Linhas em branco no fim: o papel sai da impressora até o corte.
+        return l.joinToString("\n") + "\n\n\n"
+    }
+
+    /** Rótulo à esquerda e valor à direita; rótulo comprido quebra e o valor fica na última linha. */
+    private fun colunas(esquerda: String, direita: String): List<String> {
+        val partes = quebrar(esquerda)
+        val espaco = COLUNAS_DA_BOBINA - partes.last().length - direita.length
+        return if (espaco >= 1) partes.dropLast(1) + (partes.last() + " ".repeat(espaco) + direita)
+        else partes + direita.padStart(COLUNAS_DA_BOBINA)
+    }
+
+    /** Quebra por palavra na largura da bobina; palavra maior que a linha é cortada. */
+    private fun quebrar(texto: String): List<String> {
+        val linhas = ArrayList<String>()
+        var atual = ""
+        for (palavra in texto.trim().split(Regex("\\s+"))) {
+            var resto = palavra
+            while (resto.length > COLUNAS_DA_BOBINA) {
+                if (atual.isNotEmpty()) {
+                    linhas += atual
+                    atual = ""
+                }
+                linhas += resto.take(COLUNAS_DA_BOBINA)
+                resto = resto.drop(COLUNAS_DA_BOBINA)
+            }
+            if (resto.isEmpty()) continue
+            atual = when {
+                atual.isEmpty() -> resto
+                atual.length + 1 + resto.length <= COLUNAS_DA_BOBINA -> "$atual $resto"
+                else -> {
+                    linhas += atual
+                    resto
+                }
+            }
+        }
+        if (atual.isNotEmpty() || linhas.isEmpty()) linhas += atual
+        return linhas
+    }
+
+    private fun centralizar(texto: String): String =
+        " ".repeat(maxOf(0, (COLUNAS_DA_BOBINA - texto.length) / 2)) + texto
 
     // ============================================================ CARDÁPIO
 
@@ -1500,6 +1641,8 @@ class GarcomActivity : AppCompatActivity() {
 
     private companion object {
         const val COLUNAS_DE_MESA = 3
+        /** Bobina de 58 mm. */
+        const val COLUNAS_DA_BOBINA = 32
         const val VALOR_MINIMO = 100L
         const val INTERVALO_DE_CONSULTA_MS = 2_000L
         const val MOSTRAR_APROVADO_MS = 2_500L
