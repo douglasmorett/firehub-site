@@ -45,6 +45,7 @@ import { fimDoTeste } from "@/lib/fim-do-teste";
  * portal do parceiro avisa a loja que passaria do teto com a mesma conta.
  */
 import { TETO_DE_SPLIT, splitDoBoletoNoAsaas } from "@/lib/parceiro/regras";
+import { marcarSplitRecusado } from "@/lib/embaixador-do-curso";
 import { aplicarCreditosNoCiclo, indiqueEGanheDaLoja, previsaoDoIndiqueEGanhe } from "@/lib/indique-e-ganhe-no-banco";
 import { INDICADOS_PARA_ISENCAO } from "@/lib/indique-e-ganhe";
 
@@ -1023,11 +1024,27 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
         payload.split = comissao.split;
       }
 
-      const pr = await fetch(`${BASE}/payments`, {
+      const emitir = () => fetch(`${BASE}/payments`, {
         method: "POST",
         headers: { "Content-Type": "application/json", access_token: asaasKey },
         body: JSON.stringify(payload),
       });
+      let pr = await emitir();
+
+      // "Nunca o cliente sem ser cobrado" (Douglas, 11/11/2026): se o Asaas
+      // recusar o boleto COM split (carteira de parceiro que deixou de valer),
+      // emite de novo SEM split — o FireHub recebe tudo e o portal do parceiro
+      // avisa para ele falar com a gente (lib/embaixador-do-curso.ts).
+      if (!pr.ok && pr.status >= 400 && pr.status < 500 && payload.split) {
+        const recusa = await pr.text().catch(() => "");
+        const carteiras: string[] = payload.split.map((s: any) => s.walletId).filter(Boolean);
+        delete payload.split;
+        pr = await emitir();
+        console.error(
+          `[Billing] Asaas recusou o split no ciclo ${cycle.id} (loja ${franchiseeId}) — boleto emitido SEM split${pr.ok ? "" : " (e falhou de novo)"}. Recusa: ${recusa.slice(0, 300)}`
+        );
+        if (pr.ok) await marcarSplitRecusado(carteiras);
+      }
 
       if (pr.ok) {
         const pd = await pr.json();

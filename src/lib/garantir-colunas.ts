@@ -38,6 +38,12 @@ export const COLUNA_QUEM_ABRIU_O_CAIXA = `ALTER TABLE "CashSession" ADD COLUMN I
  * MESMO commit — a ordem passa a ser garantida pelo boot, não por gente.
  */
 const INSTRUCOES = [
+  // EMBAIXADOR DO CURSO (lib/embaixador-do-curso.ts, 11/11/2026): de onde o
+  // embaixador veio ("CURSO" = se cadastrou pelo link do curso; nulo = admin,
+  // como todos os já cadastrados) e quando o Asaas recusou o split de um
+  // boleto dele (o boleto saiu sem comissão; o portal avisa). Nuláveis.
+  `ALTER TABLE "Ambassador" ADD COLUMN IF NOT EXISTS "origem" TEXT`,
+  `ALTER TABLE "Ambassador" ADD COLUMN IF NOT EXISTS "splitRecusadoEm" TIMESTAMP(3)`,
   `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "priceSalao" DOUBLE PRECISION`,
   `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "priceDelivery" DOUBLE PRECISION`,
   `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "priceTotem" DOUBLE PRECISION`,

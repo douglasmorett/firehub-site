@@ -2410,6 +2410,12 @@ model Ambassador {
   sellerPercent     Float      @default(5)
   carteira          User[]     @relation("VendedorStores")
 
+  /// "CURSO" = se cadastrou pelo link do curso (lib/embaixador-do-curso.ts); nulo = admin.
+  origem            String?
+  /// O Asaas recusou o split de um boleto com a carteira dele: o boleto saiu sem
+  /// comissão e o portal avisa "fale com a gente". Limpa quando a carteira muda.
+  splitRecusadoEm   DateTime?
+
   @@index([parentAmbassadorId])
 }
 

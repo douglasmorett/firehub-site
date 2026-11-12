@@ -32,7 +32,7 @@ export default async function EmbaixadorPage() {
         { email: { equals: sessionUser.email, mode: "insensitive" as const } },
       ],
     },
-    select: { id: true, isVendedor: true, active: true, name: true },
+    select: { id: true, isVendedor: true, active: true, name: true, splitRecusadoEm: true },
   });
   if (!ambassador) return <AmbassadorLoginForm />;
 
@@ -48,10 +48,20 @@ export default async function EmbaixadorPage() {
   // /api/vendedor/prospeccao devolve 401 para ele).
   const vendeAtivo = ambassador.isVendedor && ambassador.active;
   return (
+    <>
+    {/* O Asaas recusou o split de um boleto com a carteira dele: o boleto saiu
+        sem comissão (lib/billing.ts). Some quando o admin troca a carteira. */}
+    {ambassador.splitRecusadoEm && (
+      <div role="alert" style={{ background: "#FEF2F2", color: "#991B1B", borderBottom: "1px solid #FECACA", padding: "12px 16px", textAlign: "center", fontSize: 14, fontWeight: 600, lineHeight: 1.45 }}>
+        Não conseguimos repassar a sua comissão: o Asaas recusou a sua carteira (Wallet ID).{" "}
+        <a href="https://wa.me/5522981118514?text=Oi!%20Sou%20embaixador%20e%20apareceu%20que%20a%20minha%20comiss%C3%A3o%20n%C3%A3o%20foi%20repassada." style={{ color: "#991B1B", textDecoration: "underline" }}>Fale com a gente no WhatsApp</a>.
+      </div>
+    )}
     <PortalDoParceiro
       relatorio={relatorio}
       saida="/embaixador"
       mapaDeProspeccao={vendeAtivo ? <MapaDeProspeccao /> : undefined}
     />
+    </>
   );
 }

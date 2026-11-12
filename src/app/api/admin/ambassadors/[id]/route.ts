@@ -23,7 +23,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.email !== undefined) data.email = String(body.email).toLowerCase().trim();
     if (body.phone !== undefined) data.phone = body.phone || null;
     if (body.pixKey !== undefined) data.pixKey = body.pixKey || null;
-    if (body.asaasWalletId !== undefined) data.asaasWalletId = body.asaasWalletId || null;
+    if (body.asaasWalletId !== undefined) {
+      data.asaasWalletId = body.asaasWalletId || null;
+      // Carteira trocada: o aviso de "split recusado" do portal some.
+      const atual = await prisma.ambassador.findUnique({ where: { id }, select: { asaasWalletId: true } });
+      if (atual && atual.asaasWalletId !== data.asaasWalletId) data.splitRecusadoEm = null;
+    }
     if (body.active !== undefined) data.active = !!body.active;
     if (body.code) data.code = String(body.code).toLowerCase().trim();
 
