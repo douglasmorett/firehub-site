@@ -33,6 +33,7 @@ import { navegadorSeguraAComanda, AVISO_DE_CONFIG_SALVA, RELEITURA_DA_CONFIG_MS 
 import { lerPager, ETIQUETA_DO_PAGER } from "@/lib/pager";
 import { lerDocumentoDoCliente } from "@/lib/documento-do-cliente";
 import { pagoNaMaquininha, pagoPeloSite, pagamentoPeloSiteParaImpressao } from "@/lib/pagamento-na-entrega";
+import { motivoParaNaoChamar } from "@/lib/entregador-ifood-no-pedido";
 import { estornoAutomatico, textoDoEstorno } from "@/lib/estorno-na-maquininha-regras";
 import { textoDoTrocoNoPix, trocoNoPixDoPedido } from "@/lib/troco-no-pix";
 import { camposDaMesaParaImpressao, nomeDoClienteNaComanda } from "@/lib/mesa-na-comanda";
@@ -633,6 +634,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   operador,
   onOpenDeliveryModal,
   onFetchIfoodDriverQuote,
+  onCancelIfoodDriver,
   onDragStart,
   onDragEnd,
   setOrders,
@@ -1744,6 +1746,30 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 </select>
               );
             })()}
+
+            {/* Entregador do iFood (Shipping) para pedido do canal próprio:
+                a cotação abre antes, com o custo, e só chama ao confirmar. */}
+            {recebeMotoboy && onFetchIfoodDriverQuote && !motivoParaNaoChamar(order) && (
+              <button
+                onClick={e => { e.stopPropagation(); onFetchIfoodDriverQuote(order.id); }}
+                title="Ver o custo e chamar um entregador do iFood para este pedido"
+                style={{ padding: "4px 10px", borderRadius: "6px", border: "1.5px solid #EA1D2C", background: "#fff", color: "#EA1D2C", fontSize: "0.75rem", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}
+              >
+                🛵 Chamar entregador iFood
+              </button>
+            )}
+            {!order.ifoodOrderId && String(order.deliveryBy || "").toUpperCase() === "IFOOD" && order.ifoodDriverStatus && (
+              <span style={{ ...ETIQUETA_NEUTRA, fontWeight: 800, color: "#EA1D2C", display: "inline-flex", alignItems: "center", flexWrap: "wrap", maxWidth: "100%" }}>
+                {order.ifoodDriverName ? `🛵 iFood: ${order.ifoodDriverName}` : "🛵 iFood: procurando entregador"}
+                {onCancelIfoodDriver && !["ENTREGUE", "CANCELADO"].includes(order.status) && (
+                  <button
+                    onClick={e => { e.stopPropagation(); onCancelIfoodDriver(order.id); }}
+                    title="Cancelar o entregador do iFood"
+                    style={{ marginLeft: 6, border: "none", background: "transparent", color: "#64748B", cursor: "pointer", fontWeight: 800, fontFamily: "inherit" }}
+                  >✕</button>
+                )}
+              </span>
+            )}
 
             {/* "puxou 19:42": o ENTREGADOR pegou este pedido pelo app (QR ou
                 número) — em oposição a "a loja atribuiu". É a testemunha
@@ -3642,12 +3668,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       const res = await fetch("/api/ifood/request-driver", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId: ifoodDriverModalId, quoteId: ifoodDriverQuote.quoteId }),
+        body: JSON.stringify({ orderId: ifoodDriverModalId, quoteId: ifoodDriverQuote.quoteId, endereco: ifoodDriverQuote.endereco }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Erro ao solicitar motoboy");
       setOrders(prev => prev.map(o =>
-        o.id === ifoodDriverModalId ? { ...o, ifoodDriverStatus: "REQUESTED", ifoodDriverRequestedAt: new Date().toISOString() } : o
+        o.id === ifoodDriverModalId ? { ...o, ifoodDriverStatus: "REQUESTED", deliveryBy: "IFOOD", ifoodDriverRequestedAt: new Date().toISOString() } : o
       ));
       setIfoodDriverModalId(null);
     } catch (e: any) { setIfoodDriverError(e.message); }
@@ -3655,13 +3681,16 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   };
 
   const cancelIfoodDriver = async (orderId: string) => {
-    if (!window.confirm("Cancelar solicitação de motoboy iFood?")) return;
+    if (!window.confirm("Cancelar o entregador do iFood deste pedido?")) return;
     try {
-      await fetch(`/api/ifood/request-driver?orderId=${orderId}`, { method: "DELETE" });
+      const res = await fetch(`/api/ifood/request-driver?orderId=${orderId}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { showToast(data.error || "Não deu para cancelar no iFood.", "#C92E09"); return; }
       setOrders(prev => prev.map(o =>
-        o.id === orderId ? { ...o, ifoodDriverStatus: null, ifoodDriverName: null, ifoodDriverPhone: null } : o
+        o.id === orderId ? { ...o, ifoodDriverStatus: null, ifoodDriverName: null, ifoodDriverPhone: null, deliveryBy: null } : o
       ));
-    } catch {}
+      showToast("Entregador do iFood cancelado.", "#0F766E");
+    } catch { showToast("Erro de conexão ao cancelar.", "#C92E09"); }
   };
 
   const confirmCancel = async () => {
@@ -5881,13 +5910,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "400px", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
               <div style={{ textAlign: "center", marginBottom: "16px" }}>
                 <div style={{ fontSize: "2.5rem", marginBottom: "8px" }}>🛵</div>
-                <div style={{ fontWeight: 800, fontSize: "1.15rem", color: "#1C1917" }}>Solicitar Motoboy iFood</div>
+                <div style={{ fontWeight: 800, fontSize: "1.15rem", color: "#1C1917" }}>Chamar entregador iFood</div>
               </div>
 
               {/* Order info */}
               {driverOrder && (
                 <div style={{ background: "#F8FAFC", borderRadius: "8px", padding: "10px 14px", marginBottom: "12px", fontSize: "0.82rem" }}>
-                  <div><strong>Pedido:</strong> #{driverOrder.ifoodReference || driverOrder.openDeliveryReference || driverOrder.id.slice(-6).toUpperCase()}</div>
+                  <div><strong>Pedido:</strong> #{getDisplayOrderNumber(driverOrder)}</div>
                   {driverOrder.customerAddress && <div style={{ color: "#64748B", marginTop: "2px" }}>{cleanAddress(driverOrder.customerAddress)}</div>}
                 </div>
               )}
@@ -5908,32 +5937,74 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               )}
 
               {/* Quote */}
-              {ifoodDriverQuote && (
-                <div style={{ background: "#FAF6F2", borderRadius: "12px", padding: "16px", marginBottom: "16px", border: "2px solid #E7DDD3" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                    <div>
-                      <div style={{ fontSize: "0.72rem", fontWeight: 600, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.04em" }}>Custo</div>
-                      <div style={{ fontSize: "1.3rem", fontWeight: 800, color: "#1C1917" }}>R$ {Number(ifoodDriverQuote.price).toFixed(2).replace('.', ',')}</div>
+              {ifoodDriverQuote && (() => {
+                const q = ifoodDriverQuote;
+                const reais = (v: number) => `R$ ${Number(v || 0).toFixed(2).replace(".", ",")}`;
+                const cob = q.cobranca || {};
+                const cobrancaTexto = cob.metodo === "ONLINE" ? "Já pago — o entregador não cobra nada"
+                  : cob.metodo === "CASH" ? `Cobra ${reais(q.totalDoPedido)} em dinheiro${cob.trocoPara ? ` (troco para ${reais(cob.trocoPara)})` : ""}`
+                  : `Cobra ${reais(q.totalDoPedido)} no cartão (${cob.metodo === "DEBIT" ? "débito" : "crédito"})`;
+                const end = q.endereco || {};
+                const setEnd = (k: string, v: string) => setIfoodDriverQuote({ ...q, endereco: { ...end, [k]: v } });
+                const campo: React.CSSProperties = { width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.8rem", fontFamily: "inherit" };
+                return (
+                  <>
+                    <div style={{ background: "#FAF6F2", borderRadius: "12px", padding: "16px", marginBottom: "12px", border: "2px solid #E7DDD3" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                        <div>
+                          <div style={{ fontSize: "0.72rem", fontWeight: 600, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.04em" }}>Custo para a loja</div>
+                          <div style={{ fontSize: "1.3rem", fontWeight: 800, color: "#1C1917" }}>{reais(q.price)}</div>
+                          {q.raise > 0 && <div style={{ fontSize: "0.7rem", color: "#B45309", fontWeight: 700 }}>inclui {reais(q.raise)} de acréscimo (alta demanda)</div>}
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontSize: "0.72rem", fontWeight: 600, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.04em" }}>Entrega em</div>
+                          <div style={{ fontSize: "1.3rem", fontWeight: 800, color: "#0F766E" }}>{q.minutosMin}–{q.minutosMax} min</div>
+                          {q.distancia != null && <div style={{ fontSize: "0.7rem", color: "#64748B" }}>{(q.distancia / 1000).toFixed(1).replace(".", ",")} km</div>}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: "0.78rem", color: "#334155", borderTop: "1px solid #E7DDD3", paddingTop: "6px", fontWeight: 600 }}>
+                        💵 Na porta: {cobrancaTexto}
+                      </div>
+                      <div style={{ fontSize: "0.72rem", color: "#64748B", marginTop: 4 }}>
+                        O custo da corrida é cobrado pelo iFood da loja. O código de entrega são os 4 últimos dígitos do telefone do cliente.
+                      </div>
                     </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: "0.72rem", fontWeight: 600, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.04em" }}>Tempo estimado</div>
-                      <div style={{ fontSize: "1.3rem", fontWeight: 800, color: "#0F766E" }}>~{ifoodDriverQuote.estimatedMinutes ?? "?"}min</div>
+                    <div style={{ marginBottom: 14 }}>
+                      <div style={{ fontSize: "0.72rem", fontWeight: 700, color: (end.faltando || []).length ? "#B45309" : "#64748B", marginBottom: 6 }}>
+                        {(end.faltando || []).length ? `Complete o endereço (falta: ${end.faltando.join(", ")})` : "Endereço que vai para o entregador"}
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 6 }}>
+                        <input style={campo} placeholder="Rua" value={end.streetName || ""} onChange={e => setEnd("streetName", e.target.value)} />
+                        <input style={campo} placeholder="Número" value={end.streetNumber || ""} onChange={e => setEnd("streetNumber", e.target.value)} />
+                        <input style={campo} placeholder="Bairro" value={end.neighborhood || ""} onChange={e => setEnd("neighborhood", e.target.value)} />
+                        <input style={campo} placeholder="CEP" inputMode="numeric" value={end.postalCode || ""} onChange={e => setEnd("postalCode", e.target.value)} />
+                        <input style={campo} placeholder="Complemento" value={end.complement || ""} onChange={e => setEnd("complement", e.target.value)} />
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 46px", gap: 6 }}>
+                          <input style={campo} placeholder="Cidade" value={end.city || ""} onChange={e => setEnd("city", e.target.value)} />
+                          <input style={campo} placeholder="UF" maxLength={2} value={end.state || ""} onChange={e => setEnd("state", e.target.value.toUpperCase())} />
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  <div style={{ fontSize: "0.75rem", color: "#64748B", borderTop: "1px solid #E7DDD3", paddingTop: "6px" }}>
-                    ⚠️ O valor será cobrado pela plataforma iFood.
-                  </div>
-                </div>
-              )}
+                  </>
+                );
+              })()}
 
               {/* Buttons */}
               <div style={{ display: "flex", gap: "0.5rem" }}>
                 <button onClick={() => { setIfoodDriverModalId(null); setIfoodDriverQuote(null); setIfoodDriverError(""); }} style={{ flex: 1, padding: "0.65rem", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#fff", color: "#334155", fontWeight: 600, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>Cancelar</button>
-                {ifoodDriverQuote && (
-                  <button onClick={requestIfoodDriver} disabled={ifoodDriverLoading} style={{ flex: 1, padding: "0.65rem", borderRadius: "8px", border: "none", background: "linear-gradient(135deg, #1C1917, #1C1917)", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>
-                    {ifoodDriverLoading ? "Solicitando..." : "✅ Confirmar e Chamar"}
+                {ifoodDriverQuote && (() => {
+                    // Endereço completo antes de chamar: o iFood recusa sem CEP, número, cidade ou UF.
+                    const e = ifoodDriverQuote.endereco || {};
+                    const completo = String(e.postalCode || "").replace(/\D/g, "").length === 8 && !!String(e.streetName || "").trim()
+                      && !!String(e.streetNumber || "").trim() && !!String(e.neighborhood || "").trim() && !!String(e.city || "").trim()
+                      && String(e.state || "").trim().length === 2;
+                    const travado = ifoodDriverLoading || !completo;
+                    return (
+                  <button onClick={requestIfoodDriver} disabled={travado} title={completo ? undefined : "Complete o endereço acima"} style={{ flex: 1, padding: "0.65rem", borderRadius: "8px", border: "none", background: travado ? "#94A3B8" : "#1C1917", color: "#fff", fontWeight: 700, cursor: travado ? "not-allowed" : "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>
+                    {ifoodDriverLoading ? "Chamando..." : `✅ Chamar por R$ ${Number(ifoodDriverQuote.price || 0).toFixed(2).replace(".", ",")}`}
                   </button>
-                )}
+                    );
+                  })()}
                 {ifoodDriverError && !ifoodDriverQuote && (
                   <button onClick={() => fetchIfoodDriverQuote(ifoodDriverModalId)} style={{ flex: 1, padding: "0.65rem", borderRadius: "8px", border: "none", background: "#1C1917", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.85rem", fontFamily: "inherit" }}>
                     🔄 Tentar novamente
@@ -7593,6 +7664,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   onFinalizarRascunho={(id: string) => setRascunhoParaFinalizar(id)}
                   operador={operadorDaEdicao}
                   onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
+                onFetchIfoodDriverQuote={fetchIfoodDriverQuote}
+                onCancelIfoodDriver={cancelIfoodDriver}
                   onDragStart={handleDragStart}
                   onDragEnd={handleDragEnd}
                   setOrders={setOrders}
@@ -7666,6 +7739,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onFinalizarRascunho={(id: string) => setRascunhoParaFinalizar(id)}
                 operador={operadorDaEdicao}
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
+                onFetchIfoodDriverQuote={fetchIfoodDriverQuote}
+                onCancelIfoodDriver={cancelIfoodDriver}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
                 setOrders={setOrders}
@@ -7711,6 +7786,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onFinalizarRascunho={(id: string) => setRascunhoParaFinalizar(id)}
                 operador={operadorDaEdicao}
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
+                onFetchIfoodDriverQuote={fetchIfoodDriverQuote}
+                onCancelIfoodDriver={cancelIfoodDriver}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
                 setOrders={setOrders}
@@ -7752,6 +7829,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onFinalizarRascunho={(id: string) => setRascunhoParaFinalizar(id)}
                 operador={operadorDaEdicao}
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
+                onFetchIfoodDriverQuote={fetchIfoodDriverQuote}
+                onCancelIfoodDriver={cancelIfoodDriver}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
                 setOrders={setOrders}
@@ -7790,6 +7869,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onFinalizarRascunho={(id: string) => setRascunhoParaFinalizar(id)}
                 operador={operadorDaEdicao}
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
+                onFetchIfoodDriverQuote={fetchIfoodDriverQuote}
+                onCancelIfoodDriver={cancelIfoodDriver}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
                 setOrders={setOrders}
@@ -7828,6 +7909,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onFinalizarRascunho={(id: string) => setRascunhoParaFinalizar(id)}
                 operador={operadorDaEdicao}
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
+                onFetchIfoodDriverQuote={fetchIfoodDriverQuote}
+                onCancelIfoodDriver={cancelIfoodDriver}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
                 setOrders={setOrders}
@@ -7868,6 +7951,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onFinalizarRascunho={(id: string) => setRascunhoParaFinalizar(id)}
                 operador={operadorDaEdicao}
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
+                onFetchIfoodDriverQuote={fetchIfoodDriverQuote}
+                onCancelIfoodDriver={cancelIfoodDriver}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
                 setOrders={setOrders}

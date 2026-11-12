@@ -62,7 +62,9 @@ export type ItemPedido = { nome: string; quantidade: number; precoUnitario: numb
 
 export type PagamentoPedido =
   | { metodo: "CASH"; trocoPara?: number | null }
-  | { metodo: "CREDIT" | "DEBIT"; bandeira: string };
+  | { metodo: "CREDIT" | "DEBIT"; bandeira: string }
+  /** Já pago (site, Pix): o entregador não cobra. ⚠️ Formato a confirmar com o iFood. */
+  | { metodo: "ONLINE"; bandeira?: string };
 
 export type EntradaPedido = {
   cliente: { nome: string; ddd: string; numero: string };
@@ -178,6 +180,9 @@ export function montarPedido(entrada: EntradaPedido) {
   } else if (p?.metodo === "CREDIT" || p?.metodo === "DEBIT") {
     if (!so((p as any).bandeira)) throw new ErroValidacao("Escolha a bandeira do cartão.");
     method = { method: p.metodo, type: "OFFLINE", value: total, card: { brand: so((p as any).bandeira) } };
+  } else if (p?.metodo === "ONLINE") {
+    // O mesmo desenho do pedido pré-pago na Order API (type ONLINE).
+    method = { method: "CREDIT", type: "ONLINE", value: total, card: { brand: so((p as any).bandeira) || "VISA" } };
   } else {
     throw new ErroValidacao("Escolha a forma de pagamento.");
   }
