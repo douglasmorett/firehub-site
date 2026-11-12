@@ -516,6 +516,16 @@ export async function detalheDaLoja(authToken: string): Promise<LojaNoNoveNove |
   return loja;
 }
 
+/**
+ * O cardápio da loja como está na 99 (`GET /v3/item/item/list`, "Get Store
+ * Menu Details"). Só leitura: é o que permite copiar para o FireHub o
+ * cardápio de quem já ligou a 99 e não tem página pública (Porto Velho não
+ * tem — Fogo e Sabor, 12/11/2026). Resposta crua, sem tradução.
+ */
+export async function cardapioDaLoja(authToken: string): Promise<RespostaFood99> {
+  return chamar("/v3/item/item/list", { query: { auth_token: authToken }, base: BASE_V3 });
+}
+
 // ── Diagnóstico ─────────────────────────────────────────────────────────────
 
 /**
