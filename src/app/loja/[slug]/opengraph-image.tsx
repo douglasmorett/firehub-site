@@ -28,7 +28,7 @@ import { readFile } from "fs/promises";
 import path from "path";
 import sharp from "sharp";
 import { prisma } from "@/lib/prisma";
-import { LEGACY_PUBLIC_ROOT, trazerDoBucket, UPLOADS_ROOT } from "@/lib/storage";
+import { baixarImagemDaLoja as baixar } from "@/lib/imagem-da-loja";
 
 export const runtime = "nodejs";
 /** A logo muda raramente; o WhatsApp cacheia a prévia por muito mais que isso. */
@@ -49,43 +49,6 @@ export const alt = "Cardápio online";
 const FUNDO = { r: 255, g: 255, b: 255 };
 /** A logo ocupa quase o card inteiro, com margem para não encostar nas bordas. */
 const MIOLO = { width: 1000, height: 540 };
-
-/**
- * Os bytes da imagem, venha ela de onde vier.
- *
- * Logo enviada pelo painel é um caminho `/uploads/...`, servido por uma rota
- * que lê do disco (app/uploads/[...path]) — aqui o disco é lido direto, sem dar
- * a volta pela rede. Loja antiga ainda pode ter URL absoluta do tempo do Vercel
- * Blob; essa vem por fetch.
- */
-async function baixar(url: string): Promise<Buffer | null> {
-  try {
-    if (/^https?:\/\//i.test(url)) {
-      const r = await fetch(url, { signal: AbortSignal.timeout(6000) });
-      if (!r.ok) return null;
-      return Buffer.from(await r.arrayBuffer());
-    }
-    // Só o que está sob /uploads, e sem "..": esta função recebe valor do banco,
-    // e um caminho torto viraria leitura de arquivo do servidor.
-    const relativo = url.replace(/^\/+uploads\/+/, "");
-    if (!url.startsWith("/uploads/") || relativo.split("/").some((p) => p === "..")) return null;
-    for (const raiz of [UPLOADS_ROOT, LEGACY_PUBLIC_ROOT]) {
-      const base = path.resolve(raiz);
-      const alvo = path.resolve(base, relativo);
-      if (alvo !== base && !alvo.startsWith(base + path.sep)) continue;
-      try {
-        return await readFile(alvo);
-      } catch {
-        /* tenta a próxima raiz */
-      }
-    }
-    // Logo enviada pela outra instância (duas atrás do balanceador): do bucket.
-    const trazido = await trazerDoBucket(relativo);
-    return trazido ? await readFile(trazido) : null;
-  } catch {
-    return null;
-  }
-}
 
 /** O card com a logo centralizada. */
 async function cardComLogo(logo: Buffer): Promise<Buffer> {

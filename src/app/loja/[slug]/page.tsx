@@ -7,6 +7,7 @@ import { multimarcasEstaLigado } from "@/lib/multimarcas/assinatura";
 import { lerConfigDaPagina } from "@/lib/multimarcas/pagina";
 import { marcasNoCardapio } from "@/lib/multimarcas/no-cardapio";
 import { conviteDoApp } from "@/lib/app-da-loja/links";
+import { iconesDaLoja } from "@/lib/imagem-da-loja";
 
 export const revalidate = 60; // ⚡ Cache de Borda (Edge) de 60 segundos
 
@@ -48,6 +49,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       title: name,
       description: descricao,
     },
+    // O ícone (Google, aba do navegador) também é o da loja, não a chama do FireHub.
+    icons: iconesDaLoja(slug),
   };
 }
 

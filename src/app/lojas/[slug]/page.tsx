@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { carregarVitrineDoGrupo, slugValido } from "@/lib/vitrine-do-grupo";
 import EscolhaDaLojaDoGrupo from "@/components/customer/EscolhaDaLojaDoGrupo";
 import { conviteDoApp } from "@/lib/app-da-loja/links";
+import { iconesDaLoja } from "@/lib/imagem-da-loja";
 
 /**
  * /lojas/[slug]: o link único de quem tem mais de uma loja. O cliente diz
@@ -20,6 +21,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     title: `${vitrine.nomeDoGrupo} | Peça online`,
     description: descricao,
     openGraph: { title: vitrine.nomeDoGrupo, description: descricao, url: `/lojas/${slug}`, siteName: vitrine.nomeDoGrupo, locale: "pt_BR", type: "website" },
+    // Ícone com a logo do grupo (a da loja de onde ela veio), não a chama do FireHub.
+    icons: iconesDaLoja(vitrine.lojas.find((l) => l.logo && l.logo === vitrine.logo)?.slug ?? slug),
   };
 }
 
