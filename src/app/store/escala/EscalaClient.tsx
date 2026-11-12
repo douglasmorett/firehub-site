@@ -17,7 +17,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { diaEMes, horarioDoTurno, navegar, periodoDaVisao, situacaoDasVagas, tituloDoPeriodo, type Visao } from "@/lib/escala-da-equipe/regras";
+import { diaEMes, diaPorExtenso, horarioDoTurno, navegar, periodoDaVisao, situacaoDasVagas, tituloDoPeriodo, type Visao } from "@/lib/escala-da-equipe/regras";
 import { AvisoNoTopo, COR, COR_CLARA, ErroDaApi, JanelaDeConfirmacao, S, pedir, reais, type Arrasto, type Aviso, type Confirmacao, type ConfigDoLink, type DadosDaEscala, type Turno } from "./ui";
 import { BarraDasVagas, CSS_DO_CALENDARIO, VisaoDaSemana, VisaoDoDia, VisaoDoMes } from "./Calendario";
 import PessoasAoLado from "./PessoasAoLado";
@@ -242,6 +242,13 @@ export default function EscalaClient() {
             {visao !== "mes" && !lado && (
               <button type="button" style={S.botaoLeve} onClick={() => mostrarLado(true)} title="Mostrar a lista de pessoas para arrastar para os turnos">👥 Pessoas ao lado</button>
             )}
+            {visao !== "mes" && turnos.length > 0 && (
+              <a href={`https://wa.me/?text=${encodeURIComponent(textoParaOGrupo(dados.loja.nome, turnos))}`} target="_blank" rel="noreferrer"
+                title="Abre o WhatsApp com a escala deste período pronta para mandar no grupo"
+                style={{ ...S.botaoLeve, display: "inline-flex", alignItems: "center", textDecoration: "none", color: "#15803D", borderColor: "#BBF7D0" }}>
+                📲 Mandar no grupo
+              </a>
+            )}
             <button type="button" style={S.botaoLeve} onClick={() => setImprimir("escala")}>🖨️ Imprimir</button>
           </div>
 
@@ -328,6 +335,28 @@ export default function EscalaClient() {
 
 /** Só a primeira letra ("Novembro de 2026", não "Novembro De 2026" do text-transform). */
 const maiuscula = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
+/**
+ * A escala em texto para o grupo do WhatsApp: "quem vem" de cada dia do
+ * período na tela (Lucas, 11/11: avisar no grupo quem vem hoje / na semana).
+ */
+function textoParaOGrupo(nomeDaLoja: string, turnos: Turno[]): string {
+  const porDia = new Map<string, Turno[]>();
+  for (const t of [...turnos].sort((a, b) => (a.data + a.inicio).localeCompare(b.data + b.inicio))) {
+    porDia.set(t.data, [...(porDia.get(t.data) || []), t]);
+  }
+  const linhas = [`📅 *Escala — ${nomeDaLoja}*`];
+  for (const [dia, ts] of porDia) {
+    linhas.push("", `*${maiuscula(diaPorExtenso(dia))}*`);
+    for (const t of ts) {
+      const nomes = t.inscritos.map((i) => i.nome).join(", ");
+      const faltam = situacaoDasVagas(t.inscritos.length, t.vagas).faltam;
+      const vaga = faltam ? `${nomes ? " + " : ""}${faltam} vaga${faltam > 1 ? "s" : ""} aberta${faltam > 1 ? "s" : ""}` : "";
+      linhas.push(`• ${horarioDoTurno(t.inicio, t.fim)} ${t.funcao}: ${nomes}${vaga}`);
+    }
+  }
+  return linhas.join("\n");
+}
 
 function Numero({ rotulo, valor, cor = "#0F172A", dica, barra }: { rotulo: string; valor: string; cor?: string; dica?: string; barra?: React.ReactNode }) {
   return (
