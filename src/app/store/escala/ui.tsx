@@ -61,6 +61,52 @@ export function SeloDoTipo({ tipo, compacto = false }: { tipo: TipoDePessoa; com
   );
 }
 
+/** Cor fixa por pessoa (pelo nome): a mesma pessoa tem a mesma cor em toda a escala. */
+const CORES_DO_AVATAR = ["#0F766E", "#C2410C", "#4338CA", "#7E22CE", "#BE123C", "#0369A1", "#A16207", "#15803D", "#9D174D", "#334155"];
+export function corDaPessoa(nome: string): string {
+  let h = 0;
+  for (const ch of nome) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return CORES_DO_AVATAR[h % CORES_DO_AVATAR.length];
+}
+const iniciais = (nome: string) => {
+  const p = nome.trim().split(/\s+/).filter(Boolean);
+  return ((p[0]?.[0] || "?") + (p.length > 1 ? p[p.length - 1][0] : "")).toUpperCase();
+};
+
+/** Bolinha com as iniciais e o ícone do tipo no canto (🛵 motoboy, 👤 equipe, ⭐ freelancer). */
+export function Avatar({ nome, tipo, tamanho = 28 }: { nome: string; tipo: TipoDePessoa; tamanho?: number }) {
+  return (
+    <span title={`${nome} · ${SELO_DO_TIPO[tipo].rotulo}`} style={{
+      position: "relative", flexShrink: 0, width: tamanho, height: tamanho, borderRadius: "50%", background: corDaPessoa(nome), color: "#fff",
+      display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: tamanho * 0.38, fontWeight: 900, letterSpacing: 0.2,
+    }}>
+      {iniciais(nome)}
+      <span style={{ position: "absolute", right: -4, bottom: -4, fontSize: tamanho * 0.42, lineHeight: 1, filter: "drop-shadow(0 1px 1px rgba(0,0,0,.25))" }}>{SELO_DO_TIPO[tipo].icone}</span>
+    </span>
+  );
+}
+
+/**
+ * O que está sendo arrastado na escala: uma pessoa da lista ao lado (escalar)
+ * ou alguém que já está num turno (mudar de turno, ou soltar na lista = tirar).
+ */
+export type Arrasto =
+  | { tipo: "pessoa"; pessoaTipo: TipoDePessoa; pessoaId: string; nome: string }
+  | { tipo: "inscricao"; inscricaoId: string; turnoId: string; pessoaTipo: TipoDePessoa; pessoaId: string; nome: string };
+export const TIPO_DO_ARRASTO = "application/x-firehub-escala";
+// O dragover não pode ler o conteúdo (só o drop): a tela guarda aqui o que
+// está no ar para pintar o destino certo enquanto passa por cima.
+export const arrastoAtual: { valor: Arrasto | null } = { valor: null };
+export function comecarArrasto(e: React.DragEvent, a: Arrasto) {
+  arrastoAtual.valor = a;
+  e.dataTransfer.effectAllowed = "move";
+  e.dataTransfer.setData(TIPO_DO_ARRASTO, JSON.stringify(a));
+  e.dataTransfer.setData("text/plain", a.nome);
+}
+export function lerArrasto(e: React.DragEvent): Arrasto | null {
+  try { return JSON.parse(e.dataTransfer.getData(TIPO_DO_ARRASTO)) as Arrasto; } catch { return arrastoAtual.valor; }
+}
+
 export function SeloDoLink() {
   return <span title="Se inscreveu pelo link" style={{ ...S.chip, color: COR, background: COR_CLARA, padding: "1px 6px", fontSize: 10.5 }}>🔗 link</span>;
 }

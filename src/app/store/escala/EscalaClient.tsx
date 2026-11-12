@@ -15,9 +15,10 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { navegar, periodoDaVisao, situacaoDasVagas, tituloDoPeriodo, type Visao } from "@/lib/escala-da-equipe/regras";
-import { AvisoNoTopo, COR, COR_CLARA, ErroDaApi, JanelaDeConfirmacao, S, pedir, reais, type Aviso, type Confirmacao, type ConfigDoLink, type DadosDaEscala, type Turno } from "./ui";
-import { CSS_DO_CALENDARIO, VisaoDaSemana, VisaoDoDia, VisaoDoMes } from "./Calendario";
+import { diaEMes, horarioDoTurno, navegar, periodoDaVisao, situacaoDasVagas, tituloDoPeriodo, type Visao } from "@/lib/escala-da-equipe/regras";
+import { AvisoNoTopo, COR, COR_CLARA, ErroDaApi, JanelaDeConfirmacao, S, pedir, reais, type Arrasto, type Aviso, type Confirmacao, type ConfigDoLink, type DadosDaEscala, type Turno } from "./ui";
+import { BarraDasVagas, CSS_DO_CALENDARIO, VisaoDaSemana, VisaoDoDia, VisaoDoMes } from "./Calendario";
+import PessoasAoLado from "./PessoasAoLado";
 import { DetalheDoTurno, FormDoTurno } from "./JanelaDoTurno";
 import Pessoas from "./Pessoas";
 import LinkDeInscricao from "./LinkDeInscricao";
@@ -25,6 +26,7 @@ import Impressao, { type O_QUE_IMPRIMIR } from "./Impressao";
 
 type Aba = "escala" | "pessoas" | "link";
 const CHAVE_DA_VISAO = "escala:visao";
+const CHAVE_DO_LADO = "escala:pessoas-ao-lado";
 
 export default function EscalaClient() {
   const [aba, setAba] = useState<Aba>("escala");
@@ -39,10 +41,17 @@ export default function EscalaClient() {
   const [aberto, setAberto] = useState<string | null>(null);
   const [imprimir, setImprimir] = useState<O_QUE_IMPRIMIR | null>(null);
   const [copiando, setCopiando] = useState(false);
+  // A lista de pessoas ao lado (arrastar para o turno) — lembrada por navegador.
+  const [lado, setLado] = useState(true);
 
   useEffect(() => {
     try { const v = localStorage.getItem(CHAVE_DA_VISAO) as Visao | null; if (v === "dia" || v === "semana" || v === "mes") setVisao(v); } catch {}
+    try { if (localStorage.getItem(CHAVE_DO_LADO) === "0") setLado(false); } catch {}
   }, []);
+  const mostrarLado = (v: boolean) => {
+    setLado(v);
+    try { localStorage.setItem(CHAVE_DO_LADO, v ? "1" : "0"); } catch {}
+  };
   const trocarVisao = (v: Visao) => {
     setVisao(v);
     try { localStorage.setItem(CHAVE_DA_VISAO, v); } catch {}
@@ -115,6 +124,46 @@ export default function EscalaClient() {
     });
   }
 
+  /**
+   * Soltou alguém num turno: da lista = escalar; de outro turno = mudar (entra
+   * no novo e só depois sai do antigo — se a entrada falhar, nada muda).
+   * Turno cheio pergunta "abrir mais uma vaga?", como no detalhe do turno.
+   */
+  async function soltar(turno: Turno, a: Arrasto) {
+    const onde = `${turno.funcao}, ${diaEMes(turno.data)} ${horarioDoTurno(turno.inicio, turno.fim)}`;
+    const fazer = async (aumentarVaga: boolean) => {
+      await pedir("/api/store/escala/inscricoes", "POST", { turnoId: turno.id, pessoaTipo: a.pessoaTipo, pessoaId: a.pessoaId, aumentarVaga });
+      if (a.tipo === "inscricao") await pedir(`/api/store/escala/inscricoes/${a.inscricaoId}`, "DELETE");
+      avisar({ tipo: "ok", titulo: a.tipo === "inscricao" ? `${a.nome} mudou de turno` : `${a.nome} escalado(a)`, detalhe: onde });
+      carregar();
+    };
+    try {
+      await fazer(false);
+    } catch (e: any) {
+      if (e instanceof ErroDaApi && e.dados?.codigo === "CHEIO") {
+        setConfirmacao({
+          titulo: "Turno cheio",
+          texto: `As ${turno.vagas} vaga(s) de ${onde} já estão preenchidas.\nAbrir mais uma vaga e colocar ${a.nome}?`,
+          botao: "Abrir vaga e colocar",
+          acao: () => fazer(true).catch((e2: any) => avisar({ tipo: "erro", titulo: "Não deu certo", detalhe: e2.message })),
+        });
+      } else {
+        avisar({ tipo: "erro", titulo: `Não deu para colocar ${a.nome}`, detalhe: e.message });
+        carregar();
+      }
+    }
+  }
+
+  async function tirarArrastando(a: Extract<Arrasto, { tipo: "inscricao" }>) {
+    try {
+      await pedir(`/api/store/escala/inscricoes/${a.inscricaoId}`, "DELETE");
+      avisar({ tipo: "ok", titulo: `${a.nome} saiu do turno` });
+      carregar();
+    } catch (e: any) {
+      avisar({ tipo: "erro", titulo: "Não deu para tirar", detalhe: e.message });
+    }
+  }
+
   async function copiarSemanaAnterior() {
     setCopiando(true);
     try {
@@ -133,7 +182,7 @@ export default function EscalaClient() {
   const ABAS: Array<[Aba, string]> = [["escala", "📅 Escala"], ["pessoas", "👥 Pessoas"], ["link", "🔗 Link de inscrição"]];
 
   return (
-    <div className="esc-pagina" style={{ maxWidth: 1400, margin: "0 auto", padding: "18px 16px 120px" }}>
+    <div className="esc-pagina" style={{ padding: "18px clamp(12px, 2vw, 28px) 120px" }}>
       <style>{CSS_DA_PAGINA + CSS_DO_CALENDARIO}</style>
       <AvisoNoTopo aviso={aviso} onFechar={fecharAviso} />
 
@@ -174,12 +223,16 @@ export default function EscalaClient() {
                 {copiando ? "Copiando…" : "⧉ Copiar semana anterior"}
               </button>
             )}
+            {visao !== "mes" && !lado && (
+              <button type="button" style={S.botaoLeve} onClick={() => mostrarLado(true)} title="Mostrar a lista de pessoas para arrastar para os turnos">👥 Pessoas ao lado</button>
+            )}
             <button type="button" style={S.botaoLeve} onClick={() => setImprimir("escala")}>🖨️ Imprimir</button>
           </div>
 
           <div className="esc-resumo">
             <Numero rotulo="Turnos" valor={String(turnos.length)} />
-            <Numero rotulo="Vagas preenchidas" valor={`${resumo.preenchidas}/${resumo.vagas}`} />
+            <Numero rotulo="Vagas preenchidas" valor={`${resumo.preenchidas}/${resumo.vagas}`}
+              barra={<BarraDasVagas preenchidas={resumo.preenchidas} vagas={resumo.vagas} cor={resumo.faltam ? "#B45309" : "#047857"} />} />
             <Numero rotulo="Faltam" valor={String(resumo.faltam)} cor={resumo.faltam > 0 ? "#DC2626" : "#047857"} />
             {dados.custo && (
               <Numero rotulo="Custo previsto (diárias)" valor={reais(dados.custo.total)} cor={COR}
@@ -197,9 +250,14 @@ export default function EscalaClient() {
             </div>
           )}
 
-          {visao === "dia" && <VisaoDoDia data={data} hoje={dados.hoje} turnos={turnos} mostrarDiaria={dados.ehDono} onAbrir={(t) => setAberto(t.id)} onNovo={() => setForm({ data })} />}
-          {visao === "semana" && <VisaoDaSemana data={data} hoje={dados.hoje} turnos={turnos} onAbrir={(t) => setAberto(t.id)} onNovo={(d) => setForm({ data: d })} onDia={(d) => { setData(d); trocarVisao("dia"); }} />}
-          {visao === "mes" && <VisaoDoMes data={data} hoje={dados.hoje} turnos={turnos} onDia={(d) => { setData(d); trocarVisao("dia"); }} />}
+          <div className={`esc-com-lado${visao !== "mes" && lado ? " aberto" : ""}`}>
+            <div style={{ minWidth: 0 }}>
+              {visao === "dia" && <VisaoDoDia data={data} hoje={dados.hoje} turnos={turnos} mostrarDiaria={dados.ehDono} onAbrir={(t) => setAberto(t.id)} onNovo={() => setForm({ data })} onSoltar={soltar} />}
+              {visao === "semana" && <VisaoDaSemana data={data} hoje={dados.hoje} turnos={turnos} onAbrir={(t) => setAberto(t.id)} onNovo={(d) => setForm({ data: d })} onDia={(d) => { setData(d); trocarVisao("dia"); }} onSoltar={soltar} />}
+              {visao === "mes" && <VisaoDoMes data={data} hoje={dados.hoje} turnos={turnos} onDia={(d) => { setData(d); trocarVisao("dia"); }} />}
+            </div>
+            {visao !== "mes" && lado && <PessoasAoLado pessoas={dados.pessoas} turnos={turnos} onTirar={tirarArrastando} onFechar={() => mostrarLado(false)} />}
+          </div>
 
           {dados.custo && dados.custo.porPessoa.length > 0 && (
             <details style={{ ...S.cartao, marginTop: 14 }}>
@@ -251,11 +309,12 @@ export default function EscalaClient() {
 /** Só a primeira letra ("Novembro de 2026", não "Novembro De 2026" do text-transform). */
 const maiuscula = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
-function Numero({ rotulo, valor, cor = "#0F172A", dica }: { rotulo: string; valor: string; cor?: string; dica?: string }) {
+function Numero({ rotulo, valor, cor = "#0F172A", dica, barra }: { rotulo: string; valor: string; cor?: string; dica?: string; barra?: React.ReactNode }) {
   return (
-    <div title={dica} style={{ ...S.cartao, padding: "10px 14px", flex: "1 1 140px" }}>
-      <div style={{ fontSize: 12, fontWeight: 800, color: "#64748B" }}>{rotulo}</div>
-      <div style={{ fontSize: 22, fontWeight: 900, color: cor }}>{valor}</div>
+    <div title={dica} style={{ ...S.cartao, padding: "12px 16px", flex: "1 1 160px" }}>
+      <div style={{ fontSize: 12.5, fontWeight: 800, color: "#64748B" }}>{rotulo}</div>
+      <div style={{ fontSize: 26, fontWeight: 900, color: cor, letterSpacing: -0.4 }}>{valor}</div>
+      {barra && <div style={{ marginTop: 4 }}>{barra}</div>}
       {dica && <div style={{ fontSize: 11, color: "#94A3B8" }}>{dica}</div>}
     </div>
   );
@@ -270,7 +329,13 @@ const CSS_DA_PAGINA = `
 .esc-segmento { display: inline-flex; background: #F1F5F9; border-radius: 12px; padding: 3px; }
 .esc-segmento button { border: 0; background: none; padding: 8px 14px; border-radius: 9px; font-weight: 800; font-size: 14px; color: #475569; cursor: pointer; font-family: inherit; }
 .esc-segmento button.ativa { background: #fff; color: ${COR}; box-shadow: 0 1px 3px rgba(15,23,42,.12); }
-.esc-resumo { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.esc-resumo { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.esc-com-lado { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
+.esc-com-lado.aberto { grid-template-columns: minmax(0, 1fr) 270px; }
+@media (max-width: 1100px) { .esc-com-lado.aberto { grid-template-columns: minmax(0, 1fr); } .esc-lado { display: none !important; } }
+.esc-arrastavel { transition: border-color .15s, box-shadow .15s, transform .15s; }
+.esc-arrastavel:hover { border-color: #5EEAD4 !important; box-shadow: 0 4px 12px rgba(15,118,110,.12); transform: translateX(-2px); }
+.esc-arrastavel:active { cursor: grabbing; }
 .esc-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .esc-form label { display: block; min-width: 0; }
 .esc-candidato:hover { border-color: #5EEAD4 !important; background: ${COR_CLARA} !important; }
