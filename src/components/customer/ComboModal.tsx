@@ -798,7 +798,7 @@ export default function ComboModal({ product, onClose, onConfirm, inicial, rotul
                                     + R$ {Number(item.adicionalDe).toFixed(2).replace(".", ",")}
                                   </span>
                                   <span style={{ color: "#C92E09" }}>
-                                    {addPrice > 0 ? `+ R$ ${addPrice.toFixed(2).replace(".", ",")}` : "Incluso"}
+                                    {addPrice > 0 ? `+ R$ ${addPrice.toFixed(2).replace(".", ",")}` : "R$ 0,00"}
                                   </span>
                                   <span style={{ fontSize: "0.62rem", fontWeight: 800, color: "#FFF", background: "#C92E09", padding: "1px 6px", borderRadius: "10px" }}>
                                     PROMOÇÃO
@@ -815,8 +815,10 @@ export default function ComboModal({ product, onClose, onConfirm, inicial, rotul
                                   − R$ {Math.abs(addPrice).toFixed(2).replace(".", ",")}
                                 </div>
                               ) : (
+                                /* "R$ 0,00", não "Incluso": o cliente lia "Incluso" na escolha do
+                                   2º lanche como lanche grátis (Lucas/Frangoso, 10/11/2026). */
                                 <div style={{ fontSize: "0.7rem", fontWeight: 600, color: "#94A3B8", marginTop: "1px" }}>
-                                  Incluso
+                                  R$ 0,00
                                 </div>
                               )}
                               {!isSingle && Number(item.maxPerItem) > 0 && Number(item.maxPerItem) < max && (
