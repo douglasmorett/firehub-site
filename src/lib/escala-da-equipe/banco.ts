@@ -146,6 +146,8 @@ const DDL = [
   // Um pagamento VALENDO por inscrição: dois cliques em "pago" não pagam duas vezes.
   `CREATE UNIQUE INDEX IF NOT EXISTS "EscalaPagamento_inscricao_key" ON "EscalaPagamento"("inscricaoId") WHERE "desfeitoEm" IS NULL`,
   `CREATE INDEX IF NOT EXISTS "EscalaPagamento_lojaId_data_idx" ON "EscalaPagamento"("lojaId", "data")`,
+  // A despesa do Financeiro que o pagamento do FREELANCER gerou (12/11/2026).
+  `ALTER TABLE "EscalaPagamento" ADD COLUMN IF NOT EXISTS "despesaId" TEXT`,
 ];
 
 /** "Agora" para coluna TIMESTAMP sem fuso: sempre em UTC, qualquer que seja o fuso da sessão do banco. */
@@ -706,10 +708,35 @@ export async function marcarPago(lojaId: string, pedido: PedidoDePagamento, quem
       const ja = await tx.$queryRaw<{ nome: string; data: string }[]>(Prisma.sql`
         SELECT "nome", to_char("data", 'YYYY-MM-DD') AS "data" FROM "EscalaPagamento" WHERE "inscricaoId" = ANY(${ids}) AND "desfeitoEm" IS NULL`);
       if (ja.length) throw new ErroDaEscala(`Já está marcado como pago: ${ja.map((j) => `${j.nome} (${diaEMes(j.data)})`).join(", ")}. Atualize a tela.`, 409, "JA_PAGO");
+      // ── O FREELANCER ENTRA NO DRE ──────────────────────────────────────
+      // Douglas, 12/11/2026 (Lucas/Frangoso: "essas despesas já vão p/ DRE?"):
+      // o pagamento ao FREELANCER vira despesa lançada (categoria
+      // "Freelancers", no dia do turno), que o DRE já soma. A equipe
+      // cadastrada não: o salário dela está nos custos fixos. O motoboy
+      // também não: o custo dele entra pelo relatório dos entregadores — dois
+      // lugares contando a mesma diária é DRE em dobro.
+      const despesaDe = new Map<string, string>();
+      for (const l of travadas) {
+        if (l.pessoaTipo !== "freelancer") continue;
+        const valor = valorDe.get(l.id) ?? 0;
+        if (!(valor > 0)) continue;
+        const d = await tx.despesaLancada.create({
+          data: {
+            franchiseeId: lojaId,
+            dia: l.data,
+            categoria: "Freelancers",
+            descricao: `Escala: ${l.nome} (turno ${diaEMes(l.data)} ${l.inicio})`.slice(0, 200),
+            valor,
+            criadoPor: quem.slice(0, 120),
+          },
+          select: { id: true },
+        });
+        despesaDe.set(l.id, d.id);
+      }
       const linhas = travadas.map((l) => Prisma.sql`(${randomUUID()}, ${lojaId}, ${l.id}, ${l.turnoId}, ${l.pessoaTipo}, ${l.pessoaId}, ${l.nome}, ${l.data}::date,
-        ${valorDe.get(l.id) ?? 0}, ${pedido.forma}, ${obs}, ${agoraEmUtc()}, ${quem.slice(0, 120)})`);
+        ${valorDe.get(l.id) ?? 0}, ${pedido.forma}, ${obs}, ${agoraEmUtc()}, ${quem.slice(0, 120)}, ${despesaDe.get(l.id) ?? null})`);
       await tx.$executeRaw(Prisma.sql`
-        INSERT INTO "EscalaPagamento" ("id", "lojaId", "inscricaoId", "turnoId", "pessoaTipo", "pessoaId", "nome", "data", "valor", "forma", "obs", "pagoEm", "pagoPor")
+        INSERT INTO "EscalaPagamento" ("id", "lojaId", "inscricaoId", "turnoId", "pessoaTipo", "pessoaId", "nome", "data", "valor", "forma", "obs", "pagoEm", "pagoPor", "despesaId")
         VALUES ${Prisma.join(linhas)}`);
     });
   } catch (err: any) {
@@ -722,10 +749,14 @@ export async function marcarPago(lojaId: string, pedido: PedidoDePagamento, quem
 /** Desfaz o pagamento: fica no banco, marcado (quem e quando), e a inscrição volta a "a pagar". */
 export async function desfazerPagamento(lojaId: string, id: string, quem: string): Promise<void> {
   await garantirTabelasDaEscala();
-  const r = await prisma.$executeRaw(Prisma.sql`
+  const desfeitos = await prisma.$queryRaw<{ despesaId: string | null }[]>(Prisma.sql`
     UPDATE "EscalaPagamento" SET "desfeitoEm" = ${agoraEmUtc()}, "desfeitoPor" = ${quem.slice(0, 120)}
-    WHERE "id" = ${id} AND "lojaId" = ${lojaId} AND "desfeitoEm" IS NULL`);
-  if (!r) throw new ErroDaEscala("Esse pagamento não existe ou já foi desfeito.", 404);
+    WHERE "id" = ${id} AND "lojaId" = ${lojaId} AND "desfeitoEm" IS NULL
+    RETURNING "despesaId"`);
+  if (!desfeitos.length) throw new ErroDaEscala("Esse pagamento não existe ou já foi desfeito.", 404);
+  // A despesa que o pagamento do freelancer lançou sai do Financeiro (e do DRE) junto.
+  const despesaId = desfeitos[0].despesaId;
+  if (despesaId) await prisma.despesaLancada.deleteMany({ where: { id: despesaId, franchiseeId: lojaId } }).catch(() => {});
 }
 
 export type EscalaDoMotoboy = { pix: string | null; pixTipo: TipoDePix | null; pixOrigem: string | null; pago: number; dias: string[] };
