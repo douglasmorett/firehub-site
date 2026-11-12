@@ -100,6 +100,13 @@ const GUARDA_DO_ENVIO_MS = 7 * 24 * 60 * 60 * 1000;
 const TETO_POR_LOJA = 60;
 
 /**
+ * Quanto tempo a reserva do dia segura outra execução. A leva mais longa (60
+ * envios com respiro) passa de uma hora; depois disso, reserva sem conclusão
+ * é processo que morreu no meio e a execução seguinte retoma.
+ */
+const RESERVA_VALE_MS = 100 * 60_000;
+
+/**
  * Respiro ALEATÓRIO entre um envio e outro.
  *
  * O que derruba número de WhatsApp não é só o volume: é o PADRÃO. Trinta
@@ -176,9 +183,23 @@ export async function GET(req: NextRequest) {
       const hoje = dataDaLoja(fuso);
 
       // Já disparou hoje? Então acabou por hoje.
-      if (cfg.ultimaRecuperacaoEm === hoje) {
+      // Já fez hoje? Só se a leva CHEGOU AO FIM (`recuperacaoConcluidaEm`).
+      // Reservado mas não concluído: se a reserva é recente, outra execução
+      // ainda está mandando; se passou de RESERVA_VALE_MS, o processo morreu
+      // no meio (deploy reinicia o servidor — Frangoso, 12/11/2026: 3 deploys
+      // no dia e nenhuma mensagem saiu) e esta execução retoma. Quem já recebeu
+      // está em `fora` (recuperacaoQrEnvios), então retomar não repete ninguém.
+      if (cfg.recuperacaoConcluidaEm === hoje) {
         log.push(`⏭️ ${loja.storeName || loja.name}: já disparou hoje`);
         continue;
+      }
+      if (cfg.ultimaRecuperacaoEm === hoje) {
+        const reservadaHa = Date.now() - new Date(cfg.recuperacaoReservadaEm || 0).getTime();
+        if (reservadaHa < RESERVA_VALE_MS) {
+          log.push(`⏭️ ${loja.storeName || loja.name}: leva de hoje em andamento`);
+          continue;
+        }
+        log.push(`🔁 ${loja.storeName || loja.name}: a leva de hoje não terminou — retomando`);
       }
 
       // O dia é RESERVADO antes do primeiro envio, não depois do último.
@@ -190,7 +211,7 @@ export async function GET(req: NextRequest) {
       // derruba o número da loja. Se o processo morrer no meio, o custo é a
       // loja perder parte da leva de um dia — muito mais barato que o dobro.
       // Grava só este campo (jsonb `||`), sem reescrever o resto da config.
-      await mesclarNoChatbotConfig(loja.id, { ultimaRecuperacaoEm: hoje });
+      await mesclarNoChatbotConfig(loja.id, { ultimaRecuperacaoEm: hoje, recuperacaoReservadaEm: new Date().toISOString() });
 
       // Quem não entra hoje: pediu para parar, ou recebeu uma automática (do
       // oficial ou daqui) nos últimos 6 dias. Chaves no formato telefoneDaMeta.
@@ -210,6 +231,7 @@ export async function GET(req: NextRequest) {
       });
 
       let enviadosDaLoja = 0;
+      let falhasDaLoja = 0;
       let aceiteDesfeito = false;
       const detalhes: string[] = [];
       const envios: Record<string, string> = {
@@ -289,6 +311,10 @@ export async function GET(req: NextRequest) {
             const ok = imagem
               ? await sendEvolutionMediaUrl(loja.id, digitos, imagem, texto)
               : await sendEvolutionMessage(loja.id, digitos, texto);
+            if (!ok) {
+              falhasDaLoja++;
+              console.warn(`[Recuperação] ${loja.storeName || loja.id}: o gateway não confirmou o envio para ${digitos.slice(-4)}`);
+            }
             if (ok) {
               enviadosDoMarco++; enviadosDaLoja++; enviadosNoTotal++;
               // Anotado na hora, não no fim: se o processo cair no meio, o
@@ -302,6 +328,7 @@ export async function GET(req: NextRequest) {
               await mesclarNoChatbotConfig(loja.id, { recuperacaoQrEnvios: envios }).catch(() => {});
             }
           } catch (e: any) {
+            falhasDaLoja++;
             console.warn(`[Recuperação] falha ao enviar para ${digitos.slice(-4)}: ${e?.message}`);
           }
           // Ritmo humano: intervalo sorteado, com pausa longa de vez em quando.
@@ -313,6 +340,12 @@ export async function GET(req: NextRequest) {
 
       if (aceiteDesfeito) detalhes.push("parou: a loja desfez o aceite do risco");
       log.push(`📣 ${loja.storeName || loja.name}: ${enviadosDaLoja} envio(s) — ${detalhes.join(" | ")}`);
+      // Fim da leva: o dia está feito, e o resumo fica na loja para conferir
+      // depois sem depender do log do servidor.
+      await mesclarNoChatbotConfig(loja.id, {
+        recuperacaoConcluidaEm: hoje,
+        recuperacaoResumo: { em: new Date().toISOString(), enviados: enviadosDaLoja, falhas: falhasDaLoja, detalhes },
+      }).catch(() => {});
     }
 
     return NextResponse.json({ ok: true, enviados: enviadosNoTotal, log });
