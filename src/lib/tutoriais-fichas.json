@@ -1787,5 +1787,37 @@
       }
     ],
     "versao": "087f25a9"
+  },
+  "integracao-keeta": {
+    "id": "integracao-keeta",
+    "titulo": "Integração: conectar a Keeta",
+    "duracao": 101,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "Onde fica"
+      },
+      {
+        "em": 14.6,
+        "titulo": "Como conectar"
+      },
+      {
+        "em": 48.1,
+        "titulo": "Depois de conectada"
+      },
+      {
+        "em": 53.6,
+        "titulo": "A loja no app da Keeta"
+      },
+      {
+        "em": 85.1,
+        "titulo": "Antes dos primeiros pedidos"
+      },
+      {
+        "em": 95.6,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "385543c7"
   }
 }
