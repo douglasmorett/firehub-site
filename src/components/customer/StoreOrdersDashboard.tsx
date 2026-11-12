@@ -4031,10 +4031,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   // pedido: com o principal no quadro, ele não ganha card (virava um "pedido
   // novo" só com a bebida, e saía em outra entrega — Lucas, 24/10/2026). Os
   // itens e o "cobrar à parte" aparecem dentro do card do principal.
-  const idsNoQuadro = new Set(orders.map((o: any) => o.id));
+  // Nem quando o principal já saiu da tela (entregue): aí o acréscimo vai com
+  // ele (lib/acrescimo-segue-o-pai.ts) — card sozinho era o "pedido 82
+  // duplicado" da Hakim Centro, 08/11/2026.
   const filteredOrders = orders.filter(o => {
     if (o.status === "ENCERRADO") return false;
-    if (o.parentOrderId && idsNoQuadro.has(o.parentOrderId)) return false;
+    if (o.parentOrderId) return false;
     if (!matchesChannelFilter(o)) return false;
     if (!matchesTypeFilter(o)) return false;
     
@@ -8025,7 +8027,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       <RoteirizacaoModal
         isOpen={showRoteirizacaoModal}
         onClose={() => setShowRoteirizacaoModal(false)}
-        orders={orders}
+        // O acréscimo viaja com o pedido principal: pino próprio no mapa era
+        // uma segunda entrega que não existe.
+        orders={orders.filter((o: any) => !o.parentOrderId)}
         storeAddress={user.storeAddress}
         storeCity={user.city}
         storeSlug={user.slug}

@@ -240,6 +240,8 @@ async function lerEPlanejar(lojaId: string, agora: Date): Promise<Planejado> {
         franchiseeId: lojaId,
         deliveryType: "DELIVERY",
         tableSessionId: null,
+        // Acréscimo colado viaja com o pedido principal, não é outra entrega.
+        parentOrderId: null,
         status: { in: [...STATUS_DO_DESPACHO] },
         OR: [{ createdAt: { gte: virada } }, { scheduledDatetime: { gte: virada } }],
       },

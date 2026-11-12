@@ -118,6 +118,25 @@ function avisarCelularDaLoja(id: unknown) {
   }, 1_500)
 }
 
+// ── O ACRÉSCIMO ANDA COM O PEDIDO, EM TODO CAMINHO ──────────────────────────
+//
+// O acréscimo de marketplace é um pedido colado (`parentOrderId`) — no banco
+// por causa do repasse e do caixa, para a loja é o MESMO pedido. Ele só seguia
+// o principal quando o status mudava pelo painel (api/customer-order/status);
+// o pedido do iFood que o app do motoboy, o webhook ou o despacho entregavam
+// deixava o acréscimo parado em "preparando", virando um segundo pedido 82 no
+// quadro e um pino no mapa por dias (Hakim Centro, 08–11/11/2026). A regra
+// mora aqui pelo mesmo motivo do estoque e da Foody. Quem segue o pai não tem
+// `id` no where (lib/acrescimo-segue-o-pai.ts), então não se repete.
+function acrescimosAcompanham(id: unknown, status: unknown) {
+  if (typeof window !== 'undefined' || typeof id !== 'string' || typeof status !== 'string') return
+  setTimeout(() => {
+    import('./acrescimo-segue-o-pai')
+      .then(({ acrescimosSeguemOPai }) => acrescimosSeguemOPai(id, status))
+      .catch((e) => console.error('[Acréscimo] Erro ao carregar o acompanhamento:', e?.message || e))
+  }, 1_500)
+}
+
 function criarClient() {
   const base = new PrismaClient()
   return base.$extends({
@@ -148,6 +167,10 @@ function criarClient() {
           if (avisoDeEntrada(args.data)) {
             avisarCelularDaLoja(typeof args.where?.id === 'string' ? args.where.id : (resultado as { id?: unknown })?.id)
           }
+          acrescimosAcompanham(
+            typeof args.where?.id === 'string' ? args.where.id : (resultado as { id?: unknown })?.id,
+            (args.data as { status?: unknown } | undefined)?.status,
+          )
           return resultado
         },
         async updateMany({ args, query }) {
@@ -179,6 +202,10 @@ function criarClient() {
           const alvoDoAviso = (args.where as { id?: unknown } | undefined)?.id
           if (avisoDeEntrada(args.data) && typeof alvoDoAviso === 'string' && (resultado as { count?: number })?.count) {
             avisarCelularDaLoja(alvoDoAviso)
+          }
+          // A escrita condicional de um pedido só (app do motoboy, painel).
+          if (typeof alvoDoAviso === 'string' && (resultado as { count?: number })?.count) {
+            acrescimosAcompanham(alvoDoAviso, (args.data as { status?: unknown } | undefined)?.status)
           }
           return resultado
         },

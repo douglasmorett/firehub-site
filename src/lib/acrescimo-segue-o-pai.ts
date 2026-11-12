@@ -22,6 +22,10 @@ export async function acrescimosSeguemOPai(
   status: string,
 ): Promise<void> {
   try {
+    // Roda em TODA mudança de status (lib/prisma.ts): quase nenhum pedido tem
+    // acréscimo, então a consulta barata (índice em parentOrderId) vem antes.
+    const temAcrescimo = await prisma.customerOrder.findFirst({ where: { parentOrderId: paiId }, select: { id: true } });
+    if (!temAcrescimo) return;
     const vivos = { parentOrderId: paiId, status: { notIn: CANCELADOS } };
     if (status === "CANCELADO") {
       await prisma.customerOrder.updateMany({

@@ -1048,7 +1048,10 @@ async function acrescentarColado(entrada: {
       // de novo no acréscimo seria cobrar duas vezes pela mesma viagem.
       deliveryFee: 0,
       totalAmount: valorDoAcrescimo,
-      status: "ACEITO",
+      // Nasce onde o principal está (preparando, pronto, saiu, entregue): é o
+      // mesmo pedido. "ACEITO" fixo deixava o acréscimo de um pedido já
+      // entregue aberto para sempre — card e pino próprios (Hakim, 08/11/2026).
+      status: ["NOVO", "CANCELADO"].includes(String(order.status || "")) ? "ACEITO" : order.status,
       // PRESENCIAL e não o canal do pai: é venda própria da loja, e é assim
       // que o caixa a classifica pela forma de pagamento — que é justamente o
       // que não funcionaria se ela ficasse marcada como iFood.
