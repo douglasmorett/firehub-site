@@ -103,8 +103,8 @@ export function bloqueioDoCiclo(
 const PRAZO_DADO_A_MAO: Record<string, number> = {
   // Brazza Burguer, mensalidade de setembro/2026: dono liberou até quarta, 14/10 (pedido em 10/10/2026).
   "jmingordo@gmail.com:2026-09": 14,
-  // Showrrascão, mensalidade de outubro/2026: paga dia 11, dono liberou até 12/11 (pedido em 07/11/2026).
-  "showrrascaodelivery@gmail.com:2026-10": 12,
+  // Showrrascão, mensalidade de outubro/2026: dono liberou até 12/11 (07/11) e depois até 16/11 (pedido em 12/11/2026).
+  "showrrascaodelivery@gmail.com:2026-10": 16,
 };
 
 /** "2026-10-05" → "05/10". */
