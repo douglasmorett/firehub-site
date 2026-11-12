@@ -37,11 +37,23 @@ export function motivoParaNaoChamar(o: PedidoParaEntregador | null | undefined):
   if (!o) return "Pedido não encontrado.";
   if (String(o.deliveryType || "").toUpperCase() !== "DELIVERY") return "Só pedido de entrega.";
   const canal = String(o.openDeliveryChannel || o.source || "").toUpperCase();
-  if (o.ifoodOrderId || MARKETPLACES.has(canal)) return "Pedido de aplicativo: a entrega é tratada pelo próprio app.";
+  // Pedido da 99 que a LOJA entrega também pode chamar entregador (99 Entrega
+  // ou iFood Sob Demanda). Os outros apps entregam ou cuidam da entrega.
+  if (o.ifoodOrderId || (MARKETPLACES.has(canal) && !ehDa99ComEntregaDaLoja(o))) {
+    return "Pedido de aplicativo: a entrega é tratada pelo próprio app.";
+  }
   if (!STATUS_QUE_PODEM.has(String(o.status || "").toUpperCase())) return "O pedido já saiu, foi entregue ou cancelado.";
   if (o.motoboyId) return "Já tem motoboy da loja neste pedido.";
-  if (o.ifoodDriverStatus || o.deliveryBy) return "O entregador já foi chamado.";
+  const por = String(o.deliveryBy || "").toUpperCase();
+  if (o.ifoodDriverStatus || (por && por !== "MERCHANT")) return "O entregador já foi chamado.";
   return null;
+}
+
+/** Pedido da 99 com entrega da própria loja (o 99 Entrega só atende esse). */
+export function ehDa99ComEntregaDaLoja(o: PedidoParaEntregador): boolean {
+  const canal = String(o.openDeliveryChannel || o.source || "").toUpperCase();
+  const por = String(o.deliveryBy || "").toUpperCase();
+  return canal === "99FOOD" && (!por || por === "MERCHANT");
 }
 
 /** Telefone do pedido → DDD + número, sem o 55. */

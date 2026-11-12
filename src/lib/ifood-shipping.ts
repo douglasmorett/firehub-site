@@ -427,9 +427,48 @@ export async function registrarEventoDeShipping(prisma: any, evento: any): Promi
          SET "eventos" = "eventos" || ${item}::jsonb
        WHERE "ifoodOrderId" = ${evento.orderId}
          AND NOT ("eventos" @> ${JSON.stringify([{ id: evento.id ?? "__sem_id__" }])}::jsonb)`;
+    await refletirNoPedidoDaLoja(prisma, evento, codigo);
   } catch (e: any) {
     console.warn("[iFood shipping] evento não gravado:", e?.message);
   }
+}
+
+/** O evento do entregador → o `ifoodDriverStatus` que o painel já entende (lib/entrega-parceira.ts). */
+const STATUS_DO_ENTREGADOR: Record<string, string> = {
+  ASSIGN_DRIVER: "ASSIGNED",
+  GOING_TO_ORIGIN: "GOING_TO_ORIGIN",
+  ARRIVED_AT_ORIGIN: "ARRIVED_AT_ORIGIN",
+  DISPATCHED: "DISPATCHED",
+  DELIVERY_IN_TRANSIT: "DISPATCHED",
+  ARRIVED_AT_DESTINATION: "ARRIVED_AT_DESTINATION",
+  CONCLUDED: "DELIVERED",
+  DELIVERY_CONCLUDED: "DELIVERED",
+};
+
+/**
+ * Pedido da loja com entregador chamado pelo card ("Chamar entregador iFood"):
+ * a viagem do entregador aparece no card. Só o carimbo do entregador muda —
+ * o status do pedido continua com a loja (lib/ifood-sob-demanda.ts). Corrida
+ * cancelada pelo iFood devolve o pedido para a entrega da loja.
+ */
+async function refletirNoPedidoDaLoja(prisma: any, evento: any, codigo: string) {
+  const cancelou = codigo === "CANCELLED" || codigo === "DELIVERY_CANCELLED";
+  const status = STATUS_DO_ENTREGADOR[codigo];
+  if (!status && !cancelou) return;
+  const linhas: any[] = await prisma.$queryRaw`
+    SELECT "pedidoDoFireHub" FROM "IfoodShippingPedido"
+     WHERE "ifoodOrderId" = ${evento.orderId} AND "pedidoDoFireHub" IS NOT NULL LIMIT 1`;
+  const id = linhas[0]?.pedidoDoFireHub;
+  if (!id) return;
+  const m = evento.metadata ?? {};
+  const nome = m.workerName ?? m.driverName ?? m.name ?? null;
+  const telefone = m.workerPhone ?? m.driverPhone ?? m.phone ?? null;
+  await prisma.customerOrder.update({
+    where: { id },
+    data: cancelou
+      ? { ifoodDriverStatus: null, ifoodDriverName: null, ifoodDriverPhone: null, ifoodDriverRequestedAt: null, deliveryBy: null }
+      : { ifoodDriverStatus: status, ...(nome ? { ifoodDriverName: String(nome) } : {}), ...(telefone ? { ifoodDriverPhone: String(telefone) } : {}) },
+  });
 }
 
 export async function listarPedidosShipping(prisma: any, franchiseeId: string) {
