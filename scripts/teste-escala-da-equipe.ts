@@ -6,12 +6,16 @@
  * O caso: Lucas (Frangoso), motoboy freelancer combinado "de boca" — faltava
  * ou sobrava gente. Repetição por dia da semana, cópia da semana, turno que
  * vira a meia-noite, prazos do link, vagas e quem é quem pelo telefone.
+ * E (12/11/2026) o Pix e o controle de pagamento: chave lida e escondida,
+ * devido/pago/pendente por pessoa, turno futuro fora, dia pago no acerto do
+ * motoboy e o "pagar tudo" dividido pela diária.
  */
 import {
-  acharPeloTelefone, agoraDaLoja, chaveDaFuncao, copiarSemana, custoPrevisto, dataValida, datasDaRepeticao, desistenciaAberta, diaDaSemana,
-  diasDaSemanaDe, duracaoEmMinutos, fimDoMes, funcaoNoLink, horarioDoTurno, inicioDaSemana, inscricaoAberta, lerConfigDaEscala, lerHora,
-  minutosAteOTurno, navegar, normalizarFuncao, periodoDaVisao, primeiroNome, semanasDoMes, situacaoDasVagas, tituloDoPeriodo, turnoJaTerminou,
-  turnosSeSobrepoem, validarTurno, viraAMeiaNoite,
+  acertoQueCobre, acharPeloTelefone, agoraDaLoja, chaveDaFuncao, copiarSemana, cpfValido, custoPrevisto, dataValida, datasDaRepeticao, desistenciaAberta,
+  diaDaSemana, diaDoExpedienteDoTurno, diasDaSemanaDe, dividirValor, duracaoEmMinutos, fimDoMes, funcaoNoLink, horarioDoTurno, inicioDaSemana,
+  inscricaoAberta, lerChavePix, lerConfigDaEscala, lerHora, minutosAteOTurno, navegar, normalizarFuncao, periodoDaVisao, pixFormatado, pixMascarado,
+  pixParaCopiar, primeiroNome, resumoDosPagamentos, semanasDoMes, situacaoDasVagas, situacaoDoPagamento, tituloDoPeriodo, turnoJaTerminou,
+  turnosSeSobrepoem, validarTurno, viraAMeiaNoite, type ItemDePagamento,
 } from "../src/lib/escala-da-equipe/regras";
 
 let falhas = 0;
@@ -145,6 +149,71 @@ const custo = custoPrevisto([
 confere("soma as diárias de quem está inscrito", custo.total, 220);
 confere("quem não tem diária fica contado à parte", custo.semValor, 1);
 confere("por pessoa, do maior para o menor", custo.porPessoa, [{ nome: "Zé", turnos: 2, total: 160 }, { nome: "João", turnos: 1, total: 60 }]);
+
+console.log("\n— Chave Pix —");
+const pix = (b: unknown, t?: unknown) => { const l = lerChavePix(b, t); return l.ok ? [l.tipo, l.chave] : ["erro"]; };
+confere("CPF com pontos é CPF, gravado só com dígitos", pix("529.982.247-25"), ["cpf", "52998224725"]);
+confere("CPF com dígito trocado é recusado", cpfValido("529.982.247-26"), false);
+confere("11 dígitos que não são CPF mas têm o 9 depois do DDD = celular", pix("22998765432"), ["telefone", "+5522998765432"]);
+confere("celular com máscara e +55", pix("+55 (22) 99876-5432"), ["telefone", "+5522998765432"]);
+confere("11 dígitos que não são CPF nem celular: erro (não chuta)", pix("12345678901"), ["erro"]);
+confere("o tipo escolhido manda: 'CPF' com número de celular é recusado", pix("22998765432", "cpf"), ["erro"]);
+confere("e-mail vai em minúsculas", pix("  Joao.Silva@Gmail.com "), ["email", "joao.silva@gmail.com"]);
+confere("e-mail sem domínio é recusado", pix("joao@gmail", "email"), ["erro"]);
+confere("chave aleatória sem hífens ganha os hífens", pix("123E4567E89B12D3A456426614174000"), ["aleatoria", "123e4567-e89b-12d3-a456-426614174000"]);
+confere("CNPJ válido", pix("11.222.333/0001-81"), ["cnpj", "11222333000181"]);
+confere("vazio pede a chave", lerChavePix("").ok, false);
+confere("texto qualquer não é chave", pix("meu pix é o celular"), ["erro"]);
+confere("o link mostra o CPF escondido", pixMascarado("52998224725", "cpf"), "***.982.247-**");
+confere("…o celular escondido", pixMascarado("+5522998765432", "telefone"), "(22) *****-5432");
+confere("…o e-mail escondido", pixMascarado("joao.silva@gmail.com", "email"), "jo***@gmail.com");
+confere("…a aleatória escondida", pixMascarado("123e4567-e89b-12d3-a456-426614174000", "aleatoria"), "123e…4000");
+confere("o dono vê o CPF formatado", pixFormatado("52998224725", "cpf"), "529.982.247-25");
+confere("copiar o celular dá DDD + número (o app do banco põe o +55)", pixParaCopiar("+5522998765432", "telefone"), "22998765432");
+confere("chave antiga sem tipo gravado: o tipo é adivinhado", pixFormatado("52998224725", null), "529.982.247-25");
+
+console.log("\n— Pagamentos —");
+const item = (o: Partial<ItemDePagamento> & Pick<ItemDePagamento, "inscricaoId" | "data" | "pessoaId">): ItemDePagamento => ({
+  turnoId: "t", inicio: "18:00", fim: "23:00", funcao: "Atendente", pessoaTipo: "freelancer", nome: o.pessoaId, diaria: 80, pagamento: null, acerto: null, ...o,
+});
+const pago = (valor: number) => ({ id: "p", valor, forma: "pix" as const, obs: null, pagoEm: "2026-11-10T22:00:00.000Z", pagoPor: "Dono" });
+const hojeDaLoja = "2026-11-12";
+confere("turno de amanhã não é 'a pagar'", situacaoDoPagamento(item({ inscricaoId: "a", data: "2026-11-13", pessoaId: "zé" }), hojeDaLoja), "futuro");
+confere("turno de hoje já é 'a pagar'", situacaoDoPagamento(item({ inscricaoId: "a", data: "2026-11-12", pessoaId: "zé" }), hojeDaLoja), "pendente");
+const itens: ItemDePagamento[] = [
+  item({ inscricaoId: "1", data: "2026-11-10", pessoaId: "ana", nome: "Ana", diaria: 80, pagamento: pago(80) }),
+  item({ inscricaoId: "2", data: "2026-11-11", pessoaId: "ana", nome: "Ana", diaria: 80 }),
+  item({ inscricaoId: "3", data: "2026-11-12", pessoaId: "ana", nome: "Ana", diaria: 80 }),
+  item({ inscricaoId: "4", data: "2026-11-14", pessoaId: "ana", nome: "Ana", diaria: 80 }), // futuro
+  item({ inscricaoId: "5", data: "2026-11-11", pessoaId: "bia", nome: "Bia", diaria: null }), // sem diária
+  item({ inscricaoId: "6", data: "2026-11-10", pessoaId: "bia", nome: "Bia", diaria: null, pagamento: pago(70) }),
+  item({ inscricaoId: "7", data: "2026-11-11", pessoaTipo: "motoboy", pessoaId: "joão", nome: "João", diaria: 60, acerto: { id: "ac", em: "2026-11-12T03:00:00.000Z", dia: "2026-11-11" } }),
+  item({ inscricaoId: "8", data: "2026-11-12", pessoaTipo: "motoboy", pessoaId: "joão", nome: "João", diaria: 60 }),
+];
+const r = resumoDosPagamentos(itens, hojeDaLoja);
+const ana = r.porPessoa.find((p) => p.pessoaId === "ana")!, bia = r.porPessoa.find((p) => p.pessoaId === "bia")!, joao = r.porPessoa.find((p) => p.pessoaId === "joão")!;
+confere("Ana: 3 turnos trabalhados (o de sábado ainda não)", ana.turnos, 3);
+confere("Ana: pago 80, pendente 160, devido 240", [ana.pago, ana.pendente, ana.devido], [80, 160, 240]);
+confere("Bia sem diária: o pendente fica 'sem valor', não R$ 0", [bia.pago, bia.pendente, bia.semValor], [70, 0, 1]);
+confere("João: o dia do acerto sai do devido (o acerto já pagou)", [joao.turnos, joao.noAcerto, joao.pendente, joao.devido], [2, 1, 60, 60]);
+confere("total do período", [r.devido, r.pago, r.pendente, r.semValor, r.noAcerto, r.turnos], [370, 150, 220, 1, 1, 7]);
+confere("quem deve mais vem primeiro", r.porPessoa.map((p) => p.nome), ["Ana", "João", "Bia"]);
+
+console.log("\n— Motoboy: dia pago no acerto —");
+confere("turno das 18:00 é do expediente do mesmo dia", diaDoExpedienteDoTurno({ data: "2026-11-11", inicio: "18:00" }), "2026-11-11");
+confere("turno que começa 01:00 é do expediente da véspera (vira às 5h)", diaDoExpedienteDoTurno({ data: "2026-11-12", inicio: "01:00" }), "2026-11-11");
+const acertos = [{ id: "ac1", dias: ["2026-11-10", "2026-11-11"] }];
+confere("o acerto que pagou 10 e 11 cobre o turno de 11 à noite", acertoQueCobre(acertos, { data: "2026-11-11", inicio: "18:00" })?.id, "ac1");
+confere("…e a madrugada de 12 (ainda é o dia 11)", acertoQueCobre(acertos, { data: "2026-11-12", inicio: "01:30" })?.id, "ac1");
+confere("…mas não o turno de 12 à noite", acertoQueCobre(acertos, { data: "2026-11-12", inicio: "18:00" }), null);
+confere("sem acerto, não cobre", acertoQueCobre([], { data: "2026-11-11", inicio: "18:00" }), null);
+
+console.log("\n— Pagar tudo: o total dividido —");
+confere("diárias iguais: partes iguais", dividirValor(240, [80, 80, 80]), [80, 80, 80]);
+confere("pagou menos: proporcional, e a soma bate", dividirValor(100, [80, 80, 80]), [33.33, 33.33, 33.34]);
+confere("diárias diferentes: proporcional à diária", dividirValor(150, [100, 50]), [100, 50]);
+confere("sem diária no meio: pesa a média das outras", dividirValor(240, [80, null, 80]), [80, 80, 80]);
+confere("ninguém com diária: partes iguais", dividirValor(100, [null, null]), [50, 50]);
 
 console.log(falhas ? `\n${falhas} falha(s).` : "\nTudo certo.");
 process.exit(falhas ? 1 : 0);

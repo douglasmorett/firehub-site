@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import MotoboyManager from "./MotoboyManager";
 import MotoboyReport from "./MotoboyReport";
 import RankingDosMotoboys from "./RankingDosMotoboys";
@@ -14,6 +14,10 @@ export default function MotoboyDashboard({ initialMotoboys, storeTimezone, deliv
 }) {
   const [tab, setTab] = useState<"cadastro" | "ranking" | "relatorio" | "lanche">("cadastro");
   const [motoboys, setMotoboys] = useState(initialMotoboys);
+  // "?aba=relatorio" abre direto no relatório — o link "pago no acerto" da Escala da equipe cai aqui.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("aba") === "relatorio") setTab("relatorio");
+  }, []);
 
   const TAB_STYLE = (active: boolean) => ({
     padding: "10px 20px", border: "none", cursor: "pointer", fontWeight: active ? 700 : 500,

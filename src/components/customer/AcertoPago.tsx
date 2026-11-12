@@ -11,15 +11,37 @@
  *
  * Gravação em lib/acerto-pago.ts; os dias pagos chegam no relatório
  * (lib/relatorio-do-entregador.ts: acertosPagos, diasPagos).
+ *
+ * Escala da equipe (Douglas, 12/11/2026: "onde faz com o motoboy? Coloca lá
+ * também"): o Pix que o motoboy deu na escala aparece aqui com "Copiar Pix", e
+ * se a escala já marcou pagamento dele em dias deste período, o aviso diz
+ * quanto — para não pagar o mesmo dia duas vezes. A conta do acerto não muda.
  */
 import { useState } from "react";
 import type { Aviso } from "@/components/mesas/SelecionarItensParaImpressao";
 import { comSenhaDoGerente, useSenhaDoGerente } from "@/components/SenhaDoGerente";
+import { ROTULO_DO_PIX, pixFormatado, pixParaCopiar, tipoDaChave } from "@/lib/escala-da-equipe/regras";
+
+/** O que a Escala da equipe sabe deste motoboy no período (api/motoboy-report/escala). */
+export type EscalaNoAcerto = { pix: string | null; pixTipo: string | null; pixOrigem: string | null; pago: number; dias: string[] };
+
+async function copiarTexto(texto: string): Promise<boolean> {
+  try { await navigator.clipboard.writeText(texto); return true; } catch {
+    try {
+      const t = document.createElement("textarea");
+      t.value = texto; t.style.position = "fixed"; t.style.opacity = "0";
+      document.body.appendChild(t); t.select();
+      const ok = document.execCommand("copy");
+      t.remove();
+      return ok;
+    } catch { return false; }
+  }
+}
 
 const fmt = (v: number) => `R$ ${(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const diaCurto = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
 
-export default function AcertoPago({ motoboyId, nome, de, ate, diasTrabalhados, diasPagos, acertos, total, fiadoEmAberto, tz, avisar, aoMudar }: {
+export default function AcertoPago({ motoboyId, nome, de, ate, diasTrabalhados, diasPagos, acertos, total, fiadoEmAberto, tz, avisar, aoMudar, escala = null }: {
   motoboyId: string;
   nome: string;
   /** O período da tela (dias do expediente). */
@@ -34,6 +56,7 @@ export default function AcertoPago({ motoboyId, nome, de, ate, diasTrabalhados, 
   tz: string;
   avisar: (a: Aviso) => void;
   aoMudar: () => Promise<void> | void;
+  escala?: EscalaNoAcerto | null;
 }) {
   const [aberto, setAberto] = useState(false);
   const [abater, setAbater] = useState(fiadoEmAberto > 0);
@@ -78,6 +101,7 @@ export default function AcertoPago({ motoboyId, nome, de, ate, diasTrabalhados, 
   };
 
   const quando = (iso: string) => new Date(iso).toLocaleString("pt-BR", { timeZone: tz, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const tipoDoPix = escala?.pix ? tipoDaChave(escala.pix, escala.pixTipo) : null;
 
   return (
     <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -106,6 +130,26 @@ export default function AcertoPago({ motoboyId, nome, de, ate, diasTrabalhados, 
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {escala && escala.pago > 0 && (
+        <div style={{ border: "1.5px solid #FDE68A", background: "#FFFBEB", borderRadius: 12, padding: "10px 12px", fontSize: "0.82rem", color: "#92400E", lineHeight: 1.45 }}>
+          ⚠️ Na escala já constam <b>{fmt(escala.pago)}</b> pagos a {nome} em {escala.dias.length} dia{escala.dias.length === 1 ? "" : "s"} deste período
+          ({escala.dias.map(diaCurto).join(", ")}). Confira antes de acertar, para não pagar em dobro.
+        </div>
+      )}
+
+      {escala?.pix && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", border: "1px solid #E2E8F0", borderRadius: 12, padding: "8px 12px", background: "#F8FAFC" }}>
+          <span style={{ fontSize: "0.8rem", color: "#475569", flex: 1, minWidth: 0 }}>
+            Pix de {nome}{tipoDoPix ? ` (${ROTULO_DO_PIX[tipoDoPix]})` : ""}: <b style={{ color: "#0F172A" }}>{pixFormatado(escala.pix, escala.pixTipo)}</b>
+            {escala.pixOrigem === "troca-link" && <span style={{ display: "block", color: "#B45309", fontWeight: 700 }}>Chave trocada pelo link da escala — confirme com ele antes de pagar.</span>}
+          </span>
+          <button type="button" onClick={async () => avisar(await copiarTexto(pixParaCopiar(escala.pix!, escala.pixTipo)) ? { tipo: "ok", titulo: `Pix de ${nome} copiado` } : { tipo: "erro", titulo: "Não deu para copiar. Selecione a chave e copie." })}
+            style={{ padding: "6px 12px", borderRadius: 9, border: "1.5px solid #059669", background: "#fff", color: "#047857", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit" }}>
+            📋 Copiar Pix
+          </button>
         </div>
       )}
 

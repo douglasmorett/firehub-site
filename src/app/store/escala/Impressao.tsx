@@ -102,7 +102,7 @@ export default function Impressao({ oQue, visao, data, turnos, nomeDaLoja, codig
   );
 }
 
-const CSS_DO_PAPEL = `
+export const CSS_DO_PAPEL = `
 .esc-papel { display: none; }
 @media print {
   @page { size: A4; margin: 12mm; }

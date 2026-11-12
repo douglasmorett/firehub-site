@@ -11,13 +11,16 @@
  * lugar a preencher, e dá para ARRASTAR: da lista de pessoas ao lado para o
  * turno (escalar), de um turno para outro (mudar) e do turno para a lista
  * (tirar). Clicar continua fazendo tudo, para quem não arrasta (celular).
+ *
+ * Só para o dono: em cada pessoa dos turnos de hoje para trás, o selo do
+ * pagamento (💰 pago / ⏳ a pagar) — o controle fica na aba Pagamentos.
  */
 
 import { useState } from "react";
 import {
-  NOMES_CURTOS_DOS_DIAS, diaDaSemana, diaEMes, diasDaSemanaDe, horarioDoTurno, semanasDoMes, situacaoDasVagas, viraAMeiaNoite,
+  NOMES_CURTOS_DOS_DIAS, diaDaSemana, diaEMes, diasDaSemanaDe, horarioDoTurno, semanasDoMes, situacaoDasVagas, situacaoDoPagamento, viraAMeiaNoite,
 } from "@/lib/escala-da-equipe/regras";
-import { Avatar, COR, COR_CLARA, COR_DA_SITUACAO, S, SeloDoLink, TIPO_DO_ARRASTO, comecarArrasto, lerArrasto, reais, arrastoAtual, type Arrasto, type Turno } from "./ui";
+import { Avatar, COR, COR_CLARA, COR_DA_SITUACAO, S, SeloDoLink, SeloDoPagamento, TIPO_DO_ARRASTO, comecarArrasto, lerArrasto, reais, arrastoAtual, type Arrasto, type Turno } from "./ui";
 
 export type AoSoltar = (turno: Turno, a: Arrasto) => void;
 
@@ -42,8 +45,10 @@ export function BarraDasVagas({ preenchidas, vagas, cor }: { preenchidas: number
 }
 
 /** O cartão do turno: horário, função, vagas, quem vem e os lugares vazios. Recebe gente arrastada. */
-export function CartaoDoTurno({ turno, onAbrir, onSoltar, compacto = false, mostrarDiaria = false }: {
+export function CartaoDoTurno({ turno, onAbrir, onSoltar, compacto = false, mostrarDiaria = false, pagamentoAte = null }: {
   turno: Turno; onAbrir: () => void; onSoltar?: AoSoltar; compacto?: boolean; mostrarDiaria?: boolean;
+  /** O "hoje" da loja quando quem olha é o dono: mostra o selo do pagamento. Nulo = sem selo (funcionário). */
+  pagamentoAte?: string | null;
 }) {
   const [alvo, setAlvo] = useState(false);
   const v = situacaoDasVagas(turno.inscritos.length, turno.vagas);
@@ -88,6 +93,12 @@ export function CartaoDoTurno({ turno, onAbrir, onSoltar, compacto = false, most
             <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700 }}>{i.nome}</span>
             {i.origem === "link" && (compacto ? <span title="Se inscreveu pelo link" style={{ fontSize: 11, flexShrink: 0 }}>🔗</span> : <SeloDoLink />)}
             {mostrarDiaria && !compacto && i.diaria ? <span style={{ marginLeft: "auto", fontSize: 12.5, color: "#64748B" }}>{reais(i.diaria)}</span> : null}
+            {pagamentoAte && (
+              <span style={{ marginLeft: mostrarDiaria && !compacto && i.diaria ? 0 : "auto" }}>
+                <SeloDoPagamento compacto={compacto} situacao={situacaoDoPagamento({ data: turno.data, pagamento: i.pagamento ?? null, acerto: i.acerto ?? null }, pagamentoAte)}
+                  titulo={i.pagamento ? `Pago ${reais(i.pagamento.valor)}` : i.acerto ? `Pago no acerto do motoboy (${diaEMes(i.acerto.dia)})` : "A pagar"} />
+              </span>
+            )}
           </div>
         ))}
         {Array.from({ length: vazias }, (_, k) => (
@@ -108,7 +119,9 @@ export function CartaoDoTurno({ turno, onAbrir, onSoltar, compacto = false, most
 // ── Dia ─────────────────────────────────────────────────────────────────────
 
 export function VisaoDoDia({ data, hoje, turnos, onAbrir, onNovo, onSoltar, mostrarDiaria }: {
-  data: string; hoje: string; turnos: Turno[]; onAbrir: (t: Turno) => void; onNovo: () => void; onSoltar: AoSoltar; mostrarDiaria: boolean;
+  data: string; hoje: string; turnos: Turno[]; onAbrir: (t: Turno) => void; onNovo: () => void; onSoltar: AoSoltar;
+  /** É o dono: diária e selo do pagamento. */
+  mostrarDiaria: boolean;
 }) {
   const doDia = turnos.filter((t) => t.data === data).sort((a, b) => a.inicio.localeCompare(b.inicio));
   // Quem vem, uma linha por pessoa (a mesma pessoa em dois turnos aparece com os dois horários).
@@ -147,7 +160,7 @@ export function VisaoDoDia({ data, hoje, turnos, onAbrir, onNovo, onSoltar, most
         )}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14, marginTop: 16 }}>
-        {doDia.map((t) => <div key={t.id} className="esc-entra"><CartaoDoTurno turno={t} onAbrir={() => onAbrir(t)} onSoltar={onSoltar} mostrarDiaria={mostrarDiaria} /></div>)}
+        {doDia.map((t) => <div key={t.id} className="esc-entra"><CartaoDoTurno turno={t} onAbrir={() => onAbrir(t)} onSoltar={onSoltar} mostrarDiaria={mostrarDiaria} pagamentoAte={mostrarDiaria ? hoje : null} /></div>)}
         <button type="button" onClick={onNovo} className="esc-novo" style={{ minHeight: 120, border: "2px dashed #CBD5E1", borderRadius: 14, background: "none", color: "#64748B", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>
           + Novo turno neste dia
         </button>
@@ -158,8 +171,9 @@ export function VisaoDoDia({ data, hoje, turnos, onAbrir, onNovo, onSoltar, most
 
 // ── Semana ──────────────────────────────────────────────────────────────────
 
-export function VisaoDaSemana({ data, hoje, turnos, onAbrir, onNovo, onDia, onSoltar }: {
+export function VisaoDaSemana({ data, hoje, turnos, onAbrir, onNovo, onDia, onSoltar, mostrarPagamento = false }: {
   data: string; hoje: string; turnos: Turno[]; onAbrir: (t: Turno) => void; onNovo: (data: string) => void; onDia: (data: string) => void; onSoltar: AoSoltar;
+  mostrarPagamento?: boolean;
 }) {
   const dias = diasDaSemanaDe(data);
   return (
@@ -184,7 +198,7 @@ export function VisaoDaSemana({ data, hoje, turnos, onAbrir, onNovo, onDia, onSo
               <div style={{ fontSize: 22, fontWeight: 900, color: "#0F172A", letterSpacing: -0.3, marginBottom: 6 }}>{diaEMes(d)}</div>
               <BarraDasVagas preenchidas={preenchidas} vagas={vagas} cor={corDoDia} />
             </button>
-            {doDia.map((t) => <div key={t.id} className="esc-entra"><CartaoDoTurno turno={t} compacto onAbrir={() => onAbrir(t)} onSoltar={onSoltar} /></div>)}
+            {doDia.map((t) => <div key={t.id} className="esc-entra"><CartaoDoTurno turno={t} compacto onAbrir={() => onAbrir(t)} onSoltar={onSoltar} pagamentoAte={mostrarPagamento ? hoje : null} /></div>)}
             <button type="button" onClick={() => onNovo(d)} className="esc-novo" style={{ border: "1.5px dashed #CBD5E1", borderRadius: 12, background: "none", color: "#94A3B8", fontWeight: 800, fontSize: 13.5, cursor: "pointer", padding: "10px 0", fontFamily: "inherit", marginTop: doDia.length ? 0 : 4 }}>+ turno</button>
           </div>
         );

@@ -1,20 +1,26 @@
 /**
  * ESCALA DA EQUIPE — o banco (lib/escala-da-equipe/regras.ts tem as contas).
  *
- * Quatro tabelas próprias, criadas no primeiro uso por SQL cru, fora do
+ * Cinco tabelas próprias, criadas no primeiro uso por SQL cru, fora do
  * schema.prisma (como LancheDaEquipe e SenhaDoGerente):
  *
  *   EscalaConfig     uma linha por loja: o código do link público, os prazos
  *                    e as funções que o link mostra.
  *   EscalaPessoa     os freelancers do módulo — e, para quem já existe em
  *                    outro cadastro (login de funcionário, motoboy), o
- *                    COMPLEMENTO: telefone, função e diária combinada. O nome
- *                    continua vindo da origem (User/Motoboy), que é a verdade.
+ *                    COMPLEMENTO: telefone, função, diária combinada e Pix. O
+ *                    nome continua vindo da origem (User/Motoboy), a verdade.
  *   EscalaTurno      data do calendário (DATE), início e fim "HH:MM", função,
  *                    vagas, observação.
  *   EscalaInscricao  quem vem em cada turno: tipo + id da pessoa, o nome
  *                    gravado (o turno impresso não muda se o cadastro sumir),
  *                    de onde veio (link/painel) e o hash da chave de desistir.
+ *   EscalaPagamento  o dono marcou que pagou a pessoa por aquele turno: valor,
+ *                    forma, quem e quando. Desfazer marca `desfeitoEm` (fica
+ *                    o histórico); só um pagamento valendo por inscrição.
+ *                    Quem já foi pago não sai do turno (nem o turno é apagado)
+ *                    sem desfazer o pagamento antes — o dinheiro não some da
+ *                    conta em silêncio.
  *
  * ── A última vaga ───────────────────────────────────────────────────────────
  * Duas pessoas clicando na última vaga ao mesmo tempo: só uma entra. A
@@ -28,9 +34,12 @@ import { Prisma } from "@prisma/client";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { executarDDL } from "@/lib/ddl-do-boot";
+import { acertosDoPeriodo } from "@/lib/acerto-pago";
 import {
-  CONFIG_PADRAO, acharPeloTelefone, chaveDoTelefone, lerConfigDaEscala, normalizarFuncao, ordenarTurnos, turnosSeSobrepoem,
-  type ConfigDaEscala, type DadosDoTurno, type OrigemDaInscricao, type TipoDePessoa,
+  CONFIG_PADRAO, acertoQueCobre, acharPeloTelefone, chaveDaPessoa, chaveDoTelefone, diaDoExpedienteDoTurno, diaEMes, dividirValor, lerChavePix,
+  lerConfigDaEscala, normalizarFuncao, numeroDoDia, ordenarTurnos, turnosSeSobrepoem,
+  type ConfigDaEscala, type DadosDoTurno, type FormaDePagamento, type ItemDePagamento, type OrigemDaInscricao, type PagamentoFeito,
+  type TipoDePessoa, type TipoDePix,
 } from "./regras";
 
 /** Erro com a frase para a tela e o status HTTP. */
@@ -109,7 +118,38 @@ const DDL = [
   )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "EscalaInscricao_turno_pessoa_key" ON "EscalaInscricao"("turnoId", "pessoaTipo", "pessoaId")`,
   `CREATE INDEX IF NOT EXISTS "EscalaInscricao_lojaId_pessoa_idx" ON "EscalaInscricao"("lojaId", "pessoaTipo", "pessoaId")`,
+  // O Pix (12/11/2026): o tipo da chave e de onde veio a última troca — "troca-link"
+  // = alguém trocou a chave pelo link, e o dono vê o aviso antes de pagar.
+  `ALTER TABLE "EscalaPessoa" ADD COLUMN IF NOT EXISTS "pixTipo" TEXT`,
+  `ALTER TABLE "EscalaPessoa" ADD COLUMN IF NOT EXISTS "pixOrigem" TEXT`,
+  `ALTER TABLE "EscalaPessoa" ADD COLUMN IF NOT EXISTS "pixAtualizadoEm" TIMESTAMP(3)`,
+  // Sem chave estrangeira para a inscrição de propósito: o pagamento desfeito
+  // fica no histórico mesmo que a pessoa saia do turno depois.
+  `CREATE TABLE IF NOT EXISTS "EscalaPagamento" (
+    "id" TEXT NOT NULL,
+    "lojaId" TEXT NOT NULL,
+    "inscricaoId" TEXT NOT NULL,
+    "turnoId" TEXT NOT NULL,
+    "pessoaTipo" TEXT NOT NULL,
+    "pessoaId" TEXT NOT NULL,
+    "nome" TEXT NOT NULL,
+    "data" DATE NOT NULL,
+    "valor" DOUBLE PRECISION NOT NULL,
+    "forma" TEXT,
+    "obs" TEXT,
+    "pagoEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "pagoPor" TEXT,
+    "desfeitoEm" TIMESTAMP(3),
+    "desfeitoPor" TEXT,
+    CONSTRAINT "EscalaPagamento_pkey" PRIMARY KEY ("id")
+  )`,
+  // Um pagamento VALENDO por inscrição: dois cliques em "pago" não pagam duas vezes.
+  `CREATE UNIQUE INDEX IF NOT EXISTS "EscalaPagamento_inscricao_key" ON "EscalaPagamento"("inscricaoId") WHERE "desfeitoEm" IS NULL`,
+  `CREATE INDEX IF NOT EXISTS "EscalaPagamento_lojaId_data_idx" ON "EscalaPagamento"("lojaId", "data")`,
 ];
+
+/** "Agora" para coluna TIMESTAMP sem fuso: sempre em UTC, qualquer que seja o fuso da sessão do banco. */
+const agoraEmUtc = () => Prisma.sql`(${new Date().toISOString()}::timestamptz AT TIME ZONE 'UTC')`;
 
 let tabelasOk = false;
 
@@ -192,6 +232,10 @@ export type PessoaDaEscala = {
   diaria: number | null;
   cpf: string | null;
   pix: string | null;
+  pixTipo: TipoDePix | null;
+  /** "troca-link" = a chave foi trocada pelo link (o dono confere antes de pagar). */
+  pixOrigem: string | null;
+  pixAtualizadoEm: string | null;
   obs: string | null;
   ativo: boolean;
   origem: OrigemDaInscricao;
@@ -201,12 +245,19 @@ export type PessoaDaEscala = {
   diariaDaOrigem: number | null;
 };
 
-type LinhaDaPessoa = { id: string; tipo: string; refId: string | null; nome: string; telefone: string | null; funcao: string | null; cpf: string | null; pix: string | null; diaria: number | null; obs: string | null; ativo: boolean; origem: string };
+type LinhaDaPessoa = {
+  id: string; tipo: string; refId: string | null; nome: string; telefone: string | null; funcao: string | null; cpf: string | null;
+  pix: string | null; pixTipo: string | null; pixOrigem: string | null; pixAtualizadoEm: Date | null; diaria: number | null; obs: string | null; ativo: boolean; origem: string;
+};
+const pixDaLinha = (c: LinhaDaPessoa | undefined) => ({
+  pix: c?.pix ?? null, pixTipo: (c?.pixTipo as TipoDePix | null) ?? null, pixOrigem: c?.pixOrigem ?? null,
+  pixAtualizadoEm: c?.pixAtualizadoEm ? new Date(c.pixAtualizadoEm).toISOString() : null,
+});
 
 export async function pessoasDaLoja(lojaId: string, opcoes: { inativos?: boolean } = {}): Promise<PessoaDaEscala[]> {
   await garantirTabelasDaEscala();
   const [linhas, equipe, motoboys] = await Promise.all([
-    prisma.$queryRaw<LinhaDaPessoa[]>(Prisma.sql`SELECT "id", "tipo", "refId", "nome", "telefone", "funcao", "cpf", "pix", "diaria", "obs", "ativo", "origem" FROM "EscalaPessoa" WHERE "lojaId" = ${lojaId}`),
+    prisma.$queryRaw<LinhaDaPessoa[]>(Prisma.sql`SELECT "id", "tipo", "refId", "nome", "telefone", "funcao", "cpf", "pix", "pixTipo", "pixOrigem", "pixAtualizadoEm", "diaria", "obs", "ativo", "origem" FROM "EscalaPessoa" WHERE "lojaId" = ${lojaId}`),
     prisma.user.findMany({ where: { ownerId: lojaId, role: "STAFF" }, select: { id: true, name: true, email: true }, orderBy: { name: "asc" } }),
     prisma.motoboy.findMany({ where: { franchiseeId: lojaId, active: true }, select: { id: true, name: true, phone: true, paymentType: true, dailyRate: true }, orderBy: { name: "asc" } }),
   ]);
@@ -216,7 +267,7 @@ export async function pessoasDaLoja(lojaId: string, opcoes: { inativos?: boolean
     const c = complemento.get(`equipe:${u.id}`);
     pessoas.push({
       tipo: "equipe", id: u.id, nome: u.name || u.email, telefone: c?.telefone ?? null, funcao: c?.funcao ?? null,
-      diaria: c?.diaria ?? null, cpf: null, pix: null, obs: c?.obs ?? null, ativo: true, origem: "painel",
+      diaria: c?.diaria ?? null, cpf: null, ...pixDaLinha(c), obs: c?.obs ?? null, ativo: true, origem: "painel",
       detalhe: `Login de funcionário (${u.email})`, diariaDaOrigem: null,
     });
   }
@@ -225,14 +276,14 @@ export async function pessoasDaLoja(lojaId: string, opcoes: { inativos?: boolean
     const daOrigem = (m.paymentType === "DAILY_RATE" || m.paymentType === "BOTH") && Number(m.dailyRate) > 0 ? Number(m.dailyRate) : null;
     pessoas.push({
       tipo: "motoboy", id: m.id, nome: m.name, telefone: c?.telefone || m.phone || null, funcao: c?.funcao || "Motoboy",
-      diaria: c?.diaria ?? daOrigem, cpf: null, pix: null, obs: c?.obs ?? null, ativo: true, origem: "painel",
+      diaria: c?.diaria ?? daOrigem, cpf: null, ...pixDaLinha(c), obs: c?.obs ?? null, ativo: true, origem: "painel",
       detalhe: "Motoboy cadastrado (tela Motoboys)", diariaDaOrigem: daOrigem,
     });
   }
   for (const l of linhas) {
     if (l.tipo !== "freelancer" || (!l.ativo && !opcoes.inativos)) continue;
     pessoas.push({
-      tipo: "freelancer", id: l.id, nome: l.nome, telefone: l.telefone, funcao: l.funcao, diaria: l.diaria, cpf: l.cpf, pix: l.pix,
+      tipo: "freelancer", id: l.id, nome: l.nome, telefone: l.telefone, funcao: l.funcao, diaria: l.diaria, cpf: l.cpf, ...pixDaLinha(l),
       obs: l.obs, ativo: l.ativo, origem: l.origem === "link" ? "link" : "painel", detalhe: null, diariaDaOrigem: null,
     });
   }
@@ -248,6 +299,14 @@ const reais = (v: unknown): number | null => {
   const n = typeof v === "number" ? v : Number(String(v).replace(/[^\d,.-]/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", "."));
   return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
 };
+
+/** A chave Pix do formulário: vazio = sem Pix; inválida = erro com a frase. */
+function pixDaEntrada(e: Record<string, unknown>): { pix: string | null; pixTipo: TipoDePix | null } {
+  if (!String(e.pix ?? "").trim()) return { pix: null, pixTipo: null };
+  const l = lerChavePix(e.pix, e.pixTipo);
+  if (!l.ok) throw new ErroDaEscala(l.erro, 400, "PIX_INVALIDO");
+  return { pix: l.chave, pixTipo: l.tipo };
+}
 
 /** Telefone que já é de outra pessoa da loja? (freelancer novo não pode repetir) */
 async function donoDoTelefone(lojaId: string, telefone: string | null, exceto?: { tipo: string; id: string }) {
@@ -270,12 +329,18 @@ export async function salvarFreelancer(lojaId: string, e: Record<string, unknown
   const outro = await donoDoTelefone(lojaId, telefone, opcoes.id ? { tipo: "freelancer", id: opcoes.id } : undefined);
   if (outro) throw new ErroDaEscala(`Este telefone já é de ${outro.nome}.`, 409);
   const funcao = normalizarFuncao(String(e.funcao ?? "")) || null;
-  const cpf = texto(e.cpf, 20), pix = texto(e.pix, 120), obs = texto(e.obs, 300);
+  const cpf = texto(e.cpf, 20), obs = texto(e.obs, 300);
+  const { pix, pixTipo } = pixDaEntrada(e);
+  const conferido = e.pixConferido === true;
   const ativo = e.ativo === undefined ? true : e.ativo === true;
   if (opcoes.id) {
+    // Trocou a chave pelo painel (ou marcou "conferi com a pessoa"): a origem
+    // passa a ser o painel e o aviso de "trocada pelo link" some.
     const r = await prisma.$executeRaw(Prisma.sql`
       UPDATE "EscalaPessoa" SET "nome" = ${nome}, "telefone" = ${telefone}, "telefoneChave" = ${chaveDoTelefone(telefone)}, "funcao" = ${funcao},
-        "cpf" = ${cpf}, "pix" = ${pix}, "obs" = ${obs}, "ativo" = ${ativo},
+        "cpf" = ${cpf}, "pix" = ${pix}, "pixTipo" = ${pixTipo}, "obs" = ${obs}, "ativo" = ${ativo},
+        "pixOrigem" = CASE WHEN "pix" IS DISTINCT FROM ${pix} OR (${conferido} AND "pix" IS NOT NULL) THEN 'painel' ELSE "pixOrigem" END,
+        "pixAtualizadoEm" = CASE WHEN "pix" IS DISTINCT FROM ${pix} THEN ${agoraEmUtc()} ELSE "pixAtualizadoEm" END,
         "diaria" = ${opcoes.podeVerDiaria ? Prisma.sql`${reais(e.diaria)}` : Prisma.sql`"diaria"`}, "updatedAt" = now()
       WHERE "id" = ${opcoes.id} AND "lojaId" = ${lojaId} AND "tipo" = 'freelancer'`);
     if (!r) throw new ErroDaEscala("Freelancer não encontrado.", 404);
@@ -284,8 +349,9 @@ export async function salvarFreelancer(lojaId: string, e: Record<string, unknown
   const id = randomUUID();
   try {
     await prisma.$executeRaw(Prisma.sql`
-      INSERT INTO "EscalaPessoa" ("id", "lojaId", "tipo", "nome", "telefone", "telefoneChave", "funcao", "cpf", "pix", "diaria", "obs", "ativo", "origem")
-      VALUES (${id}, ${lojaId}, 'freelancer', ${nome}, ${telefone}, ${chaveDoTelefone(telefone)}, ${funcao}, ${cpf}, ${pix},
+      INSERT INTO "EscalaPessoa" ("id", "lojaId", "tipo", "nome", "telefone", "telefoneChave", "funcao", "cpf", "pix", "pixTipo", "pixOrigem", "pixAtualizadoEm", "diaria", "obs", "ativo", "origem")
+      VALUES (${id}, ${lojaId}, 'freelancer', ${nome}, ${telefone}, ${chaveDoTelefone(telefone)}, ${funcao}, ${cpf}, ${pix}, ${pixTipo},
+        ${pix ? opcoes.origem || "painel" : null}, ${pix ? agoraEmUtc() : null},
         ${opcoes.podeVerDiaria ? reais(e.diaria) : null}, ${obs}, true, ${opcoes.origem || "painel"})`);
   } catch (err: any) {
     if (String(err?.message || "").includes("EscalaPessoa_telefone_key")) throw new ErroDaEscala("Este telefone já está cadastrado.", 409);
@@ -294,7 +360,7 @@ export async function salvarFreelancer(lojaId: string, e: Record<string, unknown
   return id;
 }
 
-/** O complemento de quem é da equipe ou motoboy: telefone, função, diária e observação. */
+/** O complemento de quem é da equipe ou motoboy: telefone, função, Pix, diária e observação. */
 export async function salvarComplemento(lojaId: string, tipo: "equipe" | "motoboy", refId: string, e: Record<string, unknown>, opcoes: { podeVerDiaria: boolean }): Promise<void> {
   await garantirTabelasDaEscala();
   const existe = tipo === "equipe"
@@ -308,13 +374,51 @@ export async function salvarComplemento(lojaId: string, tipo: "equipe" | "motobo
   const funcao = normalizarFuncao(String(e.funcao ?? "")) || null;
   const obs = texto(e.obs, 300);
   const diaria = reais(e.diaria);
+  const { pix, pixTipo } = pixDaEntrada(e);
+  const conferido = e.pixConferido === true;
   await prisma.$executeRaw(Prisma.sql`
-    INSERT INTO "EscalaPessoa" ("id", "lojaId", "tipo", "refId", "nome", "telefone", "telefoneChave", "funcao", "diaria", "obs", "origem")
-    VALUES (${randomUUID()}, ${lojaId}, ${tipo}, ${refId}, ${existe}, ${telefone}, ${chaveDoTelefone(telefone)}, ${funcao}, ${opcoes.podeVerDiaria ? diaria : null}, ${obs}, 'painel')
+    INSERT INTO "EscalaPessoa" ("id", "lojaId", "tipo", "refId", "nome", "telefone", "telefoneChave", "funcao", "pix", "pixTipo", "pixOrigem", "pixAtualizadoEm", "diaria", "obs", "origem")
+    VALUES (${randomUUID()}, ${lojaId}, ${tipo}, ${refId}, ${existe}, ${telefone}, ${chaveDoTelefone(telefone)}, ${funcao}, ${pix}, ${pixTipo},
+      ${pix ? "painel" : null}, ${pix ? agoraEmUtc() : null}, ${opcoes.podeVerDiaria ? diaria : null}, ${obs}, 'painel')
     ON CONFLICT ("lojaId", "tipo", "refId") WHERE "refId" IS NOT NULL DO UPDATE SET
       "nome" = EXCLUDED."nome", "telefone" = EXCLUDED."telefone", "telefoneChave" = EXCLUDED."telefoneChave", "funcao" = EXCLUDED."funcao",
+      "pix" = EXCLUDED."pix", "pixTipo" = EXCLUDED."pixTipo",
+      "pixOrigem" = CASE WHEN "EscalaPessoa"."pix" IS DISTINCT FROM EXCLUDED."pix" OR ${conferido} THEN EXCLUDED."pixOrigem" ELSE "EscalaPessoa"."pixOrigem" END,
+      "pixAtualizadoEm" = CASE WHEN "EscalaPessoa"."pix" IS DISTINCT FROM EXCLUDED."pix" THEN EXCLUDED."pixAtualizadoEm" ELSE "EscalaPessoa"."pixAtualizadoEm" END,
       "obs" = EXCLUDED."obs", "updatedAt" = now()
       ${opcoes.podeVerDiaria ? Prisma.sql`, "diaria" = EXCLUDED."diaria"` : Prisma.empty}`);
+}
+
+/**
+ * O Pix que a pessoa informou pelo link. `troca` = já tinha chave e trocou
+ * (quem chama conferiu a chave do aparelho): fica marcado "troca-link" e o
+ * dono vê o aviso antes de pagar — o link identifica só pelo telefone.
+ */
+export async function gravarPixPeloLink(lojaId: string, pessoa: Pick<PessoaDaEscala, "tipo" | "id" | "nome">, chave: string, tipo: TipoDePix, troca: boolean): Promise<void> {
+  await garantirTabelasDaEscala();
+  const origem = troca ? "troca-link" : "link";
+  if (pessoa.tipo === "freelancer") {
+    await prisma.$executeRaw(Prisma.sql`
+      UPDATE "EscalaPessoa" SET "pix" = ${chave}, "pixTipo" = ${tipo}, "pixOrigem" = ${origem}, "pixAtualizadoEm" = ${agoraEmUtc()}, "updatedAt" = now()
+      WHERE "id" = ${pessoa.id} AND "lojaId" = ${lojaId} AND "tipo" = 'freelancer'`);
+    return;
+  }
+  // Equipe/motoboy: só a chave no complemento (cria a linha se ainda não houver).
+  await prisma.$executeRaw(Prisma.sql`
+    INSERT INTO "EscalaPessoa" ("id", "lojaId", "tipo", "refId", "nome", "pix", "pixTipo", "pixOrigem", "pixAtualizadoEm", "origem")
+    VALUES (${randomUUID()}, ${lojaId}, ${pessoa.tipo}, ${pessoa.id}, ${pessoa.nome.slice(0, 80)}, ${chave}, ${tipo}, ${origem}, ${agoraEmUtc()}, 'link')
+    ON CONFLICT ("lojaId", "tipo", "refId") WHERE "refId" IS NOT NULL DO UPDATE SET
+      "pix" = EXCLUDED."pix", "pixTipo" = EXCLUDED."pixTipo", "pixOrigem" = EXCLUDED."pixOrigem", "pixAtualizadoEm" = EXCLUDED."pixAtualizadoEm", "updatedAt" = now()`);
+}
+
+/** Este aparelho tem a chave de alguma inscrição desta pessoa? (a prova para trocar o Pix pelo link) */
+export async function aparelhoDaPessoa(lojaId: string, pessoa: { tipo: string; id: string }, chaves: unknown[]): Promise<boolean> {
+  const hashes = chaves.filter((c): c is string => typeof c === "string" && c.length >= 10 && c.length <= 64).slice(0, 200).map(hashDaChave);
+  if (!hashes.length) return false;
+  await garantirTabelasDaEscala();
+  const [l] = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+    SELECT "id" FROM "EscalaInscricao" WHERE "lojaId" = ${lojaId} AND "pessoaTipo" = ${pessoa.tipo} AND "pessoaId" = ${pessoa.id} AND "chaveHash" = ANY(${hashes}) LIMIT 1`);
+  return !!l;
 }
 
 // ── Turnos ──────────────────────────────────────────────────────────────────
@@ -354,13 +458,33 @@ export async function criarTurnos(lojaId: string, turnos: DadosDoTurno[], quem: 
   return turnos.length;
 }
 
+/** Mudar o DIA de um turno com gente já paga desencontraria o pagamento do dia trabalhado: recusa. */
 export async function editarTurno(lojaId: string, id: string, t: DadosDoTurno): Promise<void> {
   await garantirTabelasDaEscala();
   const r = await prisma.$executeRaw(Prisma.sql`
     UPDATE "EscalaTurno" SET "data" = ${t.data}::date, "inicio" = ${t.inicio}, "fim" = ${t.fim}, "funcao" = ${t.funcao},
       "vagas" = ${t.vagas}, "obs" = ${t.obs}, "updatedAt" = now()
-    WHERE "id" = ${id} AND "lojaId" = ${lojaId}`);
-  if (!r) throw new ErroDaEscala("Turno não encontrado.", 404);
+    WHERE "id" = ${id} AND "lojaId" = ${lojaId}
+      AND ("data" = ${t.data}::date OR NOT EXISTS (SELECT 1 FROM "EscalaPagamento" p WHERE p."turnoId" = ${id} AND p."desfeitoEm" IS NULL))`);
+  if (r) return;
+  const [existe] = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT "id" FROM "EscalaTurno" WHERE "id" = ${id} AND "lojaId" = ${lojaId}`);
+  if (!existe) throw new ErroDaEscala("Turno não encontrado.", 404);
+  throw new ErroDaEscala("Este turno já tem gente paga. Para mudar o dia, desfaça os pagamentos antes (ou crie outro turno).", 409, "TEM_PAGAMENTO");
+}
+
+// O que as funções daqui usam do banco — serve tanto para a transação quanto para o prisma de fora.
+type Transacao = Pick<typeof prisma, "$queryRaw" | "$executeRaw">;
+
+/**
+ * Quem destas inscrições já foi pago? Chame com as linhas da inscrição
+ * TRAVADAS (FOR UPDATE): o "marcar pago" trava as mesmas linhas, então tirar
+ * e pagar ao mesmo tempo não deixam um pagamento sem a inscrição.
+ */
+async function recusarSeJaPago(tx: Transacao, inscricaoIds: string[], frase: (nomes: string) => string) {
+  if (!inscricaoIds.length) return;
+  const pagos = await tx.$queryRaw<{ nome: string }[]>(Prisma.sql`
+    SELECT "nome" FROM "EscalaPagamento" WHERE "inscricaoId" = ANY(${inscricaoIds}) AND "desfeitoEm" IS NULL`);
+  if (pagos.length) throw new ErroDaEscala(frase(pagos.map((p) => p.nome).join(", ")), 409, "PAGO");
 }
 
 /**
@@ -369,12 +493,15 @@ export async function editarTurno(lojaId: string, id: string, t: DadosDoTurno): 
  */
 export async function apagarTurno(lojaId: string, id: string, confirmado: boolean): Promise<void> {
   await garantirTabelasDaEscala();
-  const [c] = await prisma.$queryRaw<{ n: number }[]>(Prisma.sql`
-    SELECT count(i."id")::int AS n FROM "EscalaTurno" t LEFT JOIN "EscalaInscricao" i ON i."turnoId" = t."id"
-    WHERE t."id" = ${id} AND t."lojaId" = ${lojaId}`);
-  if (Number(c?.n) > 0 && !confirmado) throw new ErroDaEscala(`Este turno tem ${c.n} pessoa(s) inscrita(s).`, 409, "TEM_INSCRITOS");
-  const r = await prisma.$executeRaw(Prisma.sql`DELETE FROM "EscalaTurno" WHERE "id" = ${id} AND "lojaId" = ${lojaId}`);
-  if (!r) throw new ErroDaEscala("Turno não encontrado.", 404);
+  await prisma.$transaction(async (tx) => {
+    const [t] = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT "id" FROM "EscalaTurno" WHERE "id" = ${id} AND "lojaId" = ${lojaId} FOR UPDATE`);
+    if (!t) throw new ErroDaEscala("Turno não encontrado.", 404);
+    const inscritos = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT "id" FROM "EscalaInscricao" WHERE "turnoId" = ${id} FOR UPDATE`);
+    // Mesmo com "confirmar": quem já foi pago não pode sumir junto com o turno.
+    await recusarSeJaPago(tx, inscritos.map((i) => i.id), (nomes) => `Neste turno já foi pago: ${nomes}. Desfaça o pagamento antes de apagar o turno.`);
+    if (inscritos.length > 0 && !confirmado) throw new ErroDaEscala(`Este turno tem ${inscritos.length} pessoa(s) inscrita(s).`, 409, "TEM_INSCRITOS");
+    await tx.$executeRaw(Prisma.sql`DELETE FROM "EscalaTurno" WHERE "id" = ${id} AND "lojaId" = ${lojaId}`);
+  });
 }
 
 // ── Inscrições ──────────────────────────────────────────────────────────────
@@ -435,11 +562,15 @@ export async function inscrever(lojaId: string, turnoId: string, pessoa: PessoaP
   return { id, chave, turno };
 }
 
-/** O painel tira a pessoa do turno (a qualquer hora). */
+/** O painel tira a pessoa do turno (a qualquer hora) — menos quem já foi pago por ele. */
 export async function tirarInscricao(lojaId: string, inscricaoId: string): Promise<void> {
   await garantirTabelasDaEscala();
-  const r = await prisma.$executeRaw(Prisma.sql`DELETE FROM "EscalaInscricao" WHERE "id" = ${inscricaoId} AND "lojaId" = ${lojaId}`);
-  if (!r) throw new ErroDaEscala("Essa inscrição já não existe.", 404);
+  await prisma.$transaction(async (tx) => {
+    const [i] = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT "id" FROM "EscalaInscricao" WHERE "id" = ${inscricaoId} AND "lojaId" = ${lojaId} FOR UPDATE`);
+    if (!i) throw new ErroDaEscala("Essa inscrição já não existe.", 404);
+    await recusarSeJaPago(tx, [inscricaoId], (nome) => `${nome} já foi pago(a) por este turno. Desfaça o pagamento antes de tirar do turno.`);
+    await tx.$executeRaw(Prisma.sql`DELETE FROM "EscalaInscricao" WHERE "id" = ${inscricaoId} AND "lojaId" = ${lojaId}`);
+  });
 }
 
 /**
@@ -455,7 +586,12 @@ export async function desistirPeloLink(lojaId: string, inscricaoId: string, chav
   if (!i) throw new ErroDaEscala("Essa inscrição já não existe (a loja pode ter tirado).", 404);
   if (!i.chaveHash || !chave || hashDaChave(chave) !== i.chaveHash) throw new ErroDaEscala("Só dá para desistir pelo mesmo celular que fez a inscrição. Fale com a loja.", 403);
   if (!podeDesistir(i)) throw new ErroDaEscala("O prazo para desistir pelo link acabou. Fale direto com a loja.", 409);
-  await prisma.$executeRaw(Prisma.sql`DELETE FROM "EscalaInscricao" WHERE "id" = ${inscricaoId} AND "lojaId" = ${lojaId}`);
+  await prisma.$transaction(async (tx) => {
+    const [ainda] = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT "id" FROM "EscalaInscricao" WHERE "id" = ${inscricaoId} AND "lojaId" = ${lojaId} FOR UPDATE`);
+    if (!ainda) return;
+    await recusarSeJaPago(tx, [inscricaoId], () => "A loja já registrou o pagamento deste turno. Para sair, fale com a loja.");
+    await tx.$executeRaw(Prisma.sql`DELETE FROM "EscalaInscricao" WHERE "id" = ${inscricaoId} AND "lojaId" = ${lojaId}`);
+  });
 }
 
 /** As inscrições futuras de uma pessoa (o "Minhas inscrições" do link). */
@@ -468,3 +604,160 @@ export async function inscricoesDaPessoa(lojaId: string, pessoa: { tipo: string;
     ORDER BY t."data", t."inicio"`);
 }
 
+
+// ── Pagamentos (só o dono) ──────────────────────────────────────────────────
+
+type LinhaDoPagamento = { id: string; inscricaoId: string; valor: number; forma: string | null; obs: string | null; pagoEm: Date; pagoPor: string | null };
+const doPagamento = (l: LinhaDoPagamento): PagamentoFeito => ({
+  id: l.id, valor: Number(l.valor), forma: l.forma === "pix" || l.forma === "dinheiro" ? l.forma : null, obs: l.obs,
+  pagoEm: new Date(l.pagoEm).toISOString(), pagoPor: l.pagoPor,
+});
+
+type AcertoResumido = { id: string; em: string; dias: string[] };
+
+/** Os acertos pagos (não desfeitos) do motoboy que alcançam os dias (do expediente) destes turnos. */
+async function acertosDosMotoboys(lojaId: string, turnos: Array<{ pessoaId: string; data: string; inicio: string }>): Promise<Map<string, AcertoResumido[]>> {
+  if (!turnos.length) return new Map();
+  const dias = turnos.map(diaDoExpedienteDoTurno).sort();
+  return acertosDoPeriodo({ lojaId, motoboyIds: [...new Set(turnos.map((t) => t.pessoaId))], de: dias[0], ate: dias[dias.length - 1] })
+    .catch(() => new Map<string, AcertoResumido[]>());
+}
+
+/**
+ * Cada inscrição dos turnos com o pagamento (se houver) e, para motoboy, o
+ * acerto pago que já cobre o dia (lib/acerto-pago.ts). A diária é a atual da
+ * pessoa — o pagamento feito guarda o valor que valeu naquele dia.
+ */
+export async function itensDePagamento(lojaId: string, turnos: TurnoDaEscala[], pessoas: PessoaDaEscala[]): Promise<ItemDePagamento[]> {
+  const pares = turnos.flatMap((t) => t.inscritos.map((i) => ({ t, i })));
+  if (!pares.length) return [];
+  await garantirTabelasDaEscala();
+  const linhas = await prisma.$queryRaw<LinhaDoPagamento[]>(Prisma.sql`
+    SELECT "id", "inscricaoId", "valor", "forma", "obs", "pagoEm", "pagoPor" FROM "EscalaPagamento"
+    WHERE "lojaId" = ${lojaId} AND "inscricaoId" = ANY(${pares.map((p) => p.i.id)}) AND "desfeitoEm" IS NULL`);
+  const pago = new Map(linhas.map((l) => [l.inscricaoId, doPagamento(l)]));
+  const acertos = await acertosDosMotoboys(lojaId, pares.filter((p) => p.i.pessoaTipo === "motoboy").map((p) => ({ pessoaId: p.i.pessoaId, data: p.t.data, inicio: p.t.inicio })));
+  const diaria = new Map(pessoas.map((p) => [chaveDaPessoa(p.tipo, p.id), p.diaria]));
+  return pares.map(({ t, i }) => {
+    const a = i.pessoaTipo === "motoboy" ? acertoQueCobre(acertos.get(i.pessoaId), t) : null;
+    return {
+      inscricaoId: i.id, turnoId: t.id, data: t.data, inicio: t.inicio, fim: t.fim, funcao: t.funcao,
+      pessoaTipo: i.pessoaTipo, pessoaId: i.pessoaId, nome: i.nome, diaria: diaria.get(chaveDaPessoa(i.pessoaTipo, i.pessoaId)) ?? null,
+      pagamento: pago.get(i.id) ?? null,
+      acerto: a ? { id: a.id, em: a.em, dia: diaDoExpedienteDoTurno(t) } : null,
+    };
+  });
+}
+
+export type PedidoDePagamento = { inscricaoIds: string[]; valor: number | null; forma: FormaDePagamento | null; obs: string | null };
+
+/**
+ * Marca como pagas as inscrições — uma, ou o "pagar tudo" de uma pessoa.
+ * `valor` = o total pago; sem ele, a diária combinada de cada turno. Com
+ * várias inscrições, o total é dividido pela diária de cada uma (dividirValor).
+ *
+ * Recusa: turno que ainda não aconteceu, inscrição já paga, e turno de motoboy
+ * cujo dia já foi pago no acerto (lá vale a conta do acerto — dois controles
+ * pagando o mesmo dia é pagar em dobro).
+ *
+ * O que pode mudar no meio (a pessoa sair do turno, outro clique pagar antes)
+ * é conferido de novo com as linhas da inscrição TRAVADAS; o índice único de
+ * "um pagamento valendo por inscrição" é a última trava.
+ */
+export async function marcarPago(lojaId: string, pedido: PedidoDePagamento, quem: string, hoje: string): Promise<number> {
+  await garantirTabelasDaEscala();
+  const ids = [...new Set(pedido.inscricaoIds.filter((x) => typeof x === "string" && x))].slice(0, 200);
+  if (!ids.length) throw new ErroDaEscala("Escolha o turno a pagar.");
+  type Linha = { id: string; turnoId: string; pessoaTipo: TipoDePessoa; pessoaId: string; nome: string; data: string; inicio: string };
+  const ler = (db: Transacao, travar: boolean) => db.$queryRaw<Linha[]>(Prisma.sql`
+    SELECT i."id", i."turnoId", i."pessoaTipo", i."pessoaId", i."nome", to_char(t."data", 'YYYY-MM-DD') AS "data", t."inicio"
+    FROM "EscalaInscricao" i JOIN "EscalaTurno" t ON t."id" = i."turnoId"
+    WHERE i."lojaId" = ${lojaId} AND i."id" = ANY(${ids}) ORDER BY i."id" ${travar ? Prisma.sql`FOR UPDATE OF i` : Prisma.empty}`);
+
+  // Fora da transação: as consultas que usam o prisma global (o banco local
+  // dos tutoriais tem UMA conexão — dentro da transação, elas esperariam para sempre).
+  const antes = await ler(prisma, false);
+  if (antes.length !== ids.length) throw new ErroDaEscala("Algum turno mudou (a pessoa saiu ou o turno foi apagado). Atualize a tela.", 409);
+  const futuro = antes.find((l) => numeroDoDia(l.data) > numeroDoDia(hoje));
+  if (futuro) throw new ErroDaEscala(`O turno de ${diaEMes(futuro.data)} ainda não aconteceu — marque o pagamento depois que a pessoa trabalhar.`, 409, "FUTURO");
+  const acertos = await acertosDosMotoboys(lojaId, antes.filter((l) => l.pessoaTipo === "motoboy"));
+  const noAcerto = antes.find((l) => l.pessoaTipo === "motoboy" && acertoQueCobre(acertos.get(l.pessoaId), l));
+  if (noAcerto) {
+    throw new ErroDaEscala(`${noAcerto.nome} já recebeu o dia ${diaEMes(diaDoExpedienteDoTurno(noAcerto))} no acerto do motoboy. Para mudar, desfaça o acerto no relatório dos motoboys.`, 409, "NO_ACERTO");
+  }
+  const diaria = new Map((await pessoasDaLoja(lojaId, { inativos: true })).map((p) => [chaveDaPessoa(p.tipo, p.id), p.diaria]));
+  const diarias = antes.map((l) => diaria.get(chaveDaPessoa(l.pessoaTipo, l.pessoaId)) ?? null);
+  let valores: number[];
+  if (pedido.valor != null) {
+    if (!(pedido.valor > 0) || pedido.valor > 1_000_000) throw new ErroDaEscala("Digite o valor pago.", 400, "SEM_VALOR");
+    valores = dividirValor(pedido.valor, diarias);
+  } else {
+    const k = diarias.findIndex((d) => !(Number(d) > 0));
+    if (k >= 0) throw new ErroDaEscala(`${antes[k].nome} não tem diária combinada: digite o valor pago.`, 400, "SEM_VALOR");
+    valores = diarias.map(Number);
+  }
+  const valorDe = new Map(antes.map((l, k) => [l.id, valores[k]]));
+  const obs = texto(pedido.obs, 300);
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const travadas = await ler(tx, true);
+      if (travadas.length !== ids.length) throw new ErroDaEscala("Algum turno mudou (a pessoa saiu ou o turno foi apagado). Atualize a tela.", 409);
+      const ja = await tx.$queryRaw<{ nome: string; data: string }[]>(Prisma.sql`
+        SELECT "nome", to_char("data", 'YYYY-MM-DD') AS "data" FROM "EscalaPagamento" WHERE "inscricaoId" = ANY(${ids}) AND "desfeitoEm" IS NULL`);
+      if (ja.length) throw new ErroDaEscala(`Já está marcado como pago: ${ja.map((j) => `${j.nome} (${diaEMes(j.data)})`).join(", ")}. Atualize a tela.`, 409, "JA_PAGO");
+      const linhas = travadas.map((l) => Prisma.sql`(${randomUUID()}, ${lojaId}, ${l.id}, ${l.turnoId}, ${l.pessoaTipo}, ${l.pessoaId}, ${l.nome}, ${l.data}::date,
+        ${valorDe.get(l.id) ?? 0}, ${pedido.forma}, ${obs}, ${agoraEmUtc()}, ${quem.slice(0, 120)})`);
+      await tx.$executeRaw(Prisma.sql`
+        INSERT INTO "EscalaPagamento" ("id", "lojaId", "inscricaoId", "turnoId", "pessoaTipo", "pessoaId", "nome", "data", "valor", "forma", "obs", "pagoEm", "pagoPor")
+        VALUES ${Prisma.join(linhas)}`);
+    });
+  } catch (err: any) {
+    if (String(err?.message || "").includes("EscalaPagamento_inscricao_key")) throw new ErroDaEscala("Esse turno acabou de ser marcado como pago. Atualize a tela.", 409, "JA_PAGO");
+    throw err;
+  }
+  return ids.length;
+}
+
+/** Desfaz o pagamento: fica no banco, marcado (quem e quando), e a inscrição volta a "a pagar". */
+export async function desfazerPagamento(lojaId: string, id: string, quem: string): Promise<void> {
+  await garantirTabelasDaEscala();
+  const r = await prisma.$executeRaw(Prisma.sql`
+    UPDATE "EscalaPagamento" SET "desfeitoEm" = ${agoraEmUtc()}, "desfeitoPor" = ${quem.slice(0, 120)}
+    WHERE "id" = ${id} AND "lojaId" = ${lojaId} AND "desfeitoEm" IS NULL`);
+  if (!r) throw new ErroDaEscala("Esse pagamento não existe ou já foi desfeito.", 404);
+}
+
+export type EscalaDoMotoboy = { pix: string | null; pixTipo: TipoDePix | null; pixOrigem: string | null; pago: number; dias: string[] };
+
+/**
+ * Para a tela do acerto do motoboy ("onde faz com o motoboy, coloca lá
+ * também"): o Pix que ele deu na escala e quanto a escala já registrou como
+ * pago a ele em dias do EXPEDIENTE dentro de [de, ate] — para o dono não
+ * pagar o mesmo dia duas vezes. Não mexe na conta do acerto.
+ */
+export async function escalaDosMotoboys(lojaId: string, de: string, ate: string): Promise<Record<string, EscalaDoMotoboy>> {
+  await garantirTabelasDaEscala();
+  const [chaves, pagos] = await Promise.all([
+    prisma.$queryRaw<{ refId: string; pix: string; pixTipo: string | null; pixOrigem: string | null }[]>(Prisma.sql`
+      SELECT "refId", "pix", "pixTipo", "pixOrigem" FROM "EscalaPessoa" WHERE "lojaId" = ${lojaId} AND "tipo" = 'motoboy' AND "refId" IS NOT NULL AND "pix" IS NOT NULL`),
+    // O turno da madrugada do dia seguinte ainda é do expediente de `ate`: busca um dia a mais e filtra.
+    prisma.$queryRaw<{ pessoaId: string; valor: number; data: string; inicio: string | null }[]>(Prisma.sql`
+      SELECT p."pessoaId", p."valor", to_char(p."data", 'YYYY-MM-DD') AS "data", t."inicio"
+      FROM "EscalaPagamento" p LEFT JOIN "EscalaTurno" t ON t."id" = p."turnoId"
+      WHERE p."lojaId" = ${lojaId} AND p."pessoaTipo" = 'motoboy' AND p."desfeitoEm" IS NULL
+        AND p."data" BETWEEN ${de}::date AND (${ate}::date + 1)`),
+  ]);
+  const r: Record<string, EscalaDoMotoboy> = {};
+  const de_ = (id: string) => (r[id] ||= { pix: null, pixTipo: null, pixOrigem: null, pago: 0, dias: [] });
+  for (const c of chaves) Object.assign(de_(c.refId), { pix: c.pix, pixTipo: (c.pixTipo as TipoDePix | null) ?? null, pixOrigem: c.pixOrigem });
+  for (const p of pagos) {
+    const dia = diaDoExpedienteDoTurno({ data: p.data, inicio: p.inicio || "12:00" });
+    if (dia < de || dia > ate) continue;
+    const m = de_(p.pessoaId);
+    m.pago = Math.round((m.pago + Number(p.valor)) * 100) / 100;
+    if (!m.dias.includes(dia)) m.dias.push(dia);
+  }
+  for (const m of Object.values(r)) m.dias.sort();
+  return r;
+}

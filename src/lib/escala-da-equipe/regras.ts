@@ -18,7 +18,7 @@
  * dia em fuso nenhum), e "agora" é o relógio da LOJA (agoraDaLoja), nunca o do
  * servidor, que roda em UTC.
  */
-import { dataDaLoja, relogioDaLoja, FUSO_PADRAO } from "@/lib/fuso";
+import { dataDaLoja, relogioDaLoja, FUSO_PADRAO, HORA_DE_VIRADA_DO_EXPEDIENTE } from "@/lib/fuso";
 import { mesmoTelefone, telefoneCanonico } from "@/lib/telefone";
 
 // ── Funções e tipos ──────────────────────────────────────────────────────────
@@ -416,4 +416,249 @@ export function custoPrevisto(turnos: TurnoComDiarias[]): { total: number; semVa
     }
   }
   return { total: Math.round(total * 100) / 100, semValor, porPessoa: [...por.values()].sort((a, b) => b.total - a.total || a.nome.localeCompare(b.nome)) };
+}
+
+// ── Chave Pix (Douglas, 12/11/2026: "manda ele colocar o Pix dele") ─────────
+
+export type TipoDePix = "cpf" | "cnpj" | "telefone" | "email" | "aleatoria";
+export const TIPOS_DE_PIX: Array<{ tipo: TipoDePix; rotulo: string }> = [
+  { tipo: "cpf", rotulo: "CPF" }, { tipo: "telefone", rotulo: "Celular" }, { tipo: "email", rotulo: "E-mail" },
+  { tipo: "aleatoria", rotulo: "Aleatória" }, { tipo: "cnpj", rotulo: "CNPJ" },
+];
+export const ehTipoDePix = (t: unknown): t is TipoDePix => TIPOS_DE_PIX.some((x) => x.tipo === t);
+export const ROTULO_DO_PIX: Record<TipoDePix, string> = { cpf: "CPF", cnpj: "CNPJ", telefone: "Celular", email: "E-mail", aleatoria: "Aleatória" };
+
+/** Os dígitos verificadores do CPF batem? (pega o número digitado errado, não "valida" a pessoa) */
+export function cpfValido(cpf: string): boolean {
+  const d = cpf.replace(/\D/g, "");
+  if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
+  const dv = (n: number) => {
+    let s = 0;
+    for (let i = 0; i < n; i++) s += Number(d[i]) * (n + 1 - i);
+    const r = (s * 10) % 11;
+    return r === 10 ? 0 : r;
+  };
+  return dv(9) === Number(d[9]) && dv(10) === Number(d[10]);
+}
+
+function cnpjValido(cnpj: string): boolean {
+  const d = cnpj.replace(/\D/g, "");
+  if (d.length !== 14 || /^(\d)\1{13}$/.test(d)) return false;
+  const dv = (n: number) => {
+    const pesos = n === 12 ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2] : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    const s = pesos.reduce((t, p, i) => t + Number(d[i]) * p, 0) % 11;
+    return s < 2 ? 0 : 11 - s;
+  };
+  return dv(12) === Number(d[12]) && dv(13) === Number(d[13]);
+}
+
+const RE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const RE_ALEATORIA = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
+
+/** Celular para Pix: DDD + 9 + 8 dígitos (com ou sem +55). Devolve "DDD9XXXXXXXX" ou "". */
+function celularDoPix(bruto: string): string {
+  let d = bruto.replace(/\D/g, "");
+  if (d.length === 13 && d.startsWith("55")) d = d.slice(2);
+  return d.length === 11 && d[2] === "9" && d[0] !== "0" ? d : "";
+}
+
+/**
+ * A chave Pix digitada vira chave limpa + tipo — ou a frase do erro. O tipo
+ * escolhido manda; sem tipo, adivinha: "@" é e-mail, 32 letras/números
+ * hexadecimais é aleatória, 14 dígitos é CNPJ, 11 dígitos é CPF quando os
+ * dígitos verificadores batem e celular quando não batem e tem o 9 depois do
+ * DDD. Validação leve: pega o número com dígito trocado, não garante que a
+ * chave existe no banco.
+ *
+ * Como fica gravada: CPF/CNPJ só dígitos, celular "+55DDD9XXXXXXXX" (o formato
+ * do Banco Central), e-mail minúsculo, aleatória minúscula com hífens.
+ */
+export function lerChavePix(bruta: unknown, tipoEscolhido?: unknown): { ok: true; chave: string; tipo: TipoDePix } | { ok: false; erro: string } {
+  const s = String(bruta ?? "").trim();
+  if (!s) return { ok: false, erro: "Digite a chave Pix." };
+  if (s.length > 120) return { ok: false, erro: "Chave Pix comprida demais." };
+  const digitos = s.replace(/\D/g, "");
+  let tipo: TipoDePix | null = ehTipoDePix(tipoEscolhido) ? tipoEscolhido : null;
+  if (!tipo) {
+    if (s.includes("@")) tipo = "email";
+    else if (RE_ALEATORIA.test(s.replace(/\s/g, ""))) tipo = "aleatoria";
+    else if (/^[\d\s().+\-/]+$/.test(s)) {
+      if (digitos.length === 14 && !s.startsWith("+")) tipo = "cnpj";
+      else if (digitos.length === 11 && !s.startsWith("+") && !s.includes("(") && cpfValido(digitos)) tipo = "cpf";
+      else if (celularDoPix(s)) tipo = "telefone";
+      else if (digitos.length === 11) return { ok: false, erro: "Esse número não é um CPF válido nem um celular com DDD. Confira os dígitos." };
+    }
+    if (!tipo) return { ok: false, erro: "Não reconheci a chave. Use CPF, celular com DDD, e-mail ou a chave aleatória." };
+  }
+  if (tipo === "email") {
+    const e = s.toLowerCase();
+    return RE_EMAIL.test(e) && e.length <= 77 ? { ok: true, chave: e, tipo } : { ok: false, erro: "E-mail da chave Pix inválido." };
+  }
+  if (tipo === "aleatoria") {
+    const h = s.replace(/[\s-]/g, "").toLowerCase();
+    if (!/^[0-9a-f]{32}$/.test(h)) return { ok: false, erro: "A chave aleatória tem 32 letras e números (ex.: 1a2b3c4d-…)." };
+    return { ok: true, chave: `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`, tipo };
+  }
+  if (tipo === "cpf") return cpfValido(digitos) ? { ok: true, chave: digitos, tipo } : { ok: false, erro: "CPF inválido. Confira os números." };
+  if (tipo === "cnpj") return cnpjValido(digitos) ? { ok: true, chave: digitos, tipo } : { ok: false, erro: "CNPJ inválido. Confira os números." };
+  const cel = celularDoPix(s);
+  return cel ? { ok: true, chave: `+55${cel}`, tipo } : { ok: false, erro: "Celular da chave Pix com DDD e o 9 (ex.: 22 99999-1234)." };
+}
+
+/** O tipo de uma chave já gravada (a gravada sem tipo é adivinhada; não deu = null). */
+export function tipoDaChave(chave: string | null | undefined, tipo?: string | null): TipoDePix | null {
+  if (ehTipoDePix(tipo)) return tipo;
+  const l = chave ? lerChavePix(chave) : null;
+  return l && l.ok ? l.tipo : null;
+}
+
+/** A chave para MOSTRAR ao dono: CPF com pontos, celular com DDD entre parênteses. */
+export function pixFormatado(chave: string, tipo?: string | null): string {
+  const t = tipoDaChave(chave, tipo);
+  const d = chave.replace(/\D/g, "");
+  if (t === "cpf" && d.length === 11) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+  if (t === "cnpj" && d.length === 14) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
+  if (t === "telefone") { const c = celularDoPix(chave); if (c) return `(${c.slice(0, 2)}) ${c.slice(2, 7)}-${c.slice(7)}`; }
+  return chave;
+}
+
+/**
+ * A chave para COPIAR e colar no app do banco: CPF/CNPJ só dígitos, celular
+ * DDD + número (o campo "celular" do app do banco já põe o +55 sozinho), o
+ * resto como está.
+ */
+export function pixParaCopiar(chave: string, tipo?: string | null): string {
+  const t = tipoDaChave(chave, tipo);
+  if (t === "cpf" || t === "cnpj") return chave.replace(/\D/g, "");
+  if (t === "telefone") return celularDoPix(chave) || chave;
+  return chave;
+}
+
+/**
+ * A chave escondida — o que o LINK mostra para a própria pessoa conferir. O
+ * link identifica só pelo telefone, então quem digitar o número de um colega
+ * não pode ler a chave dele inteira.
+ */
+export function pixMascarado(chave: string, tipo?: string | null): string {
+  const t = tipoDaChave(chave, tipo);
+  const d = chave.replace(/\D/g, "");
+  if (t === "cpf" && d.length === 11) return `***.${d.slice(3, 6)}.${d.slice(6, 9)}-**`;
+  if (t === "cnpj" && d.length === 14) return `**.${d.slice(2, 5)}.${d.slice(5, 8)}/****-**`;
+  if (t === "telefone") { const c = celularDoPix(chave); if (c) return `(${c.slice(0, 2)}) *****-${c.slice(7)}`; }
+  if (t === "email" && chave.includes("@")) {
+    const [u, dom] = chave.split("@");
+    return `${u.slice(0, 2)}***@${dom}`;
+  }
+  if (chave.length <= 8) return "****";
+  return `${chave.slice(0, 4)}…${chave.slice(-4)}`;
+}
+
+// ── Pagamento de quem trabalhou (só o dono) ─────────────────────────────────
+
+/**
+ * O dia do EXPEDIENTE do turno — o que o acerto do motoboy usa (vira às 5h).
+ * O turno das 18:00 de segunda é de segunda; o que começa 01:00 de terça
+ * ainda é a noite de segunda. A escala continua mostrando o turno no dia do
+ * calendário: isto só serve para casar com o acerto pago (MotoboyAcertoPago).
+ */
+export function diaDoExpedienteDoTurno(t: { data: string; inicio: string }): string {
+  return (lerHora(t.inicio) ?? 0) < HORA_DE_VIRADA_DO_EXPEDIENTE * 60 ? somarDias(t.data, -1) : t.data;
+}
+
+/** O acerto pago do motoboy que cobre o dia deste turno (o primeiro, se houver dois). */
+export function acertoQueCobre<A extends { dias: string[] }>(acertos: A[] | null | undefined, t: { data: string; inicio: string }): A | null {
+  const dia = diaDoExpedienteDoTurno(t);
+  return (acertos || []).find((a) => a.dias.includes(dia)) ?? null;
+}
+
+export type FormaDePagamento = "pix" | "dinheiro";
+export const ehFormaDePagamento = (f: unknown): f is FormaDePagamento => f === "pix" || f === "dinheiro";
+
+export type PagamentoFeito = { id: string; valor: number; forma: FormaDePagamento | null; obs: string | null; pagoEm: string; pagoPor: string | null };
+export type ItemDePagamento = {
+  inscricaoId: string; turnoId: string; data: string; inicio: string; fim: string; funcao: string;
+  pessoaTipo: TipoDePessoa; pessoaId: string; nome: string; diaria: number | null;
+  pagamento: PagamentoFeito | null;
+  /** Motoboy: o acerto pago (tela do acerto) que já cobre o dia do turno. */
+  acerto: { id: string; em: string; dia: string } | null;
+};
+
+export type SituacaoDoPagamento = "futuro" | "pago" | "acerto" | "pendente";
+
+/**
+ * Turno de amanhã não é "a pagar": a pessoa ainda não trabalhou. Conta a
+ * DATA do turno contra o hoje da loja (o turno de hoje à noite já aparece —
+ * o dono costuma pagar no fim do expediente).
+ */
+export function situacaoDoPagamento(i: Pick<ItemDePagamento, "data" | "pagamento" | "acerto">, hoje: string): SituacaoDoPagamento {
+  if (i.pagamento) return "pago";
+  if (numeroDoDia(i.data) > numeroDoDia(hoje)) return "futuro";
+  return i.acerto ? "acerto" : "pendente";
+}
+
+const centavos = (v: number) => Math.round(v * 100) / 100;
+
+export type ResumoDaPessoa = {
+  pessoaTipo: TipoDePessoa; pessoaId: string; nome: string;
+  /** Turnos já trabalhados no período (data até hoje). */
+  turnos: number;
+  devido: number; pago: number; pendente: number;
+  /** Turnos pendentes de quem não tem diária combinada (fora do "pendente" em R$). */
+  semValor: number;
+  /** Motoboy: turnos cobertos pelo acerto pago (fora do devido — o acerto já pagou). */
+  noAcerto: number;
+  itens: ItemDePagamento[];
+};
+export type ResumoDosPagamentos = { devido: number; pago: number; pendente: number; semValor: number; noAcerto: number; turnos: number; porPessoa: ResumoDaPessoa[] };
+
+/**
+ * Devido, pago e pendente no período — no total e por pessoa.
+ *   pago     = o que foi marcado (o valor que o dono digitou, não a diária);
+ *   pendente = a diária combinada dos turnos trabalhados ainda sem pagamento;
+ *   devido   = pago + pendente.
+ * Turno futuro fica fora; turno do motoboy coberto pelo acerto também (o
+ * acerto pagou o dia inteiro, com a conta dele). Quem está pendente sem diária
+ * entra em `semValor`, para a tela dizer "sem valor combinado" em vez de R$ 0.
+ */
+export function resumoDosPagamentos(itens: ItemDePagamento[], hoje: string): ResumoDosPagamentos {
+  const por = new Map<string, ResumoDaPessoa>();
+  const total = { devido: 0, pago: 0, pendente: 0, semValor: 0, noAcerto: 0, turnos: 0 };
+  for (const i of itens) {
+    const s = situacaoDoPagamento(i, hoje);
+    if (s === "futuro") continue;
+    const k = chaveDaPessoa(i.pessoaTipo, i.pessoaId);
+    const p = por.get(k) || { pessoaTipo: i.pessoaTipo, pessoaId: i.pessoaId, nome: i.nome, turnos: 0, devido: 0, pago: 0, pendente: 0, semValor: 0, noAcerto: 0, itens: [] };
+    p.turnos++; total.turnos++;
+    p.itens.push(i);
+    if (s === "pago") { p.pago = centavos(p.pago + i.pagamento!.valor); total.pago = centavos(total.pago + i.pagamento!.valor); }
+    else if (s === "acerto") { p.noAcerto++; total.noAcerto++; }
+    else if (Number(i.diaria) > 0) { p.pendente = centavos(p.pendente + Number(i.diaria)); total.pendente = centavos(total.pendente + Number(i.diaria)); }
+    else { p.semValor++; total.semValor++; }
+    p.devido = centavos(p.pago + p.pendente);
+    por.set(k, p);
+  }
+  total.devido = centavos(total.pago + total.pendente);
+  for (const p of por.values()) p.itens.sort((a, b) => a.data.localeCompare(b.data) || a.inicio.localeCompare(b.inicio));
+  const porPessoa = [...por.values()].sort((a, b) => b.pendente - a.pendente || b.semValor - a.semValor || a.nome.localeCompare(b.nome, "pt-BR"));
+  return { ...total, porPessoa };
+}
+
+/**
+ * "Pagar tudo o que está pendente": o dono confirma UM total, e cada turno
+ * guarda a sua parte — proporcional à diária de cada um (sem diária = a
+ * média das outras; ninguém com diária = partes iguais). A sobra dos
+ * centavos vai para o último, para a soma bater exatamente com o total.
+ */
+export function dividirValor(total: number, pesos: Array<number | null | undefined>): number[] {
+  const n = pesos.length;
+  if (!n) return [];
+  const t = Math.round(total * 100);
+  // Turno sem diária no meio de outros com diária pesa a média deles (não fica com R$ 0).
+  const conhecidos = pesos.map(Number).filter((p) => p > 0);
+  const media = conhecidos.length ? conhecidos.reduce((a, b) => a + b, 0) / conhecidos.length : 1;
+  const base = pesos.map((p) => (Number(p) > 0 ? Number(p) : media));
+  const somaBase = base.reduce((a, b) => a + b, 0);
+  const partes = base.map((p) => Math.floor((t * p) / somaBase));
+  partes[n - 1] += t - partes.reduce((a, b) => a + b, 0);
+  return partes.map((c) => c / 100);
 }

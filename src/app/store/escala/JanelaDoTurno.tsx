@@ -5,18 +5,21 @@
  *   FormDoTurno     criar (com "repetir" nos dias da semana até uma data) e editar;
  *   DetalheDoTurno  quem vem, tirar pessoa, encaixar alguém da lista (equipe,
  *                   motoboys, freelancers) ou cadastrar um freelancer na hora.
+ *                   O dono também marca/desfaz o pagamento de cada pessoa
+ *                   (turno de hoje para trás) e copia o Pix dela.
  */
 
 import { useMemo, useState } from "react";
 import {
-  FUNCOES, NOMES_CURTOS_DOS_DIAS, chaveDaFuncao, datasDaRepeticao, diaDaSemana, diaPorExtenso, fimDoMes, horarioDoTurno,
-  situacaoDasVagas, viraAMeiaNoite,
+  FUNCOES, NOMES_CURTOS_DOS_DIAS, chaveDaFuncao, datasDaRepeticao, diaDaSemana, diaEMes, diaPorExtenso, fimDoMes, horarioDoTurno,
+  situacaoDasVagas, situacaoDoPagamento, viraAMeiaNoite, type ItemDePagamento,
 } from "@/lib/escala-da-equipe/regras";
 import { PilulaDasVagas } from "./Calendario";
 import {
-  COR, COR_CLARA, ErroDaApi, Janela, S, SELO_DO_TIPO, SeloDoLink, SeloDoTipo, pedir, reais,
-  type Aviso, type Confirmacao, type Pessoa, type Turno,
+  BotaoCopiarPix, COR, COR_CLARA, ErroDaApi, Janela, LINK_DO_ACERTO, S, SELO_DO_TIPO, SeloDoLink, SeloDoPagamento, SeloDoTipo, pedir, reais,
+  type Aviso, type Confirmacao, type Inscrito, type Pessoa, type Turno,
 } from "./ui";
+import { JanelaDePagar } from "./Pagamentos";
 
 const OUTRO = "__outro__";
 
@@ -150,10 +153,35 @@ export function FormDoTurno({ turno, dataInicial, onFechar, onSalvo, avisar }: {
 
 // ── Detalhe: quem vem, encaixar, tirar ──────────────────────────────────────
 
-export function DetalheDoTurno({ turno, pessoas, ehDono, onFechar, onMudou, onEditar, onApagar, avisar, confirmar }: {
-  turno: Turno; pessoas: Pessoa[]; ehDono: boolean; onFechar: () => void; onMudou: () => void; onEditar: () => void; onApagar: () => void;
+export function DetalheDoTurno({ turno, pessoas, ehDono, hoje, onFechar, onMudou, onEditar, onApagar, avisar, confirmar }: {
+  turno: Turno; pessoas: Pessoa[]; ehDono: boolean; hoje: string; onFechar: () => void; onMudou: () => void; onEditar: () => void; onApagar: () => void;
   avisar: (a: Aviso) => void; confirmar: (c: Confirmacao) => void;
 }) {
+  const [pagando, setPagando] = useState<Inscrito | null>(null);
+  const pessoaDe = (i: Inscrito) => pessoas.find((p) => p.tipo === i.pessoaTipo && p.id === i.pessoaId) || null;
+  const comoItem = (i: Inscrito): ItemDePagamento => ({
+    inscricaoId: i.id, turnoId: turno.id, data: turno.data, inicio: turno.inicio, fim: turno.fim, funcao: turno.funcao,
+    pessoaTipo: i.pessoaTipo, pessoaId: i.pessoaId, nome: i.nome, diaria: i.diaria, pagamento: i.pagamento ?? null, acerto: i.acerto ?? null,
+  });
+  function desfazer(i: Inscrito) {
+    const pg = i.pagamento;
+    if (!pg) return;
+    confirmar({
+      titulo: "Desfazer o pagamento?",
+      texto: `${i.nome} volta para "a pagar" neste turno (${reais(pg.valor)}). O registro fica no histórico.`,
+      botao: "Desfazer pagamento",
+      perigo: true,
+      acao: async () => {
+        try {
+          await pedir(`/api/store/escala/pagamentos/${pg.id}`, "DELETE");
+          avisar({ tipo: "ok", titulo: "Pagamento desfeito", detalhe: i.nome });
+          onMudou();
+        } catch (e: any) {
+          avisar({ tipo: "erro", titulo: "Não deu para desfazer", detalhe: e.message });
+        }
+      },
+    });
+  }
   const [busca, setBusca] = useState("");
   const [novo, setNovo] = useState(false);
   const [nome, setNome] = useState(""), [telefone, setTelefone] = useState(""), [diaria, setDiaria] = useState("");
@@ -225,16 +253,39 @@ export function DetalheDoTurno({ turno, pessoas, ehDono, onFechar, onMudou, onEd
         <p style={{ ...S.texto, marginTop: 4 }}>Ninguém ainda. Mande o link no grupo ou encaixe abaixo.</p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
-          {turno.inscritos.map((i) => (
-            <div key={i.id} style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid #E2E8F0", borderRadius: 10, padding: "8px 10px" }}>
-              <SeloDoTipo tipo={i.pessoaTipo} />
-              <strong style={{ fontSize: 14.5, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{i.nome}</strong>
-              {i.origem === "link" ? <SeloDoLink /> : <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 700 }}>painel</span>}
-              {ehDono && i.diaria ? <span style={{ fontSize: 12.5, color: "#475569" }}>{reais(i.diaria)}</span> : null}
-              <button type="button" disabled={ocupado} aria-label={`Tirar ${i.nome}`} title="Tirar do turno" onClick={() => tirar(i.id, i.nome)}
-                style={{ border: 0, background: "#FEF2F2", color: "#DC2626", borderRadius: 8, width: 30, height: 30, cursor: "pointer", fontSize: 16 }}>×</button>
-            </div>
-          ))}
+          {turno.inscritos.map((i) => {
+            const p = pessoaDe(i);
+            const sit = ehDono ? situacaoDoPagamento({ data: turno.data, pagamento: i.pagamento ?? null, acerto: i.acerto ?? null }, hoje) : "futuro";
+            return (
+              <div key={i.id} style={{ border: "1px solid #E2E8F0", borderRadius: 10, padding: "8px 10px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <SeloDoTipo tipo={i.pessoaTipo} />
+                  <strong style={{ fontSize: 14.5, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{i.nome}</strong>
+                  {i.origem === "link" ? <SeloDoLink /> : <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 700 }}>painel</span>}
+                  {ehDono && i.diaria ? <span style={{ fontSize: 12.5, color: "#475569" }}>{reais(i.diaria)}</span> : null}
+                  {p?.pix && <BotaoCopiarPix pix={p.pix} pixTipo={p.pixTipo} nome={i.nome} avisar={avisar} />}
+                  <button type="button" disabled={ocupado || !!i.pagamento} aria-label={`Tirar ${i.nome}`}
+                    title={i.pagamento ? "Já foi pago por este turno: desfaça o pagamento antes de tirar" : "Tirar do turno"} onClick={() => tirar(i.id, i.nome)}
+                    style={{ border: 0, background: "#FEF2F2", color: "#DC2626", borderRadius: 8, width: 30, height: 30, cursor: i.pagamento ? "not-allowed" : "pointer", fontSize: 16, opacity: i.pagamento ? 0.4 : 1 }}>×</button>
+                </div>
+                {sit !== "futuro" && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 6, fontSize: 12.5, color: "#475569" }}>
+                    <SeloDoPagamento situacao={sit} />
+                    {sit === "pago" && i.pagamento && <>
+                      <span><b style={{ color: "#047857" }}>{reais(i.pagamento.valor)}</b>{i.pagamento.forma ? ` · ${i.pagamento.forma === "pix" ? "Pix" : "dinheiro"}` : ""}{i.pagamento.pagoPor ? ` · por ${i.pagamento.pagoPor}` : ""}</span>
+                      <button type="button" onClick={() => desfazer(i)} style={{ border: 0, background: "none", color: "#B91C1C", textDecoration: "underline", cursor: "pointer", fontSize: 12.5, fontFamily: "inherit", padding: 0 }}>desfazer</button>
+                    </>}
+                    {sit === "acerto" && i.acerto && <a href={LINK_DO_ACERTO} style={{ color: COR, fontWeight: 800 }}>Pago no acerto ({diaEMes(i.acerto.dia)}) ↗</a>}
+                    {sit === "pendente" && (
+                      <button type="button" onClick={() => setPagando(i)} style={{ ...S.botaoPequeno, height: 28, borderColor: "#059669", color: "#047857" }}>
+                        Marcar pago{i.diaria ? ` (${reais(i.diaria)})` : ""}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
       {v.faltam > 0 && <div style={{ marginTop: 8, fontSize: 13, fontWeight: 800, color: "#B45309" }}>Falta{v.faltam > 1 ? "m" : ""} {v.faltam} pessoa{v.faltam > 1 ? "s" : ""}.</div>}
@@ -276,6 +327,10 @@ export function DetalheDoTurno({ turno, pessoas, ehDono, onFechar, onMudou, onEd
           </>
         )}
       </div>
+      {pagando && (
+        <JanelaDePagar itens={[comoItem(pagando)]} pessoa={pessoaDe(pagando)} tudo={false} avisar={avisar}
+          onFechar={() => setPagando(null)} onPago={() => { setPagando(null); onMudou(); }} />
+      )}
     </Janela>
   );
 }

@@ -8,16 +8,22 @@
  */
 
 import { useEffect } from "react";
-import type { SituacaoDasVagas } from "@/lib/escala-da-equipe/regras";
+import { pixParaCopiar, type PagamentoFeito, type SituacaoDasVagas, type SituacaoDoPagamento } from "@/lib/escala-da-equipe/regras";
 
 // ── O que a API devolve ─────────────────────────────────────────────────────
 
 export type TipoDePessoa = "equipe" | "motoboy" | "freelancer";
-export type Inscrito = { id: string; pessoaTipo: TipoDePessoa; pessoaId: string; nome: string; origem: "link" | "painel"; createdAt: string; diaria: number | null };
+export type Inscrito = {
+  id: string; pessoaTipo: TipoDePessoa; pessoaId: string; nome: string; origem: "link" | "painel"; createdAt: string; diaria: number | null;
+  /** Só para o dono (para o funcionário vem sempre vazio). */
+  pagamento?: PagamentoFeito | null;
+  acerto?: { id: string; em: string; dia: string } | null;
+};
 export type Turno = { id: string; data: string; inicio: string; fim: string; funcao: string; vagas: number; obs: string | null; inscritos: Inscrito[] };
 export type Pessoa = {
   tipo: TipoDePessoa; id: string; nome: string; telefone: string | null; funcao: string | null; diaria: number | null;
-  cpf: string | null; pix: string | null; obs: string | null; ativo: boolean; origem: "link" | "painel"; detalhe: string | null; diariaDaOrigem: number | null;
+  cpf: string | null; pix: string | null; pixTipo: string | null; pixOrigem: string | null; pixAtualizadoEm: string | null;
+  obs: string | null; ativo: boolean; origem: "link" | "painel"; detalhe: string | null; diariaDaOrigem: number | null;
 };
 export type ConfigDoLink = { codigo: string; prazoInscricaoHoras: number; permiteDesistir: boolean; prazoDesistenciaHoras: number; funcoesNoLink: string[]; linkAtivo: boolean };
 export type DadosDaEscala = {
@@ -105,6 +111,39 @@ export function comecarArrasto(e: React.DragEvent, a: Arrasto) {
 }
 export function lerArrasto(e: React.DragEvent): Arrasto | null {
   try { return JSON.parse(e.dataTransfer.getData(TIPO_DO_ARRASTO)) as Arrasto; } catch { return arrastoAtual.valor; }
+}
+
+/** Onde o dono acerta o motoboy — o "pago no acerto" da escala leva para lá. */
+export const LINK_DO_ACERTO = "/store/motoboys?aba=relatorio";
+
+/** O selo discreto do pagamento (só o dono vê): pago, a pagar, pago no acerto do motoboy. */
+export const SELO_DO_PAGAMENTO: Record<Exclude<SituacaoDoPagamento, "futuro">, { icone: string; rotulo: string; cor: string; fundo: string }> = {
+  pago: { icone: "💰", rotulo: "Pago", cor: "#047857", fundo: "#ECFDF5" },
+  acerto: { icone: "💰", rotulo: "Pago no acerto", cor: "#047857", fundo: "#ECFDF5" },
+  pendente: { icone: "⏳", rotulo: "A pagar", cor: "#B45309", fundo: "#FFFBEB" },
+};
+export function SeloDoPagamento({ situacao, compacto = false, titulo }: { situacao: SituacaoDoPagamento; compacto?: boolean; titulo?: string }) {
+  if (situacao === "futuro") return null;
+  const s = SELO_DO_PAGAMENTO[situacao];
+  return (
+    <span title={titulo || s.rotulo} style={{ ...S.chip, color: s.cor, background: s.fundo, padding: compacto ? "0 4px" : "1px 7px", fontSize: compacto ? 11 : 11.5, flexShrink: 0 }}>
+      {s.icone}{!compacto && <> {s.rotulo}</>}
+    </span>
+  );
+}
+
+/** "Copiar Pix": a chave no formato que o app do banco aceita colar. */
+export function BotaoCopiarPix({ pix, pixTipo, nome, avisar, rotulo = "📋 Pix" }: { pix: string; pixTipo: string | null; nome: string; avisar: (a: Aviso) => void; rotulo?: string }) {
+  return (
+    <button type="button" title={`Copiar a chave Pix de ${nome}`}
+      onClick={async (e) => {
+        e.stopPropagation();
+        avisar(await copiar(pixParaCopiar(pix, pixTipo)) ? { tipo: "ok", titulo: `Pix de ${nome} copiado` } : { tipo: "erro", titulo: "Não deu para copiar", detalhe: pix });
+      }}
+      style={{ ...S.botaoPequeno, height: 28, padding: "0 9px", fontSize: 12, borderColor: "#A7F3D0", color: "#047857", flexShrink: 0 }}>
+      {rotulo}
+    </button>
+  );
 }
 
 export function SeloDoLink() {

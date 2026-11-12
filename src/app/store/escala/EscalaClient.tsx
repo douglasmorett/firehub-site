@@ -11,7 +11,9 @@
  * vem fulano e sicrano" e imprime para colar na parede.
  *
  * Incluso no plano, para todas as lojas (sem liga/desliga de módulo pago).
- * Abas: Escala (dia/semana/mês), Pessoas, Link de inscrição.
+ * Abas: Escala (dia/semana/mês), Pessoas, Link de inscrição e, só para o
+ * dono, Pagamentos (Douglas, 12/11/2026: o controle do que pagou e do que
+ * falta pagar a cada um — ./Pagamentos.tsx).
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -23,8 +25,9 @@ import { DetalheDoTurno, FormDoTurno } from "./JanelaDoTurno";
 import Pessoas from "./Pessoas";
 import LinkDeInscricao from "./LinkDeInscricao";
 import Impressao, { type O_QUE_IMPRIMIR } from "./Impressao";
+import Pagamentos from "./Pagamentos";
 
-type Aba = "escala" | "pessoas" | "link";
+type Aba = "escala" | "pessoas" | "link" | "pagamentos";
 const CHAVE_DA_VISAO = "escala:visao";
 const CHAVE_DO_LADO = "escala:pessoas-ao-lado";
 
@@ -132,8 +135,17 @@ export default function EscalaClient() {
   async function soltar(turno: Turno, a: Arrasto) {
     const onde = `${turno.funcao}, ${diaEMes(turno.data)} ${horarioDoTurno(turno.inicio, turno.fim)}`;
     const fazer = async (aumentarVaga: boolean) => {
-      await pedir("/api/store/escala/inscricoes", "POST", { turnoId: turno.id, pessoaTipo: a.pessoaTipo, pessoaId: a.pessoaId, aumentarVaga });
-      if (a.tipo === "inscricao") await pedir(`/api/store/escala/inscricoes/${a.inscricaoId}`, "DELETE");
+      const nova = await pedir<{ id: string }>("/api/store/escala/inscricoes", "POST", { turnoId: turno.id, pessoaTipo: a.pessoaTipo, pessoaId: a.pessoaId, aumentarVaga });
+      if (a.tipo === "inscricao") {
+        try {
+          await pedir(`/api/store/escala/inscricoes/${a.inscricaoId}`, "DELETE");
+        } catch (e) {
+          // Não saiu do turno antigo (ex.: já foi pago por ele): desfaz a entrada no
+          // novo, senão a pessoa ficaria nos dois turnos.
+          await pedir(`/api/store/escala/inscricoes/${nova.id}`, "DELETE").catch(() => {});
+          throw e;
+        }
+      }
       avisar({ tipo: "ok", titulo: a.tipo === "inscricao" ? `${a.nome} mudou de turno` : `${a.nome} escalado(a)`, detalhe: onde });
       carregar();
     };
@@ -179,7 +191,11 @@ export default function EscalaClient() {
     }
   }
 
-  const ABAS: Array<[Aba, string]> = [["escala", "📅 Escala"], ["pessoas", "👥 Pessoas"], ["link", "🔗 Link de inscrição"]];
+  const ABAS: Array<[Aba, string]> = [
+    ["escala", "📅 Escala"], ["pessoas", "👥 Pessoas"], ["link", "🔗 Link de inscrição"],
+    // O que se paga a cada um: só o dono (como a diária e o custo previsto).
+    ...(dados.ehDono ? [["pagamentos", "💰 Pagamentos"] as [Aba, string]] : []),
+  ];
 
   return (
     <div className="esc-pagina" style={{ padding: "18px clamp(12px, 2vw, 28px) 120px" }}>
@@ -253,7 +269,7 @@ export default function EscalaClient() {
           <div className={`esc-com-lado${visao !== "mes" && lado ? " aberto" : ""}`}>
             <div style={{ minWidth: 0 }}>
               {visao === "dia" && <VisaoDoDia data={data} hoje={dados.hoje} turnos={turnos} mostrarDiaria={dados.ehDono} onAbrir={(t) => setAberto(t.id)} onNovo={() => setForm({ data })} onSoltar={soltar} />}
-              {visao === "semana" && <VisaoDaSemana data={data} hoje={dados.hoje} turnos={turnos} onAbrir={(t) => setAberto(t.id)} onNovo={(d) => setForm({ data: d })} onDia={(d) => { setData(d); trocarVisao("dia"); }} onSoltar={soltar} />}
+              {visao === "semana" && <VisaoDaSemana data={data} hoje={dados.hoje} turnos={turnos} mostrarPagamento={dados.ehDono} onAbrir={(t) => setAberto(t.id)} onNovo={(d) => setForm({ data: d })} onDia={(d) => { setData(d); trocarVisao("dia"); }} onSoltar={soltar} />}
               {visao === "mes" && <VisaoDoMes data={data} hoje={dados.hoje} turnos={turnos} onDia={(d) => { setData(d); trocarVisao("dia"); }} />}
             </div>
             {visao !== "mes" && lado && <PessoasAoLado pessoas={dados.pessoas} turnos={turnos} onTirar={tirarArrastando} onFechar={() => mostrarLado(false)} />}
@@ -281,6 +297,10 @@ export default function EscalaClient() {
 
       {aba === "pessoas" && <div style={{ marginTop: 14 }}><Pessoas pessoas={dados.pessoas} ehDono={dados.ehDono} onMudou={carregar} avisar={avisar} /></div>}
 
+      {aba === "pagamentos" && dados.ehDono && (
+        <Pagamentos hoje={dados.hoje} nomeDaLoja={dados.loja.nome} avisar={avisar} confirmar={setConfirmacao} onMudou={carregar} />
+      )}
+
       {aba === "link" && (
         <div style={{ marginTop: 14 }}>
           <LinkDeInscricao config={dados.config} nomeDaLoja={dados.loja.nome} funcoesUsadas={funcoesUsadas} avisar={avisar}
@@ -294,7 +314,7 @@ export default function EscalaClient() {
           onSalvo={() => { setForm(null); carregar(); }} />
       )}
       {turnoAberto && !form && (
-        <DetalheDoTurno turno={turnoAberto} pessoas={dados.pessoas} ehDono={dados.ehDono} avisar={avisar} confirmar={setConfirmacao}
+        <DetalheDoTurno turno={turnoAberto} pessoas={dados.pessoas} ehDono={dados.ehDono} hoje={dados.hoje} avisar={avisar} confirmar={setConfirmacao}
           onFechar={() => setAberto(null)} onMudou={carregar} onEditar={() => setForm({ turno: turnoAberto, data: turnoAberto.data })}
           onApagar={() => apagar(turnoAberto)} />
       )}

@@ -14,7 +14,7 @@ import { acharPedidoNoAcerto } from "@/lib/achar-pedido-no-acerto";
 import { lerOpcoesDoAcerto, quadradoDaCaixa, type QuadradoDoAcerto } from "@/lib/ajustes-do-acerto-regras";
 import { AvisoNoTopo, type Aviso } from "@/components/mesas/SelecionarItensParaImpressao";
 import { DiariasPorDia, OpcaoCartaoEVale, PendenciasDoMotoboy } from "./AjustesDoAcerto";
-import AcertoPago from "./AcertoPago";
+import AcertoPago, { type EscalaNoAcerto } from "./AcertoPago";
 
 type Motoboy = { id: string; name: string; paymentType: string; dailyRate?: number; perDeliveryRate?: number; perKmRate?: number; active: boolean };
 
@@ -220,6 +220,9 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador, deliv
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [periodInfo, setPeriodInfo] = useState<any>(null);
+  // O que a Escala da equipe sabe de cada motoboy no período: o Pix e o que já
+  // foi pago por lá (api/motoboy-report/escala) — para não pagar o dia em dobro.
+  const [escala, setEscala] = useState<Record<string, EscalaNoAcerto>>({});
   // Motoboys com a lista de entregas aberta. Era um <details> pequeno no pé do
   // cartão que ninguém achava sozinho (Douglas, 09/10/2026) — virou um botão
   // largo, e cada cartão abre o seu.
@@ -261,11 +264,18 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador, deliv
   const buscar = async (params: string, silencioso: boolean) => {
     if (!silencioso) setLoading(true);
     try {
-      const res = await fetch(`/api/motoboy-report?${params}`);
+      const q = new URLSearchParams(params);
+      const [res, daEscala] = await Promise.all([
+        fetch(`/api/motoboy-report?${params}`),
+        // Os dias do período (sem a hora): o mesmo `de`/`ate` que o acerto grava.
+        fetch(`/api/motoboy-report/escala?de=${(q.get("from") || "").slice(0, 10)}&ate=${(q.get("to") || "").slice(0, 10)}`)
+          .then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      ]);
       if (res.ok) {
         const data = await res.json();
         setReport(data.report);
         setPeriodInfo(data.period);
+        setEscala(daEscala?.motoboys || {});
         setLoaded(true);
         buscaNaTela.current = params;
       }
@@ -952,6 +962,7 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador, deliv
                         tz={tzLoja}
                         avisar={setAviso}
                         aoMudar={aposAjuste}
+                        escala={escala[r.motoboy.id] || null}
                       />
                     )}
                   </div>

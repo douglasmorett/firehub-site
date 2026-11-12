@@ -5,13 +5,20 @@
  *        semanas), só das funções que a loja deixou no link. De quem já se
  *        inscreveu sai só o primeiro nome.
  * POST { acao: "identificar", telefone }
- *        — quem é esta pessoa na loja (motoboy, funcionário ou freelancer) e
- *          as inscrições dela. Telefone que ninguém tem: "conhecido: false", e
- *          a tela pede nome e função.
- * POST { acao: "inscrever", telefone, turnoId, nome?, funcao? }
+ *        — quem é esta pessoa na loja (motoboy, funcionário ou freelancer), as
+ *          inscrições dela e a chave Pix ESCONDIDA (***.456.789-**): quem
+ *          digitar o telefone de um colega não lê a chave dele. Telefone que
+ *          ninguém tem: "conhecido: false", e a tela pede nome, função e Pix.
+ * POST { acao: "inscrever", telefone, turnoId, nome?, funcao?, pix?, pixTipo? }
  *        — inscreve (trava a vaga no banco); pessoa nova vira freelancer
- *          "veio pelo link". Devolve a chave de desistir, que só este aparelho
- *          guarda.
+ *          "veio pelo link" e TEM de dar o Pix (Douglas, 12/11/2026: "manda
+ *          ele colocar o Pix dele para facilitar na hora do pagamento"); quem
+ *          já é da loja e não tem Pix pode mandar junto (ou pular). Devolve a
+ *          chave de desistir, que só este aparelho guarda.
+ * POST { acao: "pix", telefone, pix, pixTipo?, chaves: [...] }
+ *        — grava/corrige o Pix. Quem já tem chave só troca com a chave de uma
+ *          inscrição feita NESTE aparelho (a mesma prova do desistir), e a
+ *          troca fica marcada para o dono conferir antes de pagar.
  * POST { acao: "desistir", inscricaoId, chave }
  *        — só com a chave e dentro do prazo da loja.
  *
@@ -23,12 +30,12 @@ import { prisma } from "@/lib/prisma";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
 import {
-  ErroDaEscala, desistirPeloLink, inscrever, inscricoesDaPessoa, lojaPeloCodigo, pessoasDaLoja, salvarFreelancer, turnosDoPeriodo,
-  type PessoaDaEscala,
+  ErroDaEscala, aparelhoDaPessoa, desistirPeloLink, gravarPixPeloLink, inscrever, inscricoesDaPessoa, lojaPeloCodigo, pessoasDaLoja, salvarFreelancer,
+  turnosDoPeriodo, type PessoaDaEscala,
 } from "@/lib/escala-da-equipe/banco";
 import {
-  DIAS_NO_LINK, acharPeloTelefone, agoraDaLoja, desistenciaAberta, funcaoNoLink, inscricaoAberta, normalizarFuncao, primeiroNome,
-  situacaoDasVagas, somarDias, telefoneUtilizavel, turnoJaTerminou,
+  DIAS_NO_LINK, acharPeloTelefone, agoraDaLoja, desistenciaAberta, funcaoNoLink, inscricaoAberta, lerChavePix, normalizarFuncao, pixMascarado,
+  primeiroNome, situacaoDasVagas, somarDias, telefoneUtilizavel, tipoDaChave, turnoJaTerminou,
 } from "@/lib/escala-da-equipe/regras";
 import { lerCorpo, respostaDoErro } from "@/lib/escala-da-equipe/sessao";
 
@@ -42,6 +49,10 @@ async function lojaDoLink(codigo: string) {
   const fuso = await fusoDaLoja(achada.lojaId);
   return { ...achada, fuso, agora: agoraDaLoja(fuso) };
 }
+
+/** O Pix que a própria pessoa vê: escondido, com o tipo. */
+const pixVisivel = (p: Pick<PessoaDaEscala, "pix" | "pixTipo">) =>
+  p.pix ? { mascarada: pixMascarado(p.pix, p.pixTipo), tipo: tipoDaChave(p.pix, p.pixTipo) } : null;
 
 /** Quem tem este telefone na loja — inclusive freelancer desativado (para dizer que está desativado). */
 async function quemTemOTelefone(lojaId: string, telefone: string) {
@@ -108,29 +119,55 @@ export async function POST(req: Request, { params }: { params: Promise<{ codigo:
       return NextResponse.json({
         conhecido: true,
         pessoa: { nome: primeiroNome(pessoa.nome), tipo: ROTULO[pessoa.tipo] },
+        pix: pixVisivel(pessoa),
         inscricoes: minhas
           .filter((t) => !turnoJaTerminou(t, l.agora))
           .map((t) => ({ inscricaoId: t.inscricaoId, turnoId: t.id, data: t.data, inicio: t.inicio, fim: t.fim, funcao: t.funcao, podeDesistir: desistenciaAberta(t, l.agora, l.config) })),
       });
     }
 
+    if (acao === "pix") {
+      if (!pessoa) return NextResponse.json({ error: "Primeiro se inscreva em um turno.", codigo: "PRECISA_NOME" }, { status: 400 });
+      const lida = lerChavePix(corpo.pix, corpo.pixTipo);
+      if (!lida.ok) return NextResponse.json({ error: lida.erro, codigo: "PIX_INVALIDO" }, { status: 400 });
+      if (pessoa.pix !== lida.chave) {
+        // Trocar a chave de quem já tem: só do aparelho que se inscreveu (ninguém
+        // troca o Pix do colega digitando o telefone dele).
+        if (pessoa.pix && !(await aparelhoDaPessoa(l.lojaId, pessoa, Array.isArray(corpo.chaves) ? corpo.chaves : []))) {
+          throw new ErroDaEscala("Para trocar a chave Pix, use o celular em que você se inscreveu — ou peça para a loja trocar.", 403, "OUTRO_APARELHO");
+        }
+        await gravarPixPeloLink(l.lojaId, pessoa, lida.chave, lida.tipo, !!pessoa.pix);
+      }
+      return NextResponse.json({ ok: true, pix: pixVisivel({ pix: lida.chave, pixTipo: lida.tipo }) });
+    }
+
     if (acao !== "inscrever") return NextResponse.json({ error: "Ação inválida." }, { status: 400 });
     if (!l.config.linkAtivo) throw new ErroDaEscala("A loja fechou as inscrições pelo link.", 409);
 
+    // O Pix que veio junto: obrigatório para quem é novo; para quem já é da loja
+    // e ainda não tem, grava (quem já tem não troca por aqui — é pela ação "pix").
+    const temPix = String(corpo.pix ?? "").trim() !== "";
+    const pix = temPix ? lerChavePix(corpo.pix, corpo.pixTipo) : null;
+    if (pix && !pix.ok) return NextResponse.json({ error: pix.erro, codigo: "PIX_INVALIDO" }, { status: 400 });
+
     if (!pessoa) {
-      // Pessoa nova: vira freelancer "veio pelo link" — com nome e função.
+      // Pessoa nova: vira freelancer "veio pelo link" — com nome, função e Pix.
       const nome = String(corpo.nome || "").trim();
       const funcao = normalizarFuncao(String(corpo.funcao || ""));
       if (nome.length < 2) return NextResponse.json({ error: "Escreva o seu nome.", codigo: "PRECISA_NOME" }, { status: 400 });
       if (!funcao) return NextResponse.json({ error: "Escolha a sua função.", codigo: "PRECISA_NOME" }, { status: 400 });
+      if (!pix?.ok) return NextResponse.json({ error: "Digite a sua chave Pix — é por ela que a loja te paga.", codigo: "PRECISA_PIX" }, { status: 400 });
       try {
-        await salvarFreelancer(l.lojaId, { nome, telefone, funcao }, { origem: "link", podeVerDiaria: false });
+        await salvarFreelancer(l.lojaId, { nome, telefone, funcao, pix: pix.chave, pixTipo: pix.tipo }, { origem: "link", podeVerDiaria: false });
       } catch (err) {
         // Dois toques ao mesmo tempo: o outro já criou — segue com ele.
         if (!(err instanceof ErroDaEscala && err.status === 409)) throw err;
       }
       pessoa = await quemTemOTelefone(l.lojaId, telefone);
       if (!pessoa) throw new ErroDaEscala("Não deu para cadastrar agora. Tente de novo.", 500);
+    } else if (pix?.ok && !pessoa.pix) {
+      await gravarPixPeloLink(l.lojaId, pessoa, pix.chave, pix.tipo, false);
+      pessoa = { ...pessoa, pix: pix.chave, pixTipo: pix.tipo };
     }
 
     const r = await inscrever(l.lojaId, String(corpo.turnoId || ""), { tipo: pessoa.tipo, id: pessoa.id, nome: pessoa.nome }, {
@@ -143,6 +180,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ codigo:
     return NextResponse.json({
       ok: true, inscricaoId: r.id, chave: r.chave,
       pessoa: { nome: primeiroNome(pessoa.nome), tipo: ROTULO[pessoa.tipo] },
+      pix: pixVisivel(pessoa),
       turno: { data: r.turno.data, inicio: r.turno.inicio, fim: r.turno.fim, funcao: r.turno.funcao },
     });
   } catch (err) {

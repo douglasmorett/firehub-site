@@ -5,8 +5,14 @@
  * quem está no grupo da equipe.
  *
  *  1. A pessoa digita o WhatsApp. Se for de motoboy, funcionário ou freelancer
- *     da loja, a página diz "Olá, João" e usa esse cadastro; se não, pede nome
- *     e função (vira freelancer "veio pelo link" na primeira inscrição).
+ *     da loja, a página diz "Olá, João" e usa esse cadastro; se não, pede nome,
+ *     função e a chave Pix (vira freelancer "veio pelo link" na primeira
+ *     inscrição).
+ *  1b. Pix (Douglas, 12/11/2026: "manda ele colocar o Pix dele para facilitar
+ *     na hora do pagamento"): quem já é da loja e não tem Pix vê o pedido no
+ *     topo e de novo ao tocar em "Quero esta vaga" (pode pular — volta a pedir
+ *     na próxima visita). A chave gravada aparece ESCONDIDA (***.456.789-**),
+ *     com "corrigir"; trocar uma chave que já existe só deste aparelho.
  *  2. Vê as vagas abertas das próximas semanas, por dia, e filtra por função.
  *  3. "Quero esta vaga" — o servidor trava a vaga (duas pessoas na última:
  *     só uma entra) e devolve a chave de desistir, que fica SÓ neste aparelho.
@@ -18,7 +24,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FUNCOES, chaveDaFuncao, diaPorExtenso, horarioDoTurno, prazoFalado, somarDias, telefoneUtilizavel } from "@/lib/escala-da-equipe/regras";
+import { FUNCOES, TIPOS_DE_PIX, chaveDaFuncao, diaPorExtenso, horarioDoTurno, lerChavePix, prazoFalado, somarDias, telefoneUtilizavel } from "@/lib/escala-da-equipe/regras";
 
 type TurnoAberto = { id: string; data: string; inicio: string; fim: string; funcao: string; obs: string | null; vagas: number; faltam: number; nomes: string[] };
 type Dados = {
@@ -27,7 +33,8 @@ type Dados = {
   turnos: TurnoAberto[];
 };
 type MinhaInscricao = { inscricaoId: string; turnoId: string; data: string; inicio: string; fim: string; funcao: string; podeDesistir: boolean };
-type Identidade = { conhecido: false } | { conhecido: true; pessoa: { nome: string; tipo: string }; inscricoes: MinhaInscricao[] };
+type PixVisivel = { mascarada: string; tipo: string | null };
+type Identidade = { conhecido: false } | { conhecido: true; pessoa: { nome: string; tipo: string }; pix: PixVisivel | null; inscricoes: MinhaInscricao[] };
 type Aviso = { tipo: "ok" | "erro"; texto: string };
 
 const COR = "#0F766E";
@@ -60,6 +67,12 @@ export default function EscalaPublicaClient({ codigo, loja }: { codigo: string; 
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [aviso, setAviso] = useState<Aviso | null>(null);
   const [desistindo, setDesistindo] = useState<string | null>(null);
+  // O Pix digitado (novo cadastro, pedido de quem não tem, ou correção) — não vai para o localStorage.
+  const [pix, setPix] = useState(""), [pixTipo, setPixTipo] = useState("");
+  const [corrigindoPix, setCorrigindoPix] = useState(false);
+  // "Agora não": vale só nesta visita — na próxima o pedido aparece de novo.
+  const [pulouPix, setPulouPix] = useState(false);
+  const [pedindoPix, setPedindoPix] = useState<TurnoAberto | null>(null);
 
   const carregar = useCallback(async () => {
     try { setDados(await chamar<Dados>(api)); setErro(null); } catch (e: any) { setErro(e.message); }
@@ -104,14 +117,42 @@ export default function EscalaPublicaClient({ codigo, loja }: { codigo: string; 
     gravar(CHAVE_TEL, null);
     setIdentidade(null);
     setTelefone("");
+    setPix(""); setPixTipo(""); setCorrigindoPix(false); setPulouPix(false);
   }
 
-  async function quero(t: TurnoAberto) {
+  const pixLido = pix.trim() ? lerChavePix(pix, pixTipo || undefined) : null;
+  const semPix = identidade?.conhecido === true && !identidade.pix;
+
+  /** Grava (ou corrige) o Pix de quem já é da loja. Trocar a chave que existe: o servidor confere a chave do aparelho. */
+  async function salvarPix() {
+    if (!pixLido?.ok) { setAviso({ tipo: "erro", texto: pixLido ? pixLido.erro : "Digite a sua chave Pix." }); return; }
+    setOcupado("pix");
+    try {
+      await chamar(api, { acao: "pix", telefone, pix, pixTipo: pixTipo || undefined, chaves: Object.values(chaves) });
+      setAviso({ tipo: "ok", texto: "Chave Pix salva. A loja usa ela para te pagar." });
+      setPix(""); setPixTipo(""); setCorrigindoPix(false);
+      await identificar(telefone, true);
+    } catch (e: any) {
+      setAviso({ tipo: "erro", texto: e.message });
+    } finally {
+      setOcupado(null);
+    }
+  }
+
+  async function quero(t: TurnoAberto, pixNaHora?: "salvar" | "pular") {
     if (!identidade) { setAviso({ tipo: "erro", texto: "Primeiro digite o seu WhatsApp lá em cima." }); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
     if (!identidade.conhecido && (nome.trim().length < 2 || !funcao)) { setAviso({ tipo: "erro", texto: "Escreva o seu nome e escolha a sua função lá em cima." }); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+    if (!identidade.conhecido && !pixLido?.ok) { setAviso({ tipo: "erro", texto: pixLido ? pixLido.erro : "Digite a sua chave Pix lá em cima — é por ela que a loja te paga." }); window.scrollTo({ top: 0, behavior: "smooth" }); return; }
+    // Já é da loja e não tem Pix: pede antes de reservar (dá para pular).
+    if (semPix && !pulouPix && !pixNaHora) { setPedindoPix(t); return; }
+    setPedindoPix(null);
+    const mandarPix = (!identidade.conhecido || (semPix && pixNaHora === "salvar")) && pixLido?.ok;
     setOcupado(t.id);
     try {
-      const r = await chamar<{ inscricaoId: string; chave: string | null }>(api, { acao: "inscrever", telefone, turnoId: t.id, nome, funcao });
+      const r = await chamar<{ inscricaoId: string; chave: string | null }>(api, {
+        acao: "inscrever", telefone, turnoId: t.id, nome, funcao, ...(mandarPix ? { pix, pixTipo: pixTipo || undefined } : {}),
+      });
+      if (mandarPix) { setPix(""); setPixTipo(""); }
       if (r.chave) {
         const novas = { ...chaves, [r.inscricaoId]: r.chave };
         setChaves(novas);
@@ -179,12 +220,31 @@ export default function EscalaPublicaClient({ codigo, loja }: { codigo: string; 
               <p className="escp-dica">Não precisa de senha nem de app. O número só serve para a loja saber quem é você.</p>
             </form>
           ) : identidade.conhecido ? (
-            <div className="escp-linha" style={{ alignItems: "center" }}>
-              <div style={{ flex: 1 }}>
-                <div className="escp-ola">Olá, {identidade.pessoa.nome}! 👋</div>
-                <div className="escp-dica" style={{ margin: 0 }}>{identidade.pessoa.tipo} · {telefone}</div>
+            <div>
+              <div className="escp-linha" style={{ alignItems: "center" }}>
+                <div style={{ flex: 1 }}>
+                  <div className="escp-ola">Olá, {identidade.pessoa.nome}! 👋</div>
+                  <div className="escp-dica" style={{ margin: 0 }}>{identidade.pessoa.tipo} · {telefone}</div>
+                </div>
+                <button type="button" className="escp-leve" onClick={sair}>Não sou eu</button>
               </div>
-              <button type="button" className="escp-leve" onClick={sair}>Não sou eu</button>
+              {identidade.pix && !corrigindoPix && (
+                <div className="escp-pix-ok">
+                  <span style={{ flex: 1 }}>💸 Seu Pix: <b>{identidade.pix.mascarada}</b></span>
+                  <button type="button" className="escp-link" onClick={() => { setCorrigindoPix(true); setPix(""); setPixTipo(""); }}>corrigir</button>
+                </div>
+              )}
+              {(corrigindoPix || (!identidade.pix && !pulouPix)) && (
+                <div className="escp-pix-pedido">
+                  <div style={{ fontWeight: 900, marginBottom: 4 }}>{corrigindoPix ? "Corrigir a sua chave Pix" : "💸 Informe a sua chave Pix"}</div>
+                  <p className="escp-dica" style={{ margin: "0 0 8px" }}>{corrigindoPix ? "Digite a chave nova. Só dá para trocar pelo celular em que você se inscreveu." : "A loja usa a sua chave para te pagar mais rápido."}</p>
+                  <CampoDoPix pix={pix} tipo={pixTipo} onPix={setPix} onTipo={setPixTipo} lido={pixLido} />
+                  <div className="escp-linha" style={{ marginTop: 10 }}>
+                    <button type="button" className="escp-leve" onClick={() => (corrigindoPix ? setCorrigindoPix(false) : setPulouPix(true))}>{corrigindoPix ? "Cancelar" : "Agora não"}</button>
+                    <button type="button" className="escp-botao" style={{ flex: 1, height: 40, fontSize: 15 }} disabled={ocupado === "pix"} onClick={salvarPix}>{ocupado === "pix" ? "Salvando…" : "Salvar Pix"}</button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div>
@@ -201,6 +261,8 @@ export default function EscalaPublicaClient({ codigo, loja }: { codigo: string; 
                   <button key={f} type="button" className={`escp-chip ${funcao === f ? "on" : ""}`} onClick={() => { setFuncao(f); gravar(CHAVE_NOVO, JSON.stringify({ nome, funcao: f })); }}>{f}</button>
                 ))}
               </div>
+              <label className="escp-rotulo" style={{ marginTop: 10 }}>Sua chave Pix <span style={{ fontWeight: 600, color: "#64748B" }}>(para a loja te pagar)</span></label>
+              <CampoDoPix pix={pix} tipo={pixTipo} onPix={setPix} onTipo={setPixTipo} lido={pixLido} />
             </div>
           )}
         </section>
@@ -277,7 +339,35 @@ export default function EscalaPublicaClient({ codigo, loja }: { codigo: string; 
         )}
         <p className="escp-rodape">Escala pelo FireHub</p>
       </div>
+
+      {pedindoPix && (
+        <div className="escp-fundo" role="dialog" aria-modal="true" onClick={(e) => { if (e.target === e.currentTarget) setPedindoPix(null); }}>
+          <div className="escp-janela">
+            <div className="escp-ola">Antes de reservar: qual a sua chave Pix?</div>
+            <p className="escp-dica" style={{ margin: "4px 0 10px" }}>A loja usa para te pagar mais rápido. {diaPorExtenso(pedindoPix.data)}, {horarioDoTurno(pedindoPix.inicio, pedindoPix.fim)} ({pedindoPix.funcao}).</p>
+            <CampoDoPix pix={pix} tipo={pixTipo} onPix={setPix} onTipo={setPixTipo} lido={pixLido} />
+            <button type="button" className="escp-botao cheio" disabled={!pixLido?.ok || !!ocupado} onClick={() => quero(pedindoPix, "salvar")}>Salvar Pix e quero a vaga</button>
+            <button type="button" className="escp-leve" style={{ width: "100%", marginTop: 8 }} disabled={!!ocupado} onClick={() => { setPulouPix(true); setPix(""); quero(pedindoPix, "pular"); }}>Pular por agora e quero a vaga</button>
+          </div>
+        </div>
+      )}
     </main>
+  );
+}
+
+/** A chave Pix com o tipo (automático ou escolhido) e o retorno na hora: "✓ CPF" ou o que está errado. */
+function CampoDoPix({ pix, tipo, onPix, onTipo, lido }: {
+  pix: string; tipo: string; onPix: (v: string) => void; onTipo: (v: string) => void; lido: ReturnType<typeof lerChavePix> | null;
+}) {
+  return (
+    <div>
+      <input className="escp-campo" style={{ display: "block" }} value={pix} maxLength={120} autoComplete="off" placeholder="CPF, celular, e-mail ou chave aleatória" onChange={(e) => onPix(e.target.value)} />
+      <div className="escp-chips" style={{ marginTop: 8 }}>
+        <button type="button" className={`escp-chip mini ${!tipo ? "on" : ""}`} onClick={() => onTipo("")}>Automático</button>
+        {TIPOS_DE_PIX.map((t) => <button key={t.tipo} type="button" className={`escp-chip mini ${tipo === t.tipo ? "on" : ""}`} onClick={() => onTipo(t.tipo)}>{t.rotulo}</button>)}
+      </div>
+      {lido && <div className={`escp-pix-retorno ${lido.ok ? "ok" : "erro"}`}>{lido.ok ? `✓ Chave ${TIPOS_DE_PIX.find((t) => t.tipo === lido.tipo)?.rotulo}` : lido.erro}</div>}
+    </div>
   );
 }
 
@@ -325,4 +415,13 @@ const CSS = `
 .escp-aviso.ok { background: #ECFDF5; color: #065F46; border-left: 5px solid #059669; }
 .escp-aviso.erro { background: #FEF2F2; color: #991B1B; border-left: 5px solid #DC2626; }
 .escp-rodape { text-align: center; font-size: 12px; color: #94A3B8; margin-top: 24px; }
+.escp-chip.mini { height: 30px; padding: 0 11px; font-size: 12.5px; }
+.escp-pix-ok { display: flex; align-items: center; gap: 8px; margin-top: 10px; background: #ECFDF5; color: #065F46; border-radius: 12px; padding: 9px 12px; font-size: 14px; }
+.escp-pix-pedido { margin-top: 12px; border: 2px solid #FCD34D; background: #FFFBEB; border-radius: 14px; padding: 12px; }
+.escp-pix-retorno { font-size: 13px; font-weight: 800; margin-top: 6px; }
+.escp-pix-retorno.ok { color: #047857; }
+.escp-pix-retorno.erro { color: #B45309; }
+.escp-link { border: 0; background: none; color: ${COR}; font-weight: 800; text-decoration: underline; cursor: pointer; font-size: 14px; font-family: inherit; }
+.escp-fundo { position: fixed; inset: 0; z-index: 60; background: rgba(15,23,42,.55); display: flex; align-items: flex-end; justify-content: center; padding: 12px; }
+.escp-janela { background: #fff; border-radius: 18px; padding: 18px 16px; width: 100%; max-width: 480px; box-shadow: 0 24px 60px rgba(2,6,23,.35); }
 `;

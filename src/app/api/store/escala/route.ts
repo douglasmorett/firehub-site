@@ -1,12 +1,13 @@
 /**
  * GET /api/store/escala?de=YYYY-MM-DD&ate=YYYY-MM-DD — a Escala da equipe do
  * período (lib/escala-da-equipe): os turnos com quem vem, a lista de pessoas,
- * a configuração do link e, só para o dono, a diária de cada inscrito e o
- * custo previsto.
+ * a configuração do link e, só para o dono, a diária de cada inscrito, o
+ * custo previsto e o pagamento de cada inscrito (pago, a pagar, pago no
+ * acerto do motoboy — lib/escala-da-equipe/banco.ts, itensDePagamento).
  */
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { configDaLoja, pessoasDaLoja, turnosDoPeriodo } from "@/lib/escala-da-equipe/banco";
+import { configDaLoja, itensDePagamento, pessoasDaLoja, turnosDoPeriodo } from "@/lib/escala-da-equipe/banco";
 import { agoraDaLoja, chaveDaPessoa, custoPrevisto, dataValida, numeroDoDia, periodoDaVisao } from "@/lib/escala-da-equipe/regras";
 import { respostaDoErro, sessaoDaEscala } from "@/lib/escala-da-equipe/sessao";
 
@@ -30,9 +31,16 @@ export async function GET(req: Request) {
     ]);
 
     const diaria = new Map(pessoas.map((p) => [chaveDaPessoa(p.tipo, p.id), p.diaria]));
+    // O pagamento de cada inscrito: só o dono vê (como a diária).
+    const pagamento = new Map(s.ehDono ? (await itensDePagamento(s.lojaId, turnos, pessoas)).map((i) => [i.inscricaoId, i]) : []);
     const comDiaria = turnos.map((t) => ({
       ...t,
-      inscritos: t.inscritos.map((i) => ({ ...i, diaria: s.ehDono ? diaria.get(chaveDaPessoa(i.pessoaTipo, i.pessoaId)) ?? null : null })),
+      inscritos: t.inscritos.map((i) => ({
+        ...i,
+        diaria: s.ehDono ? diaria.get(chaveDaPessoa(i.pessoaTipo, i.pessoaId)) ?? null : null,
+        pagamento: pagamento.get(i.id)?.pagamento ?? null,
+        acerto: pagamento.get(i.id)?.acerto ?? null,
+      })),
     }));
 
     return NextResponse.json({
