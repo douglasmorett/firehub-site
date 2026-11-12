@@ -49,7 +49,7 @@ const TELAS: Record<string, string[]> = {
   "/store/fiscal": ["fiscal"],
   "/store/impressoras": ["impressoras"],
   "/store/minha-loja": ["horarios", "entrega", "pagamento", "equipe", "fidelidade"],
-  "/store/integracoes": ["integracoes"],
+  "/store/integracoes": ["integracoes", "integracao-keeta"],
   "/store/extensao-ifood": ["extensao-ifood", "extensao-ifood-ao-vivo"],
   "/store/chatbot": ["chatbot"],
   "/store/roteirizacao": ["roteirizacao"],

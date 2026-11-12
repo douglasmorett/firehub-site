@@ -126,6 +126,7 @@ Os 28 vídeos foram aprovados pelo Douglas em 02/10/2026.
 | 28 | Config. | Integrações: conectar iFood e 99Food (`integracoes`) | Integrações |
 | 30 | Config. | Prazo automático no iFood: a extensão do Chrome (`extensao-ifood`, 03/10/2026) | Extensão iFood |
 | 31 | Vendas | Tráfego Pago: anúncios no Facebook e Instagram (`trafego-pago`, 12/10/2026; a conta da Meta é simulada no navegador, ver o roteiro) | Tráfego pago |
+| 32 | Config. | Integração: conectar a Keeta (`integracao-keeta`, 12/11/2026; a resposta da Keeta é simulada no navegador, ver o roteiro) | Integrações |
 
 Fora dos vídeos: Totem (EM TESTES) e Checklist e ponto (FireCheck).
 
