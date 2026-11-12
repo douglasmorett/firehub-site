@@ -78,7 +78,7 @@ function ModalDaSenha({ pedido, onResponder }: { pedido: PedidoDeSenha; onRespon
     <div
       role="dialog" aria-modal="true" aria-label={pedido.titulo}
       onClick={() => onResponder(null)}
-      style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+      style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.55)", zIndex: 10030, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
     >
       <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 18, padding: 22, width: "100%", maxWidth: 380, boxShadow: "0 20px 60px rgba(0,0,0,.3)", fontFamily: "inherit" }}>
         <h3 style={{ margin: "0 0 6px", fontSize: 18, fontWeight: 900, color: "#0F172A" }}>{pedido.titulo}</h3>

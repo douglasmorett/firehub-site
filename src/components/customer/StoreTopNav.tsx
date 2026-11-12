@@ -62,7 +62,7 @@ const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
 // ── Aviso que desce do topo e some sozinho (no lugar do alert()) ──────────
 // Mesma interface do components/AvisoNoTopo.tsx de outra frente, que ainda não
 // foi publicado: quando ele estiver no master, basta trocar este bloco pelo
-// import. Acima dos modais do caixa (zIndex 1000): o aviso da impressão sai
+// import. Acima dos modais do caixa (zIndex 10010): o aviso da impressão sai
 // com o modal ainda aberto.
 type Aviso = { tipo: "ok" | "erro" | "atencao" | "info"; titulo: string; detalhe?: string };
 const COR_DO_AVISO: Record<Aviso["tipo"], { cor: string; fundo: string }> = {
@@ -84,7 +84,7 @@ function AvisoNoTopo({ aviso, onFechar }: { aviso: Aviso | null; onFechar: () =>
       role={aviso.tipo === "erro" ? "alert" : "status"}
       onClick={onFechar}
       style={{
-        position: "fixed", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 2000,
+        position: "fixed", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 10020,
         width: "min(440px, calc(100vw - 24px))", background: fundo, borderLeft: `4px solid ${cor}`,
         borderRadius: 12, padding: "12px 14px", boxShadow: "0 10px 30px rgba(15,23,42,.18)", cursor: "pointer",
       }}
@@ -936,7 +936,10 @@ export default function StoreTopNav({
   const fmtDate = (d: Date) => d.toLocaleDateString("pt-BR") + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
   const overlay: React.CSSProperties = {
-    position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000,
+    // Acima da barra do celular (.fh-menu-barra, z 10002) e do Bill/Fale conosco
+    // (9999-10001): com 1000 o topo do modal — e o X — ficava embaixo da barra, e
+    // no app do celular não havia como fechar a pausa (Bruno/Holy Top, 12/11/2026).
+    position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 10010,
     display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
   };
   const card: React.CSSProperties = {
@@ -1160,7 +1163,7 @@ export default function StoreTopNav({
       {/* ── MENU DO CAIXA ABERTO ────────────────────────────────────────── */}
       {showCaixaMenu && (
         <div onClick={() => { setShowCaixaMenu(false); setMovTipo(null); setMovErro(""); }}
-             style={{ position:"fixed", inset:0, background:"rgba(15,23,42,0.5)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+             style={{ position:"fixed", inset:0, background:"rgba(15,23,42,0.5)", zIndex:10010, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
           <div onClick={e => e.stopPropagation()}
                style={{ background:"#fff", borderRadius:20, width:"100%", maxWidth:460, maxHeight:"90vh", overflowY:"auto", boxShadow:"0 20px 48px -12px rgba(15,23,42,0.28)", position:"relative" }}>
 
