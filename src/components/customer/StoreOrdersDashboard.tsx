@@ -635,6 +635,10 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   onOpenDeliveryModal,
   onFetchIfoodDriverQuote,
   onCancelIfoodDriver,
+  /** Algum app cotou este pedido (o botão só aparece assim). */
+  entregadorDisponivel = false,
+  /** O que o app disse da corrida chamada: quem vem, quando chega, se cancela. */
+  corrida,
   onDragStart,
   onDragEnd,
   setOrders,
@@ -1749,7 +1753,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
 
             {/* Entregador do iFood (Shipping) para pedido do canal próprio:
                 a cotação abre antes, com o custo, e só chama ao confirmar. */}
-            {recebeMotoboy && onFetchIfoodDriverQuote && !motivoParaNaoChamar(order) && (
+            {recebeMotoboy && onFetchIfoodDriverQuote && entregadorDisponivel && !motivoParaNaoChamar(order) && (
               <button
                 onClick={e => { e.stopPropagation(); onFetchIfoodDriverQuote(order.id); }}
                 title="Ver o custo nos apps (iFood, 99) e chamar um entregador para este pedido"
@@ -1758,22 +1762,45 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 🛵 Chamar entregador
               </button>
             )}
-            {!order.ifoodOrderId && ["IFOOD", "99FOOD"].includes(String(order.deliveryBy || "").toUpperCase()) && order.ifoodDriverStatus && (
-              <span style={{ ...ETIQUETA_NEUTRA, fontWeight: 800, color: "#EA1D2C", display: "inline-flex", alignItems: "center", flexWrap: "wrap", maxWidth: "100%" }}>
-                {`🛵 ${String(order.deliveryBy).toUpperCase() === "99FOOD" ? "99 Entrega" : "iFood"}${order.ifoodDriverName ? ` (${String(order.ifoodDriverName).split(" ")[0]})` : ""}: ${({
-                  REQUESTED: "procurando entregador", ASSIGNED: "entregador aceitou", GOING_TO_ORIGIN: "indo para a loja",
-                  ARRIVED_AT_ORIGIN: "chegou na loja", DISPATCHED: "a caminho do cliente", ARRIVED_AT_DESTINATION: "chegou no cliente",
-                  DELIVERED: "entregue",
-                } as Record<string, string>)[String(order.ifoodDriverStatus).toUpperCase()] || "procurando entregador"}`}
-                {onCancelIfoodDriver && !["ENTREGUE", "CANCELADO"].includes(order.status) && (
-                  <button
-                    onClick={e => { e.stopPropagation(); onCancelIfoodDriver(order.id); }}
-                    title="Cancelar o entregador chamado"
-                    style={{ marginLeft: 6, border: "none", background: "transparent", color: "#64748B", cursor: "pointer", fontWeight: 800, fontFamily: "inherit" }}
-                  >✕</button>
-                )}
-              </span>
-            )}
+            {!order.ifoodOrderId && ["IFOOD", "99FOOD"].includes(String(order.deliveryBy || "").toUpperCase()) && order.ifoodDriverStatus && (() => {
+              // Só o que o app respondeu: quem vem, quando chega na loja / no
+              // cliente, e se ainda dá para cancelar (e por que não).
+              const app = String(order.deliveryBy).toUpperCase() === "99FOOD" ? "99 Entrega" : "iFood";
+              const st = String(corrida?.status || order.ifoodDriverStatus).toUpperCase();
+              const etapa = ({
+                REQUESTED: "procurando entregador", ASSIGNED: "entregador aceitou", GOING_TO_ORIGIN: "indo para a loja",
+                ARRIVED_AT_ORIGIN: "chegou na loja", DISPATCHED: "a caminho do cliente", ARRIVED_AT_DESTINATION: "chegou no cliente",
+                DELIVERED: "entregue",
+              } as Record<string, string>)[st] || "procurando entregador";
+              const nome = corrida?.nome || order.ifoodDriverName;
+              const quando = corrida?.chegaNaLojaMin != null ? `chega na loja em ~${corrida.chegaNaLojaMin} min`
+                : corrida?.chegaNoClienteMin != null ? `chega no cliente em ~${corrida.chegaNoClienteMin} min` : null;
+              const podeCancelar = !["ENTREGUE", "CANCELADO"].includes(order.status) && (corrida ? corrida.podeCancelar === true : st === "REQUESTED");
+              return (
+                <div onClick={e => e.stopPropagation()} style={{ ...ETIQUETA_NEUTRA, display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, maxWidth: "100%", whiteSpace: "normal", color: "#1C1917" }}>
+                  <span style={{ fontWeight: 800, color: "#EA1D2C" }}>🛵 {app}: {etapa}</span>
+                  {nome && (
+                    <span style={{ fontWeight: 700 }}>
+                      {nome}{corrida?.veiculo ? ` · ${corrida.veiculo}` : ""}
+                      {corrida?.telefone && <a href={`tel:${String(corrida.telefone).replace(/\D/g, "")}`} style={{ marginLeft: 6, color: "#0F766E" }}>📞</a>}
+                    </span>
+                  )}
+                  {quando && <span style={{ fontWeight: 800, color: "#0F766E" }}>{quando}</span>}
+                  <span style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                    {corrida?.rastreio && <a href={corrida.rastreio} target="_blank" rel="noreferrer" style={{ color: "#334155", fontWeight: 700 }}>ver no mapa</a>}
+                    {onCancelIfoodDriver && podeCancelar && (
+                      <button onClick={() => onCancelIfoodDriver(order.id)} title="Cancelar a corrida no app"
+                        style={{ border: "none", background: "transparent", color: "#B91C1C", cursor: "pointer", fontWeight: 800, fontFamily: "inherit", padding: 0 }}>
+                        ✕ cancelar corrida
+                      </button>
+                    )}
+                  </span>
+                  {!podeCancelar && corrida?.porqueNaoCancela && !["ENTREGUE", "CANCELADO"].includes(order.status) && (
+                    <span style={{ fontSize: "0.68rem", color: "#64748B" }}>Não dá para cancelar: {corrida.porqueNaoCancela}</span>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* "puxou 19:42": o ENTREGADOR pegou este pedido pelo app (QR ou
                 número) — em oposição a "a loja atribuiu". É a testemunha
@@ -3690,6 +3717,67 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     finally { setIfoodDriverLoading(false); }
   };
 
+  // ── ENTREGADOR DOS APPS: só onde dá, e acompanhado depois de chamado ─────
+  // O botão "Chamar entregador" só aparece quando algum app cotou de verdade
+  // (cotação em segundo plano, vale 3 min). Depois de chamado, a cada 30 s o
+  // card mostra quem vem, quando chega e se ainda dá para cancelar — tudo como
+  // o app respondeu; nada é marcado sem a confirmação dele.
+  const [entregadorPode, setEntregadorPode] = useState<Record<string, { ok: boolean; em: number }>>({});
+  const [corridas, setCorridas] = useState<Record<string, any>>({});
+  const entregadorPodeRef = useRef(entregadorPode);
+  entregadorPodeRef.current = entregadorPode;
+  const ordersDoEntregadorRef = useRef<any[]>([]);
+  ordersDoEntregadorRef.current = orders;
+  const chaveDosCandidatos = orders.filter((o: any) => !motivoParaNaoChamar(o)).map((o: any) => o.id).join("|");
+  const corridaAtiva = (o: any) => !o.ifoodOrderId && ["IFOOD", "99FOOD"].includes(String(o.deliveryBy || "").toUpperCase())
+    && !!o.ifoodDriverStatus && !["ENTREGUE", "CANCELADO"].includes(o.status);
+  const chaveDasCorridas = orders.filter(corridaAtiva).map((o: any) => o.id).join("|");
+
+  useEffect(() => {
+    if (!chaveDosCandidatos) return;
+    let vivo = true;
+    const conferir = async () => {
+      const agora = Date.now();
+      const alvos = ordersDoEntregadorRef.current
+        .filter((o: any) => !motivoParaNaoChamar(o))
+        .filter((o: any) => { const c = entregadorPodeRef.current[o.id]; return !c || agora - c.em > 180_000; })
+        .slice(0, 8);
+      for (const o of alvos) {
+        try {
+          const d = await (await fetch(`/api/ifood/request-driver?orderId=${o.id}`)).json().catch(() => ({}));
+          if (!vivo) return;
+          setEntregadorPode(prev => ({ ...prev, [o.id]: { ok: d?.available === true, em: Date.now() } }));
+        } catch { /* sem rede: o botão fica escondido */ }
+      }
+    };
+    conferir();
+    const t = setInterval(conferir, 60_000);
+    return () => { vivo = false; clearInterval(t); };
+  }, [chaveDosCandidatos]);
+
+  useEffect(() => {
+    if (!chaveDasCorridas) return;
+    let vivo = true;
+    const acompanharTodas = async () => {
+      for (const o of ordersDoEntregadorRef.current.filter(corridaAtiva)) {
+        try {
+          const d = await (await fetch(`/api/ifood/request-driver?orderId=${o.id}&acao=acompanhar`)).json();
+          if (!vivo) return;
+          setCorridas(prev => ({ ...prev, [o.id]: d }));
+          if (d?.encerrado) {
+            showToast(`Pedido #${getDisplayOrderNumber(o)}: ${d.encerrado} A entrega voltou para a loja.`, "#B45309");
+            setOrders(prev => prev.map(x => x.id === o.id ? { ...x, ifoodDriverStatus: null, ifoodDriverName: null, deliveryBy: "MERCHANT" } : x));
+          } else if (d?.status && d.status !== o.ifoodDriverStatus) {
+            setOrders(prev => prev.map(x => x.id === o.id ? { ...x, ifoodDriverStatus: d.status, ifoodDriverName: d.nome ?? x.ifoodDriverName } : x));
+          }
+        } catch { /* tenta de novo em 30 s */ }
+      }
+    };
+    acompanharTodas();
+    const t = setInterval(acompanharTodas, 30_000);
+    return () => { vivo = false; clearInterval(t); };
+  }, [chaveDasCorridas]);
+
   const cancelIfoodDriver = async (orderId: string) => {
     if (!window.confirm("Cancelar o entregador do iFood deste pedido?")) return;
     try {
@@ -3699,7 +3787,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       setOrders(prev => prev.map(o =>
         o.id === orderId ? { ...o, ifoodDriverStatus: null, ifoodDriverName: null, ifoodDriverPhone: null, deliveryBy: null } : o
       ));
-      showToast("Entregador do iFood cancelado.", "#0F766E");
+      setCorridas(prev => { const n = { ...prev }; delete n[orderId]; return n; });
+      showToast("Corrida cancelada no app.", "#0F766E");
     } catch { showToast("Erro de conexão ao cancelar.", "#C92E09"); }
   };
 
@@ -7692,6 +7781,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onFetchIfoodDriverQuote={fetchIfoodDriverQuote}
                 onCancelIfoodDriver={cancelIfoodDriver}
+                entregadorDisponivel={entregadorPode[o.id]?.ok === true}
+                corrida={corridas[o.id]}
                   onDragStart={handleDragStart}
                   onDragEnd={handleDragEnd}
                   setOrders={setOrders}
@@ -7767,6 +7858,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onFetchIfoodDriverQuote={fetchIfoodDriverQuote}
                 onCancelIfoodDriver={cancelIfoodDriver}
+                entregadorDisponivel={entregadorPode[o.id]?.ok === true}
+                corrida={corridas[o.id]}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
                 setOrders={setOrders}
@@ -7814,6 +7907,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onFetchIfoodDriverQuote={fetchIfoodDriverQuote}
                 onCancelIfoodDriver={cancelIfoodDriver}
+                entregadorDisponivel={entregadorPode[o.id]?.ok === true}
+                corrida={corridas[o.id]}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
                 setOrders={setOrders}
@@ -7857,6 +7952,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onFetchIfoodDriverQuote={fetchIfoodDriverQuote}
                 onCancelIfoodDriver={cancelIfoodDriver}
+                entregadorDisponivel={entregadorPode[o.id]?.ok === true}
+                corrida={corridas[o.id]}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
                 setOrders={setOrders}
@@ -7897,6 +7994,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onFetchIfoodDriverQuote={fetchIfoodDriverQuote}
                 onCancelIfoodDriver={cancelIfoodDriver}
+                entregadorDisponivel={entregadorPode[o.id]?.ok === true}
+                corrida={corridas[o.id]}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
                 setOrders={setOrders}
@@ -7937,6 +8036,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onFetchIfoodDriverQuote={fetchIfoodDriverQuote}
                 onCancelIfoodDriver={cancelIfoodDriver}
+                entregadorDisponivel={entregadorPode[o.id]?.ok === true}
+                corrida={corridas[o.id]}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
                 setOrders={setOrders}
@@ -7979,6 +8080,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 onOpenDeliveryModal={(ord: any) => setDeliveryInfoModalOrder(ord)}
                 onFetchIfoodDriverQuote={fetchIfoodDriverQuote}
                 onCancelIfoodDriver={cancelIfoodDriver}
+                entregadorDisponivel={entregadorPode[o.id]?.ok === true}
+                corrida={corridas[o.id]}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
                 setOrders={setOrders}

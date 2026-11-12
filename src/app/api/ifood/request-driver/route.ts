@@ -25,7 +25,7 @@ import { contextoIfood, type ContextoIfood } from "@/lib/ifood-token";
 import { mensagemDeErro } from "@/lib/ifood-http";
 import {
   consultarDisponibilidade, registrarPedido, gravarPedidoShipping, garantirTabelaDoShipping,
-  motivosDeCancelamento, cancelarPedido, type Endereco,
+  motivosDeCancelamento, cancelarPedido, rastreioDoPedido, distanciaEmMetros, type Endereco,
 } from "@/lib/ifood-shipping";
 import {
   motivoParaNaoChamar, pagamentoParaIfood, entradaDoPedido, telefoneParaIfood, ehDa99ComEntregaDaLoja,
@@ -35,12 +35,13 @@ import { cepDoEndereco, buscarCep } from "@/lib/cep";
 import { cobrancaNaEntrega } from "@/lib/pagamento-na-entrega";
 import { tokensParaOPedido } from "@/lib/food99-status";
 import {
-  ativar99Entrega, cotar99Entrega, pedir99Entrega, cancelar99Entrega, type EnderecoEntrega99,
+  ativar99Entrega, cotar99Entrega, pedir99Entrega, cancelar99Entrega, detalhe99Entrega, type EnderecoEntrega99,
 } from "@/lib/food99-api";
 
 const SELECT_PEDIDO = {
   id: true, franchiseeId: true, status: true, deliveryType: true, source: true, ifoodOrderId: true,
   openDeliveryChannel: true, openDeliveryOrderId: true, motoboyId: true, ifoodDriverStatus: true, deliveryBy: true,
+  ifoodDriverName: true, ifoodDriverPhone: true, ifoodDriverVehicle: true, ifoodDriverPhotoUrl: true,
   customerName: true, customerPhone: true, customerAddress: true, customerLatLng: true,
   totalAmount: true, deliveryFee: true, paymentMethod: true, changeAmount: true, dailyOrderNumber: true,
   franchisee: { select: { city: true, storeName: true, storePhone: true, storeAddress: true, storeLatLng: true } },
@@ -188,6 +189,7 @@ export async function GET(req: NextRequest) {
   if (!email) return NextResponse.json({ error: "Faça login para continuar." }, { status: 401 });
   const pedido = await pedidoDaLoja(email, req.nextUrl.searchParams.get("orderId") ?? "");
   if (!pedido) return NextResponse.json({ available: false, error: "Pedido não encontrado nesta loja." }, { status: 404 });
+  if (req.nextUrl.searchParams.get("acao") === "acompanhar") return NextResponse.json(await acompanhar(email, pedido));
   const motivo = motivoParaNaoChamar(pedido);
   if (motivo) return NextResponse.json({ available: false, error: motivo });
   const ponto = pontoDoPedido(pedido);
@@ -299,13 +301,14 @@ export async function DELETE(req: NextRequest) {
     }
     if (!ok) return NextResponse.json({ error: `99 Entrega: ${erro}` }, { status: 409 });
   } else {
+    // Sem a corrida não há o que cancelar no iFood: limpar o card aqui faria
+    // a loja achar que cancelou enquanto o entregador continua vindo.
     const corrida = await corridaDoPedido(pedido.id);
-    if (corrida) {
-      const ctx = await ctxDoIfood(email);
-      if (!ctx) return NextResponse.json({ error: "iFood não conectado pelo app novo." }, { status: 409 });
-      const c = await cancelarCorridaIfood(ctx, corrida);
-      if (!c.ok) return NextResponse.json({ error: c.erro }, { status: 409 });
-    }
+    if (!corrida) return NextResponse.json({ error: "Não achei a corrida deste pedido no iFood. Cancele pelo Gestor do iFood." }, { status: 409 });
+    const ctx = await ctxDoIfood(email);
+    if (!ctx) return NextResponse.json({ error: "iFood não conectado pelo app novo." }, { status: 409 });
+    const c = await cancelarCorridaIfood(ctx, corrida);
+    if (!c.ok) return NextResponse.json({ error: c.erro }, { status: 409 });
   }
   // Volta a ser entrega da loja (no pedido da 99, "MERCHANT" como veio).
   await prisma.customerOrder.update({
@@ -317,4 +320,93 @@ export async function DELETE(req: NextRequest) {
     } as any,
   });
   return NextResponse.json({ success: true });
+}
+
+// ── acompanhar a corrida (o card mostra quem vem e quando chega) ───────────
+
+/** 99 Entrega → o mesmo carimbo de status que o card já entende. */
+const STATUS_DA_99: Record<string, string> = {
+  finding: "REQUESTED", waiting: "GOING_TO_ORIGIN", delivering: "DISPATCHED",
+  completed: "DELIVERED", sendback: "DISPATCHED", sendbackCompleted: "DELIVERED",
+};
+
+/** Minutos até a loja pela distância em linha reta (moto a ~25 km/h, mínimo 1). */
+function minutosAte(de: { lat: number; lng: number } | null, para: { lat: number; lng: number } | null): number | null {
+  if (!de || !para || ![de.lat, de.lng, para.lat, para.lng].every((n) => Number.isFinite(Number(n)))) return null;
+  const m = distanciaEmMetros({ latitude: Number(de.lat), longitude: Number(de.lng) }, { latitude: Number(para.lat), longitude: Number(para.lng) });
+  return Math.max(1, Math.round((m * 1.3) / (25000 / 60)));
+}
+
+/**
+ * Quem está vindo e quanto falta — direto do app, para a loja não abrir a
+ * tela do iFood/99. Só reflete o que o app respondeu: corrida que o app
+ * cancelou/fechou volta para a entrega da loja, e nada é inventado.
+ */
+async function acompanhar(email: string, pedido: any) {
+  const app = String(pedido.deliveryBy || "").toUpperCase() === "99FOOD" ? "99" : "IFOOD";
+  const base = {
+    app, status: pedido.ifoodDriverStatus as string | null, nome: pedido.ifoodDriverName as string | null,
+    telefone: pedido.ifoodDriverPhone as string | null, veiculo: pedido.ifoodDriverVehicle as string | null,
+    foto: pedido.ifoodDriverPhotoUrl as string | null, chegaNaLojaMin: null as number | null,
+    chegaNoClienteMin: null as number | null, rastreio: null as string | null,
+    podeCancelar: false, porqueNaoCancela: null as string | null,
+  };
+  const jaComOPedido = ["DISPATCHED", "ARRIVED_AT_DESTINATION", "DELIVERED"].includes(String(pedido.ifoodDriverStatus));
+  if (!pedido.ifoodDriverStatus) return base;
+
+  if (app === "99") {
+    for (const t of await tokensParaOPedido(pedido.franchiseeId)) {
+      const r = await detalhe99Entrega(t, pedido.openDeliveryOrderId);
+      if (r.errno !== 0 || !r.data) continue;
+      const d: any = r.data;
+      const status = STATUS_DA_99[String(d.status)] ?? null;
+      if (!status) {
+        // canceled / closed (ninguém aceitou ou o suporte fechou): é a 99 dizendo que não vem.
+        await prisma.customerOrder.update({
+          where: { id: pedido.id },
+          data: { ifoodDriverStatus: null, ifoodDriverName: null, ifoodDriverPhone: null, ifoodDriverRequestedAt: null, deliveryBy: "MERCHANT" } as any,
+        });
+        return { ...base, status: null, encerrado: d.status === "closed" ? "A 99 fechou a corrida (nenhum entregador aceitou)." : "A 99 cancelou a corrida." };
+      }
+      const drv = d.driver_info || {};
+      const veiculo = drv.vehicle_info ? [drv.vehicle_info.color, drv.vehicle_info.plate_no].filter(Boolean).join(" ") : null;
+      await prisma.customerOrder.update({
+        where: { id: pedido.id },
+        data: { ifoodDriverStatus: status, ...(drv.name ? { ifoodDriverName: drv.name } : {}), ...(drv.phone ? { ifoodDriverPhone: drv.phone } : {}), ...(veiculo ? { ifoodDriverVehicle: veiculo } : {}), ...(drv.avatar ? { ifoodDriverPhotoUrl: drv.avatar } : {}) } as any,
+      });
+      const loja = pedido.franchisee?.storeLatLng ?? null;
+      const cliente = pedido.customerLatLng ?? null;
+      return {
+        ...base, status, nome: drv.name ?? base.nome, telefone: drv.phone ?? base.telefone, veiculo: veiculo ?? base.veiculo,
+        foto: drv.avatar ?? base.foto, rastreio: d.tracking_link || null,
+        podeCancelar: status === "REQUESTED" || status === "GOING_TO_ORIGIN",
+        porqueNaoCancela: status === "REQUESTED" || status === "GOING_TO_ORIGIN" ? null : "O entregador da 99 já está com o pedido.",
+        chegaNaLojaMin: status === "GOING_TO_ORIGIN" ? minutosAte(drv.location, loja) : null,
+        chegaNoClienteMin: status === "DISPATCHED" ? minutosAte(drv.location, cliente) : null,
+      };
+    }
+    return base;
+  }
+
+  const corrida = await corridaDoPedido(pedido.id);
+  const ctx = corrida ? await ctxDoIfood(email) : null;
+  if (!corrida || !ctx) return base;
+  const linha: any[] = await prisma.$queryRaw`SELECT "trackingUrl" FROM "IfoodShippingPedido" WHERE "ifoodOrderId" = ${corrida} LIMIT 1`;
+  const r = await rastreioDoPedido(ctx, corrida);
+  const t: any = r.ok ? r.data ?? {} : {};
+  const seg = (v: any) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Math.ceil(Number(v) / 60) : null);
+  // Quem diz se ainda dá para cancelar é o iFood: a lista de motivos dele
+  // para esta corrida. Vazia ou recusada = não dá, com o motivo que ele deu.
+  let podeCancelar = false;
+  let porqueNaoCancela: string | null = "O entregador do iFood já está com o pedido.";
+  if (!jaComOPedido) {
+    const m = await motivosDeCancelamento(ctx, corrida);
+    podeCancelar = m.ok && Array.isArray(m.data) && m.data.length > 0;
+    porqueNaoCancela = podeCancelar ? null : m.ok ? "O iFood não oferece mais cancelamento nesta etapa da corrida." : `O iFood recusou o cancelamento: ${mensagemDeErro(m)}`;
+  }
+  return {
+    ...base, rastreio: linha[0]?.trackingUrl ?? null, podeCancelar, porqueNaoCancela,
+    chegaNaLojaMin: ["ASSIGNED", "GOING_TO_ORIGIN"].includes(String(base.status)) ? seg(t.pickupEtaStart) : null,
+    chegaNoClienteMin: ["DISPATCHED"].includes(String(base.status)) ? seg(t.deliveryEtaEnd) : null,
+  };
 }
