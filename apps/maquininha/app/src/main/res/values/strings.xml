@@ -154,6 +154,12 @@
     <string name="garcom_cobranca_viva">%1$s esperando na maquininha.</string>
     <string name="garcom_acompanhar">Acompanhar a cobrança</string>
     <string name="garcom_ja_tem_cobranca">Já tem uma cobrança desta mesa na maquininha. Acompanhe ou cancele antes de mandar outra.</string>
+    <string name="garcom_imprimir_conta">Imprimir conta</string>
+    <string name="garcom_imprimindo">Imprimindo a conta…</string>
+    <string name="garcom_conta_impressa">Conta impressa.</string>
+    <string name="garcom_imprimir_ocupada">A maquininha está cobrando agora. Imprima a conta quando a cobrança terminar.</string>
+    <string name="garcom_conta_impressa_titulo">CONTA DA MESA</string>
+    <string name="garcom_nao_e_fiscal">Não é documento fiscal</string>
 
     <string name="garcom_carregando_cardapio">Carregando o cardápio…</string>
     <string name="garcom_cardapio_vazio">Nenhum item liberado para o salão. Confira o cardápio no painel.</string>

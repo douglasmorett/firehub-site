@@ -330,4 +330,64 @@ object CobradorCielo : CobradorPorDeeplink() {
         Log.e(ETIQUETA, "Ordem $ordem voltou sem pagamento com statusCode 2.")
         return incerto("A Cielo devolveu a venda sem o cancelamento.")
     }
+
+    override val imprime = true
+
+    /** Imprimir não mexe em dinheiro: um minuto basta, e o garçom não fica preso três. */
+    private const val PRAZO_DA_IMPRESSAO_MS = 60_000L
+
+    /**
+     * Impressão na bobina da própria Cielo Smart, pela mesma ponte da cobrança.
+     *
+     * Ida (docs.cielo.com.br/cielo-smart/docs/impressao):
+     *   lio://print?request=<Base64(JSON)>&urlCallback=firehubcielo://response
+     *   JSON = {"operation":"PRINT_TEXT","styles":[{...}],"value":["linha\nlinha\n"]}
+     *   Uma chamada só com o texto inteiro, como a documentação recomenda.
+     *
+     * Volta: response=<Base64(JSON)> com {"code","message"}:
+     *   0 = SUCCESS, 1 = WITHOUT PAPER, 2 = erro de impressão.
+     */
+    override fun imprimir(texto: String): String? {
+        exigirThreadDeTrabalho()
+        val app = contexto ?: return "Aplicação não iniciada."
+
+        // O mapa "alignLeft" do exemplo da documentação: esquerda, fonte 0, tamanho 20.
+        val estilo = JSONObject()
+            .put("key_attributes_align", 1)
+            .put("key_attributes_typeface", 0)
+            .put("key_attributes_textsize", 20)
+        val pedido = JSONObject()
+            .put("operation", "PRINT_TEXT")
+            .put("styles", JSONArray().put(estilo))
+            .put("value", JSONArray().put(texto))
+
+        // Mesmo cuidado da cobrança: NO_WRAP e appendQueryParameter.
+        val base64 = Base64.encodeToString(pedido.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        val uri = Uri.Builder()
+            .scheme("lio")
+            .authority("print")
+            .appendQueryParameter("request", base64)
+            .appendQueryParameter("urlCallback", CALLBACK)
+            .build()
+        val saida = Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        val desfecho = CanalDaPonte.executar(
+            app, saida, respostaPorResultado, "IMPRESSAO" + System.currentTimeMillis(), PRAZO_DA_IMPRESSAO_MS,
+        )
+        return when (desfecho) {
+            is CanalDaPonte.Desfecho.NaoAbriu -> "Não foi possível abrir a impressão da Cielo."
+            is CanalDaPonte.Desfecho.SemResposta -> "A Cielo não disse se a conta saiu. Confira o papel antes de imprimir de novo."
+            is CanalDaPonte.Desfecho.Respondeu -> {
+                val json = ((desfecho.resposta as? CanalDaPonte.Resposta.PorUri)?.uri?.getQueryParameter("response"))
+                    ?.let { decodificar(it) }
+                when {
+                    json == null || !json.has("code") -> "A Cielo respondeu algo inesperado. Confira o papel."
+                    json.optInt("code", -1) == 0 -> null
+                    json.optInt("code", -1) == 1 -> "Sem papel na maquininha. Troque a bobina e imprima de novo."
+                    else -> "A Cielo não conseguiu imprimir" +
+                        (json.optString("message", "").trim().ifBlank { null }?.let { ": $it" } ?: ".")
+                }
+            }
+        }
+    }
 }

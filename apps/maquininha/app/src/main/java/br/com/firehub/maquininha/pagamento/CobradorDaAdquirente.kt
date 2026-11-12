@@ -111,6 +111,18 @@ interface CobradorDaAdquirente {
      */
     fun estornar(estorno: PedidoDeEstorno, aoProgredir: (String) -> Unit): ResultadoDoEstorno =
         ResultadoDoEstorno(ResultadoDoEstorno.RECUSADO, "Estorno automático não disponível nesta maquininha.")
+
+    /** Se [imprimir] funciona neste APK. O botão "Imprimir conta" do garçom só aparece com isto. */
+    val imprime: Boolean get() = false
+
+    /**
+     * Imprime `texto` (linhas separadas por "\n") na impressora da própria
+     * maquininha. Bloqueia como `cobrar`: nunca da thread principal.
+     *
+     * Só a Cielo implementa (lio://print). Devolve nulo quando a adquirente
+     * confirmou a impressão; senão, o motivo para mostrar ao garçom.
+     */
+    fun imprimir(texto: String): String? = "Impressão não disponível nesta maquininha."
 }
 
 /**
