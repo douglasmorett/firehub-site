@@ -13,9 +13,15 @@
  *     topo e de novo ao tocar em "Quero esta vaga" (pode pular — volta a pedir
  *     na próxima visita). A chave gravada aparece ESCONDIDA (***.456.789-**),
  *     com "corrigir"; trocar uma chave que já existe só deste aparelho.
- *  2. Vê as vagas abertas das próximas semanas, por dia, e filtra por função.
+ *  2. Vê um CALENDÁRIO do mês com os dias que têm vaga (Lucas/Frangoso,
+ *     13/11/2026: a lista de todas as vagas das próximas semanas era enorme e
+ *     o pessoal se perdia). Toca no dia e vê só as vagas daquele dia; filtra
+ *     por função.
  *  3. "Quero esta vaga" — o servidor trava a vaga (duas pessoas na última:
  *     só uma entra) e devolve a chave de desistir, que fica SÓ neste aparelho.
+ *     Depois de escolher, a tela mostra SÓ o que ela escolheu (e o botão para
+ *     escolher outro dia). O WhatsApp da loja manda o link para ela tocar em
+ *     "Aceito" e baixar o PDF do mês (./minha/<token>).
  *  4. "Minhas inscrições": desistir só com essa chave e dentro do prazo da
  *     loja — ninguém tira o colega digitando o telefone dele.
  *
@@ -24,7 +30,10 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FUNCOES, TIPOS_DE_PIX, chaveDaFuncao, diaPorExtenso, horarioDoTurno, lerChavePix, prazoFalado, somarDias, telefoneUtilizavel } from "@/lib/escala-da-equipe/regras";
+import {
+  DIAS_NO_LINK, FUNCOES, NOMES_CURTOS_DOS_DIAS, TIPOS_DE_PIX, chaveDaFuncao, diaPorExtenso, horarioDoTurno, inicioDoMes, lerChavePix, mesPorExtenso, navegar,
+  prazoFalado, semanasDoMes, somarDias, telefoneUtilizavel,
+} from "@/lib/escala-da-equipe/regras";
 
 type TurnoAberto = { id: string; data: string; inicio: string; fim: string; funcao: string; obs: string | null; vagas: number; faltam: number; nomes: string[] };
 type Dados = {
@@ -32,7 +41,7 @@ type Dados = {
   regras: { linkAtivo: boolean; prazoInscricaoHoras: number; permiteDesistir: boolean; prazoDesistenciaHoras: number };
   turnos: TurnoAberto[];
 };
-type MinhaInscricao = { inscricaoId: string; turnoId: string; data: string; inicio: string; fim: string; funcao: string; podeDesistir: boolean };
+type MinhaInscricao = { inscricaoId: string; turnoId: string; data: string; inicio: string; fim: string; funcao: string; podeDesistir: boolean; aceito: boolean };
 type PixVisivel = { mascarada: string; tipo: string | null };
 type Identidade = { conhecido: false } | { conhecido: true; pessoa: { nome: string; tipo: string }; pix: PixVisivel | null; inscricoes: MinhaInscricao[] };
 type Aviso = { tipo: "ok" | "erro"; texto: string };
@@ -73,6 +82,10 @@ export default function EscalaPublicaClient({ codigo, loja }: { codigo: string; 
   // "Agora não": vale só nesta visita — na próxima o pedido aparece de novo.
   const [pulouPix, setPulouPix] = useState(false);
   const [pedindoPix, setPedindoPix] = useState<TurnoAberto | null>(null);
+  // O calendário: o mês à vista, o dia tocado e o que ela acabou de escolher nesta visita.
+  const [mes, setMes] = useState<string | null>(null);
+  const [dia, setDia] = useState<string | null>(null);
+  const [escolhidos, setEscolhidos] = useState<TurnoAberto[]>([]);
 
   const carregar = useCallback(async () => {
     try { setDados(await chamar<Dados>(api)); setErro(null); } catch (e: any) { setErro(e.message); }
@@ -109,9 +122,16 @@ export default function EscalaPublicaClient({ codigo, loja }: { codigo: string; 
 
   const funcoes = useMemo(() => [...new Set((dados?.turnos || []).map((t) => t.funcao))], [dados]);
   const turnos = (dados?.turnos || []).filter((t) => !filtro || chaveDaFuncao(t.funcao) === chaveDaFuncao(filtro));
-  const dias = [...new Set(turnos.map((t) => t.data))].sort();
+  // Quantas vagas abertas em cada dia (já com o filtro de função): o número dentro do quadradinho.
   const minhas = identidade?.conhecido ? identidade.inscricoes : [];
   const estou = new Set(minhas.map((i) => i.turnoId));
+  const vagasDoDia = new Map<string, number>();
+  for (const t of turnos) if (!estou.has(t.id)) vagasDoDia.set(t.data, (vagasDoDia.get(t.data) || 0) + t.faltam);
+  const diasMeus = new Set(minhas.map((i) => i.data));
+  // O mês que abre: o do primeiro dia com vaga (ou o de hoje). O link só mostra ~3 semanas à frente.
+  const primeiroMes = dados ? inicioDoMes([...vagasDoDia.keys()].sort()[0] || dados.hoje) : null;
+  const mesVisto = mes || primeiroMes;
+  const ultimoMes = dados ? inicioDoMes(somarDias(dados.hoje, DIAS_NO_LINK)) : null;
 
   function sair() {
     gravar(CHAVE_TEL, null);
@@ -159,6 +179,10 @@ export default function EscalaPublicaClient({ codigo, loja }: { codigo: string; 
         gravar(CHAVE_CHAVES, JSON.stringify(novas));
       }
       setAviso({ tipo: "ok", texto: `Pronto! Você está na escala: ${diaPorExtenso(t.data)}, ${horarioDoTurno(t.inicio, t.fim)} (${t.funcao}).` });
+      // Mostra só o que ela escolheu — o calendário volta no "escolher outro dia".
+      setEscolhidos((x) => [...x.filter((y) => y.id !== t.id), t]);
+      setDia(null);
+      window.scrollTo({ top: 0, behavior: "smooth" });
       await Promise.all([carregar(), identificar(telefone, true)]);
     } catch (e: any) {
       setAviso({ tipo: "erro", texto: e.message });
@@ -183,6 +207,18 @@ export default function EscalaPublicaClient({ codigo, loja }: { codigo: string; 
     } finally {
       setOcupado(null);
       setDesistindo(null);
+    }
+  }
+
+  /** O link pessoal (aceite + PDF): o servidor só dá para o aparelho que fez uma inscrição desta pessoa. */
+  async function abrirMinhaEscala() {
+    setOcupado("meu-link");
+    try {
+      const r = await chamar<{ link: string }>(api, { acao: "meu-link", telefone, chaves: Object.values(chaves) });
+      window.location.href = r.link;
+    } catch (e: any) {
+      setAviso({ tipo: "erro", texto: e.message });
+      setOcupado(null);
     }
   }
 
@@ -267,9 +303,31 @@ export default function EscalaPublicaClient({ codigo, loja }: { codigo: string; 
           )}
         </section>
 
-        {minhas.length > 0 && (
+        {escolhidos.length > 0 && (
+          <section className="escp-cartao escp-escolhidos">
+            <h2>✅ Você escolheu</h2>
+            {escolhidos.map((t) => (
+              <div key={t.id} className="escp-minha">
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="escp-dia">{diaPorExtenso(t.data)}</div>
+                  <div><b>{horarioDoTurno(t.inicio, t.fim)}</b> · {t.funcao}</div>
+                </div>
+              </div>
+            ))}
+            <p className="escp-dica">A loja manda no seu WhatsApp o link para você tocar em <b>Aceito</b> e baixar o PDF da sua escala do mês.</p>
+            <div className="escp-linha" style={{ marginTop: 10, flexWrap: "wrap" }}>
+              <button type="button" className="escp-botao" style={{ flex: 1, height: 44, fontSize: 15 }} onClick={() => setEscolhidos([])}>Escolher outro dia</button>
+              <button type="button" className="escp-leve" style={{ flex: 1, height: 44 }} disabled={ocupado === "meu-link"} onClick={abrirMinhaEscala}>📄 Minha escala</button>
+            </div>
+          </section>
+        )}
+
+        {minhas.length > 0 && escolhidos.length === 0 && (
           <section className="escp-cartao">
-            <h2>Minhas inscrições</h2>
+            <div className="escp-linha" style={{ alignItems: "center", marginBottom: 4 }}>
+              <h2 style={{ flex: 1, margin: 0 }}>Minhas inscrições</h2>
+              <button type="button" className="escp-link" disabled={ocupado === "meu-link"} onClick={abrirMinhaEscala}>📄 aceite e PDF</button>
+            </div>
             {minhas.map((i) => {
               const temChave = !!chaves[i.inscricaoId];
               return (
@@ -277,6 +335,7 @@ export default function EscalaPublicaClient({ codigo, loja }: { codigo: string; 
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="escp-dia">{diaPorExtenso(i.data)}{i.data === dados?.hoje ? " · hoje" : i.data === (dados && somarDias(dados.hoje, 1)) ? " · amanhã" : ""}</div>
                     <div><b>{horarioDoTurno(i.inicio, i.fim)}</b> · {i.funcao}</div>
+                    <div className={`escp-aceite ${i.aceito ? "ok" : ""}`}>{i.aceito ? "✓ aceito por você" : "aguardando o seu aceite (link no WhatsApp)"}</div>
                   </div>
                   {i.podeDesistir && temChave ? (
                     desistindo === i.inscricaoId ? (
@@ -297,10 +356,10 @@ export default function EscalaPublicaClient({ codigo, loja }: { codigo: string; 
         {erro && <section className="escp-cartao erro">{erro}</section>}
         {regras && !regras.linkAtivo && <section className="escp-cartao">⏸️ A loja fechou as inscrições pelo link por enquanto.</section>}
 
-        {regras?.linkAtivo && (
+        {regras?.linkAtivo && escolhidos.length === 0 && (
           <>
             <div className="escp-titulo-vagas">
-              <h2>Vagas abertas</h2>
+              <h2>{dia ? maiuscula(diaPorExtenso(dia)) : "Escolha o dia"}</h2>
               {funcoes.length > 1 && (
                 <div className="escp-chips">
                   <button type="button" className={`escp-chip ${!filtro ? "on" : ""}`} onClick={() => setFiltro("")}>Todas</button>
@@ -308,12 +367,16 @@ export default function EscalaPublicaClient({ codigo, loja }: { codigo: string; 
                 </div>
               )}
             </div>
-            {!dados ? <p className="escp-dica">Carregando…</p> : dias.length === 0 ? (
-              <section className="escp-cartao"><p className="escp-dica" style={{ margin: 0 }}>Nenhuma vaga aberta agora. Quando a loja abrir, aparece aqui — guarde este link.</p></section>
-            ) : dias.map((d) => (
-              <section key={d}>
-                <div className="escp-dia-cabeca">{diaPorExtenso(d)}{d === dados.hoje ? " · hoje" : d === somarDias(dados.hoje, 1) ? " · amanhã" : ""}</div>
-                {turnos.filter((t) => t.data === d).map((t) => (
+            {!dados || !mesVisto ? <p className="escp-dica">Carregando…</p> : dia ? (
+              <section>
+                <button type="button" className="escp-leve" style={{ marginBottom: 10 }} onClick={() => setDia(null)}>‹ Voltar ao calendário</button>
+                {minhas.filter((i) => i.data === dia).map((i) => (
+                  <div key={i.inscricaoId} className="escp-estou" style={{ marginTop: 0, marginBottom: 10 }}>✓ Você já está: {horarioDoTurno(i.inicio, i.fim)} · {i.funcao}</div>
+                ))}
+                {!turnos.some((t) => t.data === dia && !estou.has(t.id)) && (
+                  <section className="escp-cartao"><p className="escp-dica" style={{ margin: 0 }}>Nenhuma outra vaga aberta neste dia{filtro ? ` para ${filtro}` : ""}.</p></section>
+                )}
+                {turnos.filter((t) => t.data === dia && !estou.has(t.id)).map((t) => (
                   <div key={t.id} className="escp-turno">
                     <div className="escp-turno-topo">
                       <div>
@@ -324,17 +387,41 @@ export default function EscalaPublicaClient({ codigo, loja }: { codigo: string; 
                     </div>
                     {t.obs && <div className="escp-obs">📝 {t.obs}</div>}
                     {t.nomes.length > 0 && <div className="escp-nomes">Já vão: {t.nomes.join(", ")}</div>}
-                    {estou.has(t.id) ? (
-                      <div className="escp-estou">✓ Você está neste turno</div>
-                    ) : (
-                      <button type="button" className="escp-botao cheio" disabled={!!ocupado} onClick={() => quero(t)}>
-                        {ocupado === t.id ? "Reservando…" : "Quero esta vaga"}
-                      </button>
-                    )}
+                    <button type="button" className="escp-botao cheio" disabled={!!ocupado} onClick={() => quero(t)}>
+                      {ocupado === t.id ? "Reservando…" : "Quero esta vaga"}
+                    </button>
                   </div>
                 ))}
               </section>
-            ))}
+            ) : vagasDoDia.size === 0 && diasMeus.size === 0 ? (
+              <section className="escp-cartao"><p className="escp-dica" style={{ margin: 0 }}>Nenhuma vaga aberta agora. Quando a loja abrir, aparece aqui — guarde este link.</p></section>
+            ) : (
+              <section className="escp-cartao">
+                <div className="escp-mes">
+                  <button type="button" className="escp-leve" aria-label="Mês anterior" disabled={mesVisto <= inicioDoMes(dados.hoje)} onClick={() => setMes(navegar("mes", mesVisto, -1))}>‹</button>
+                  <strong style={{ flex: 1, textAlign: "center", fontSize: 16 }}>{maiuscula(mesPorExtenso(mesVisto))}</strong>
+                  <button type="button" className="escp-leve" aria-label="Próximo mês" disabled={!!ultimoMes && mesVisto >= ultimoMes} onClick={() => setMes(navegar("mes", mesVisto, 1))}>›</button>
+                </div>
+                <div className="escp-cal">
+                  {[1, 2, 3, 4, 5, 6, 0].map((d) => <div key={d} className="escp-cal-sem">{NOMES_CURTOS_DOS_DIAS[d]}</div>)}
+                  {semanasDoMes(mesVisto).flat().map((d) => {
+                    const doMes = d.slice(0, 7) === mesVisto.slice(0, 7);
+                    const vagas = vagasDoDia.get(d) || 0;
+                    const meu = diasMeus.has(d);
+                    return (
+                      <button key={d} type="button" disabled={!doMes || (!vagas && !meu)} onClick={() => setDia(d)}
+                        className={`escp-cal-dia${!doMes ? " fora" : ""}${vagas > 0 ? " vaga" : ""}${meu ? " meu" : ""}${d === dados.hoje ? " hoje" : ""}`}
+                        aria-label={`${diaPorExtenso(d)}${vagas ? `, ${vagas} vaga(s)` : ""}${meu ? ", você está na escala" : ""}`}>
+                        <span className="n">{Number(d.slice(8, 10))}</span>
+                        {vagas > 0 && <span className="q">{vagas} vaga{vagas === 1 ? "" : "s"}</span>}
+                        {meu && <span className="m">✓</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="escp-dica">Toque num dia <span className="escp-leg vaga" /> com vaga para ver os horários. <span className="escp-leg meu" /> ✓ = você já está.</p>
+              </section>
+            )}
           </>
         )}
         <p className="escp-rodape">Escala pelo FireHub</p>
@@ -354,6 +441,9 @@ export default function EscalaPublicaClient({ codigo, loja }: { codigo: string; 
     </main>
   );
 }
+
+/** Só a primeira letra ("Segunda, 16/11"; "Novembro de 2026"). */
+const maiuscula = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
 /** A chave Pix com o tipo (automático ou escolhido) e o retorno na hora: "✓ CPF" ou o que está errado. */
 function CampoDoPix({ pix, tipo, onPix, onTipo, lido }: {
@@ -422,6 +512,27 @@ const CSS = `
 .escp-pix-retorno.ok { color: #047857; }
 .escp-pix-retorno.erro { color: #B45309; }
 .escp-link { border: 0; background: none; color: ${COR}; font-weight: 800; text-decoration: underline; cursor: pointer; font-size: 14px; font-family: inherit; }
+.escp-escolhidos { border: 2px solid #6EE7B7; }
+.escp-aceite { font-size: 12px; font-weight: 800; color: #B45309; margin-top: 2px; }
+.escp-aceite.ok { color: #047857; }
+.escp-mes { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.escp-mes .escp-leve { width: 42px; padding: 0; font-size: 18px; }
+.escp-mes .escp-leve:disabled { opacity: .35; }
+.escp-cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.escp-cal-sem { text-align: center; font-size: 11.5px; font-weight: 800; color: #64748B; padding: 2px 0 4px; }
+.escp-cal-dia { position: relative; min-height: 54px; border-radius: 10px; border: 1.5px solid #E2E8F0; background: #fff; color: #94A3B8; font-family: inherit; padding: 4px 2px; display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; }
+.escp-cal-dia:disabled { cursor: default; background: #F8FAFC; }
+.escp-cal-dia.fora { visibility: hidden; }
+.escp-cal-dia .n { font-size: 15px; font-weight: 900; }
+.escp-cal-dia .q { font-size: 10px; font-weight: 800; line-height: 1.1; text-align: center; }
+.escp-cal-dia .m { position: absolute; top: 2px; right: 4px; font-size: 11px; font-weight: 900; color: #047857; }
+.escp-cal-dia.vaga { background: #CCFBF1; border-color: ${COR}; color: #134E4A; }
+.escp-cal-dia.meu { border-color: #059669; color: #065F46; }
+.escp-cal-dia.meu:not(.vaga) { background: #ECFDF5; }
+.escp-cal-dia.hoje .n { text-decoration: underline; }
+.escp-leg { display: inline-block; width: 12px; height: 12px; border-radius: 4px; vertical-align: -1px; border: 1.5px solid; }
+.escp-leg.vaga { background: #CCFBF1; border-color: ${COR}; }
+.escp-leg.meu { background: #ECFDF5; border-color: #059669; }
 .escp-fundo { position: fixed; inset: 0; z-index: 60; background: rgba(15,23,42,.55); display: flex; align-items: flex-end; justify-content: center; padding: 12px; }
 .escp-janela { background: #fff; border-radius: 18px; padding: 18px 16px; width: 100%; max-width: 480px; box-shadow: 0 24px 60px rgba(2,6,23,.35); }
 `;

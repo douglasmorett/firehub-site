@@ -662,3 +662,135 @@ export function dividirValor(total: number, pesos: Array<number | null | undefin
   partes[n - 1] += t - partes.reduce((a, b) => a + b, 0);
   return partes.map((c) => c / 100);
 }
+
+// ── Valor da diária por função e por dia (Lucas/Frangoso, 13/11/2026) ───────
+
+/**
+ * "Hoje todo mundo é igual": a diária era só a combinada com a pessoa. Agora
+ * o dono põe o valor de cada FUNÇÃO (Motoboy R$ 60, Cozinha R$ 80…) e, se
+ * quiser, o de um DIA específico daquela função (sexta, feriado). `data` nulo
+ * = o valor normal da função.
+ */
+export type ValorDaDiaria = { funcao: string; data: string | null; valor: number };
+export type OrigemDaDiaria = "dia" | "pessoa" | "funcao";
+
+/**
+ * A diária de UMA inscrição — a mesma conta no custo previsto, no "a pagar",
+ * no PDF da pessoa e no aceite. Vale a mais específica:
+ *   1. o valor do DIA para a função (o dono abriu uma exceção de propósito:
+ *      "sexta paga 100" vale para todo mundo daquela função naquele dia);
+ *   2. a diária combinada com a PESSOA (aba Pessoas / cadastro do motoboy);
+ *   3. o valor normal da FUNÇÃO.
+ * Nada disso = sem valor (a tela diz "sem valor combinado", não R$ 0).
+ */
+export function diariaDoTurno(
+  turno: { data: string; funcao: string },
+  diariaDaPessoa: number | null | undefined,
+  valores: ValorDaDiaria[],
+): { valor: number | null; origem: OrigemDaDiaria | null } {
+  const k = chaveDaFuncao(turno.funcao);
+  const daFuncao = valores.filter((v) => chaveDaFuncao(v.funcao) === k && v.valor > 0);
+  const doDia = daFuncao.find((v) => v.data === turno.data);
+  if (doDia) return { valor: doDia.valor, origem: "dia" };
+  if (Number(diariaDaPessoa) > 0) return { valor: Number(diariaDaPessoa), origem: "pessoa" };
+  const normal = daFuncao.find((v) => v.data == null);
+  return normal ? { valor: normal.valor, origem: "funcao" } : { valor: null, origem: null };
+}
+
+/** O valor digitado na tela ("80,00", "R$ 1.200") vira número — ou nulo (apagar). */
+export function lerValorEmReais(v: unknown): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = typeof v === "number" ? v : Number(String(v).replace(/[^\d,.-]/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", "."));
+  return Number.isFinite(n) && n > 0 && n <= 100_000 ? Math.round(n * 100) / 100 : null;
+}
+
+// ── Aceite pelo WhatsApp (prova de que a pessoa escolheu os dias) ───────────
+
+/**
+ * Lucas (13/11/2026): equipe sem carteira — ele quer a PROVA de que a pessoa
+ * escolheu aqueles dias. Quando o gerente escala alguém (ou a pessoa escolhe
+ * a vaga pelo link), o WhatsApp DA LOJA manda a ela os turnos e o link pessoal
+ * com o botão "Aceito"; o aceite grava a hora, o telefone, o IP e o aparelho.
+ *
+ *   aceito        a pessoa tocou em "Aceito" (com a data e a hora);
+ *   aguardando    a mensagem saiu (ou vai sair) e ainda não aceitou;
+ *   sem-whatsapp  a pessoa não tem WhatsApp cadastrado — a loja tem de falar com ela;
+ *   falhou        o WhatsApp da loja não mandou (desconectado?).
+ */
+export type SituacaoDoAceite = "aceito" | "aguardando" | "sem-whatsapp" | "falhou";
+export type StatusDoAviso = "enviado" | "junto" | "falhou" | "sem-whatsapp";
+
+export function situacaoDoAceite(i: { aceitoEm?: string | null; avisoStatus?: string | null }): SituacaoDoAceite {
+  if (i.aceitoEm) return "aceito";
+  if (i.avisoStatus === "sem-whatsapp") return "sem-whatsapp";
+  if (i.avisoStatus === "falhou") return "falhou";
+  return "aguardando";
+}
+
+/** Uma mensagem a cada tanto para a mesma pessoa: escolher 5 vagas seguidas não dispara 5 WhatsApps. */
+export const INTERVALO_ENTRE_AVISOS_MIN = 5;
+
+/**
+ * Manda a mensagem agora? Se a pessoa recebeu uma há menos de 5 min e ainda
+ * não aceitou, o link que está com ela JÁ mostra o turno novo (a página lista
+ * tudo o que falta aceitar) — outra mensagem seria só barulho. Se ela aceitou
+ * depois daquela mensagem, a próxima vai (é coisa nova para aceitar). O botão
+ * "pedir aceite" do gerente passa por cima, mas não mais de uma vez por minuto.
+ */
+export function deveMandarAviso(o: { ultimoAviso: Date | null; ultimoAceite: Date | null; agora: Date; manual?: boolean }): boolean {
+  if (!o.ultimoAviso) return true;
+  const passou = (o.agora.getTime() - o.ultimoAviso.getTime()) / 60_000;
+  if (o.manual) return passou >= 1;
+  if (o.ultimoAceite && o.ultimoAceite.getTime() >= o.ultimoAviso.getTime()) return true;
+  return passou >= INTERVALO_ENTRE_AVISOS_MIN;
+}
+
+/** "sexta, 20/11 · 18:00 às 23:30 · Motoboy" — o que a pessoa aceitou, palavra por palavra. */
+export const termosDoTurno = (t: { data: string; inicio: string; fim: string; funcao: string }) =>
+  `${diaPorExtenso(t.data)} · ${horarioDoTurno(t.inicio, t.fim)} · ${t.funcao}`;
+
+/**
+ * A mensagem do WhatsApp. Sem negrito colado no link (link no WhatsApp vai
+ * sozinho na linha — `*…/link*` deu 404 para lojista em 30/10/2026).
+ */
+export function mensagemDoAviso(o: {
+  loja: string; nome: string; motivo: "painel" | "link" | "manual"; link: string;
+  turnos: Array<{ data: string; inicio: string; fim: string; funcao: string }>;
+}): string {
+  const MAX = 8;
+  const lista = o.turnos.slice(0, MAX).map((t) => `• ${termosDoTurno(t)}`);
+  if (o.turnos.length > MAX) lista.push(`• e mais ${o.turnos.length - MAX} turno(s) — veja no link`);
+  const abertura = o.motivo === "link"
+    ? `Você escolheu ${o.turnos.length === 1 ? "este turno" : "estes turnos"} na escala da *${o.loja}*:`
+    : `A *${o.loja}* colocou você na escala:`;
+  return [
+    `Olá, ${primeiroNome(o.nome) || "tudo bem"}! 📅`,
+    abertura,
+    ...lista,
+    "",
+    "Para confirmar, abra o link e toque em *Aceito*:",
+    o.link,
+    "",
+    "No mesmo link você baixa o PDF da sua escala do mês.",
+  ].join("\n");
+}
+
+// ── A escala de UMA pessoa no mês (a página pessoal e o PDF) ────────────────
+
+export type TurnoDaPessoa = {
+  inscricaoId: string; data: string; inicio: string; fim: string; funcao: string;
+  valor: number | null; aceitoEm: string | null; avisoStatus: string | null;
+};
+
+/** Os números do rodapé do PDF: turnos, total previsto, quantos sem valor, aceitos e aguardando. */
+export function resumoDaEscalaPessoal(turnos: TurnoDaPessoa[]): { turnos: number; total: number; semValor: number; aceitos: number; aguardando: number } {
+  let total = 0, semValor = 0, aceitos = 0;
+  for (const t of turnos) {
+    if (Number(t.valor) > 0) total += Number(t.valor); else semValor++;
+    if (t.aceitoEm) aceitos++;
+  }
+  return { turnos: turnos.length, total: Math.round(total * 100) / 100, semValor, aceitos, aguardando: turnos.length - aceitos };
+}
+
+/** "2026-11" válido? (o mês que a página pessoal mostra) */
+export const mesValido = (m: unknown): m is string => typeof m === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(m);

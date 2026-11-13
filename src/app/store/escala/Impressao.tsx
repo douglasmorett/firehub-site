@@ -14,7 +14,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { diaPorExtenso, horarioDoTurno, situacaoDasVagas, tituloDoPeriodo, type Visao } from "@/lib/escala-da-equipe/regras";
-import { SELO_DO_TIPO, type Turno } from "./ui";
+import { SELO_DO_TIPO, diaEHora, type Turno } from "./ui";
 import { enderecoDoLink, useQrDoLink } from "./LinkDeInscricao";
 
 export type O_QUE_IMPRIMIR = "escala" | "cartaz";
@@ -84,7 +84,12 @@ export default function Impressao({ oQue, visao, data, turnos, nomeDaLoja, codig
                           <td><b>{t.funcao}</b>{t.obs && <div className="obs">{t.obs}</div>}</td>
                           <td className={v.faltam > 0 ? "falta" : ""}>{v.preenchidas}/{v.vagas}</td>
                           <td className="nomes">
-                            {t.inscritos.map((i) => <span key={i.id} className="nome">{i.nome}<small> ({SELO_DO_TIPO[i.pessoaTipo].rotulo.toLowerCase()})</small></span>)}
+                            {t.inscritos.map((i) => (
+                              <span key={i.id} className="nome">{i.nome}<small> ({SELO_DO_TIPO[i.pessoaTipo].rotulo.toLowerCase()})</small>
+                                {/* O aceite no papel (13/11/2026): a prova de que a pessoa escolheu o turno. */}
+                                <small className="aceite">{i.aceitoEm ? `✓ aceito pelo funcionário em ${diaEHora(i.aceitoEm)}` : "aguardando aceite"}</small>
+                              </span>
+                            ))}
                             {Array.from({ length: v.faltam }, (_, j) => <span key={`v${j}`} className="vaga">vaga aberta</span>)}
                           </td>
                         </tr>
@@ -123,6 +128,7 @@ export const CSS_DO_PAPEL = `
   .esc-papel .falta { font-weight: 700; }
   .esc-papel .nomes .nome { display: inline-block; font-size: 12pt; font-weight: 700; margin-right: 14px; }
   .esc-papel .nomes small { font-weight: 400; font-size: 8pt; color: #444; }
+  .esc-papel .nomes .aceite { display: block; font-size: 7.5pt; }
   .esc-papel .vaga { display: inline-block; border: 1px dashed #777; border-radius: 4px; padding: 0 8px; margin-right: 8px; font-size: 9pt; color: #555; min-width: 90px; }
   .esc-cartaz { text-align: center; padding-top: 20mm; }
   .esc-cartaz .loja { font-size: 22pt; }

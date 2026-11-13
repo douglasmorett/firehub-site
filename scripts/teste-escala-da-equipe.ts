@@ -9,6 +9,9 @@
  * E (12/11/2026) o Pix e o controle de pagamento: chave lida e escondida,
  * devido/pago/pendente por pessoa, turno futuro fora, dia pago no acerto do
  * motoboy e o "pagar tudo" dividido pela diária.
+ * E (13/11/2026, Lucas de novo) o valor da diária por função e por dia, o
+ * aceite pelo WhatsApp (quando mandar, a mensagem, o link pessoal assinado) e
+ * os números do PDF da pessoa.
  */
 import {
   acertoQueCobre, acharPeloTelefone, agoraDaLoja, chaveDaFuncao, copiarSemana, cpfValido, custoPrevisto, dataValida, datasDaRepeticao, desistenciaAberta,
@@ -16,7 +19,9 @@ import {
   inscricaoAberta, lerChavePix, lerConfigDaEscala, lerHora, minutosAteOTurno, navegar, normalizarFuncao, periodoDaVisao, pixFormatado, pixMascarado,
   pixParaCopiar, primeiroNome, resumoDosPagamentos, semanasDoMes, situacaoDasVagas, situacaoDoPagamento, tituloDoPeriodo, turnoJaTerminou,
   turnosSeSobrepoem, validarTurno, viraAMeiaNoite, type ItemDePagamento,
+  deveMandarAviso, diariaDoTurno, lerValorEmReais, mensagemDoAviso, mesValido, resumoDaEscalaPessoal, situacaoDoAceite, termosDoTurno, type ValorDaDiaria,
 } from "../src/lib/escala-da-equipe/regras";
+import { lerTokenDaPessoa, tokenDaPessoa } from "../src/lib/escala-da-equipe/link-pessoal";
 
 let falhas = 0;
 const confere = (oQue: string, obtido: unknown, esperado: unknown) => {
@@ -214,6 +219,68 @@ confere("pagou menos: proporcional, e a soma bate", dividirValor(100, [80, 80, 8
 confere("diárias diferentes: proporcional à diária", dividirValor(150, [100, 50]), [100, 50]);
 confere("sem diária no meio: pesa a média das outras", dividirValor(240, [80, null, 80]), [80, 80, 80]);
 confere("ninguém com diária: partes iguais", dividirValor(100, [null, null]), [50, 50]);
+
+console.log("\n— Valor da diária por função e por dia (13/11) —");
+const valores: ValorDaDiaria[] = [
+  { funcao: "Motoboy", data: null, valor: 60 },
+  { funcao: "Cozinha", data: null, valor: 80 },
+  { funcao: "motoboy", data: "2026-11-20", valor: 100 }, // sexta paga mais (outra grafia da função)
+];
+const sexta = { data: "2026-11-20", funcao: "Motoboy" }, segunda = { data: "2026-11-16", funcao: "Motoboy" };
+confere("sem diária própria: vale o valor da função", diariaDoTurno(segunda, null, valores), { valor: 60, origem: "funcao" });
+confere("cada função com o seu valor (Cozinha 80)", diariaDoTurno({ data: "2026-11-16", funcao: "cozinha" }, null, valores).valor, 80);
+confere("diária combinada com a pessoa passa na frente da função", diariaDoTurno(segunda, 70, valores), { valor: 70, origem: "pessoa" });
+confere("o valor do DIA passa na frente de tudo (sexta = 100)", diariaDoTurno(sexta, 70, valores), { valor: 100, origem: "dia" });
+confere("o valor do dia é só daquela função (Cozinha na sexta = 80)", diariaDoTurno({ data: "2026-11-20", funcao: "Cozinha" }, null, valores).valor, 80);
+confere("função sem valor e pessoa sem diária: sem valor (não R$ 0)", diariaDoTurno({ data: "2026-11-16", funcao: "Caixa" }, null, valores), { valor: null, origem: null });
+confere("custo previsto com a diária do turno: segunda 60 + sexta 100", custoPrevisto([
+  { inscritos: [{ pessoaTipo: "motoboy", pessoaId: "m1", nome: "João", diaria: diariaDoTurno(segunda, null, valores).valor }] },
+  { inscritos: [{ pessoaTipo: "motoboy", pessoaId: "m1", nome: "João", diaria: diariaDoTurno(sexta, null, valores).valor }] },
+]).total, 160);
+confere("'R$ 1.200,50' vira 1200.5", lerValorEmReais("R$ 1.200,50"), 1200.5);
+confere("vazio = apagar (nulo)", lerValorEmReais(""), null);
+confere("zero ou negativo não é valor", [lerValorEmReais("0"), lerValorEmReais(-5)], [null, null]);
+
+console.log("\n— Aceite pelo WhatsApp —");
+confere("aceito tem a hora", situacaoDoAceite({ aceitoEm: "2026-11-13T17:20:00.000Z", avisoStatus: "enviado" }), "aceito");
+confere("mensagem saiu e não aceitou: aguardando", situacaoDoAceite({ aceitoEm: null, avisoStatus: "enviado" }), "aguardando");
+confere("sem WhatsApp cadastrado", situacaoDoAceite({ aceitoEm: null, avisoStatus: "sem-whatsapp" }), "sem-whatsapp");
+confere("WhatsApp da loja não mandou", situacaoDoAceite({ aceitoEm: null, avisoStatus: "falhou" }), "falhou");
+const t0 = new Date("2026-11-13T17:00:00Z"), mais = (min: number) => new Date(t0.getTime() + min * 60_000);
+confere("nunca recebeu: manda", deveMandarAviso({ ultimoAviso: null, ultimoAceite: null, agora: t0 }), true);
+confere("recebeu há 2 min e não aceitou: não manda outra (o link já mostra)", deveMandarAviso({ ultimoAviso: t0, ultimoAceite: null, agora: mais(2) }), false);
+confere("…depois de 5 min, manda", deveMandarAviso({ ultimoAviso: t0, ultimoAceite: null, agora: mais(5) }), true);
+confere("aceitou depois da última: o turno novo ganha mensagem na hora", deveMandarAviso({ ultimoAviso: t0, ultimoAceite: mais(1), agora: mais(2) }), true);
+confere("'pedir aceite' do gerente: não duas no mesmo minuto", deveMandarAviso({ ultimoAviso: t0, ultimoAceite: null, agora: mais(0.5), manual: true }), false);
+confere("…passado 1 min, manda", deveMandarAviso({ ultimoAviso: t0, ultimoAceite: null, agora: mais(1), manual: true }), true);
+const turnoDaMsg = { data: "2026-11-20", inicio: "18:00", fim: "23:30", funcao: "Motoboy" };
+confere("os termos do turno por extenso", termosDoTurno(turnoDaMsg), "sexta, 20/11 · 18:00 às 23:30 · Motoboy");
+const msg = mensagemDoAviso({ loja: "Frangoso", nome: "João Carlos", motivo: "painel", link: "https://firehubfood.com.br/escala/abc/minha/x", turnos: [turnoDaMsg] });
+confere("a mensagem chama pelo primeiro nome", msg.startsWith("Olá, João!"), true);
+confere("…diz que a loja colocou na escala", msg.includes("A *Frangoso* colocou você na escala:"), true);
+confere("…lista o turno", msg.includes("• sexta, 20/11 · 18:00 às 23:30 · Motoboy"), true);
+confere("…e o link vai SOZINHO na linha (sem * colado)", msg.split("\n").includes("https://firehubfood.com.br/escala/abc/minha/x"), true);
+confere("quem escolheu pelo link: 'Você escolheu'", mensagemDoAviso({ loja: "Frangoso", nome: "Ana", motivo: "link", link: "L", turnos: [turnoDaMsg] }).includes("Você escolheu este turno"), true);
+const muitos = Array.from({ length: 11 }, (_, k) => ({ ...turnoDaMsg, data: `2026-11-${String(10 + k).padStart(2, "0")}` }));
+confere("mais de 8 turnos: a mensagem resume o resto", mensagemDoAviso({ loja: "L", nome: "A", motivo: "painel", link: "L", turnos: muitos }).includes("e mais 3 turno(s)"), true);
+
+console.log("\n— Link pessoal assinado —");
+const tok = tokenDaPessoa("segredo-teste", "abc234defg", "freelancer", "0f8b1c2e-1111-4222-8333-444455556666");
+confere("o token volta para a mesma pessoa", lerTokenDaPessoa("segredo-teste", "abc234defg", tok), { tipo: "freelancer", id: "0f8b1c2e-1111-4222-8333-444455556666" });
+confere("com o link da loja trocado ('gerar link novo'), não vale mais", lerTokenDaPessoa("segredo-teste", "outrocodigo", tok), null);
+confere("trocar o id (pegar o de um colega) não vale", lerTokenDaPessoa("segredo-teste", "abc234defg", tok.replace("0f8b1c2e", "0f8b1c2f")), null);
+confere("trocar o tipo não vale", lerTokenDaPessoa("segredo-teste", "abc234defg", "m" + tok.slice(1)), null);
+confere("lixo não vale", lerTokenDaPessoa("segredo-teste", "abc234defg", "../../etc"), null);
+confere("motoboy (id cuid) também", lerTokenDaPessoa("s", "abc234defg", tokenDaPessoa("s", "abc234defg", "motoboy", "cmw5jbwzp09mwo607mxdnf2da"))?.id, "cmw5jbwzp09mwo607mxdnf2da");
+
+console.log("\n— O PDF da pessoa —");
+const doMes = resumoDaEscalaPessoal([
+  { inscricaoId: "1", data: "2026-11-16", inicio: "18:00", fim: "23:30", funcao: "Motoboy", valor: 60, aceitoEm: "2026-11-13T17:20:00.000Z", avisoStatus: "enviado" },
+  { inscricaoId: "2", data: "2026-11-20", inicio: "18:00", fim: "23:30", funcao: "Motoboy", valor: 100, aceitoEm: null, avisoStatus: "enviado" },
+  { inscricaoId: "3", data: "2026-11-21", inicio: "11:00", fim: "15:00", funcao: "Caixa", valor: null, aceitoEm: null, avisoStatus: "sem-whatsapp" },
+]);
+confere("3 turnos, previsto 160, 1 sem valor, 1 aceito, 2 aguardando", doMes, { turnos: 3, total: 160, semValor: 1, aceitos: 1, aguardando: 2 });
+confere("mês da página: '2026-11' vale, '2026-13' não", [mesValido("2026-11"), mesValido("2026-13"), mesValido("nov")], [true, false, false]);
 
 console.log(falhas ? `\n${falhas} falha(s).` : "\nTudo certo.");
 process.exit(falhas ? 1 : 0);

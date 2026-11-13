@@ -8,7 +8,7 @@
  */
 
 import { useEffect } from "react";
-import { pixParaCopiar, type PagamentoFeito, type SituacaoDasVagas, type SituacaoDoPagamento } from "@/lib/escala-da-equipe/regras";
+import { pixParaCopiar, situacaoDoAceite, type PagamentoFeito, type SituacaoDasVagas, type SituacaoDoAceite, type SituacaoDoPagamento, type ValorDaDiaria } from "@/lib/escala-da-equipe/regras";
 
 // ── O que a API devolve ─────────────────────────────────────────────────────
 
@@ -18,6 +18,8 @@ export type Inscrito = {
   /** Só para o dono (para o funcionário vem sempre vazio). */
   pagamento?: PagamentoFeito | null;
   acerto?: { id: string; em: string; dia: string } | null;
+  /** O aceite pelo WhatsApp (13/11/2026). */
+  aceitoEm: string | null; avisoEm: string | null; avisoStatus: string | null;
 };
 export type Turno = { id: string; data: string; inicio: string; fim: string; funcao: string; vagas: number; obs: string | null; inscritos: Inscrito[] };
 export type Pessoa = {
@@ -33,6 +35,8 @@ export type DadosDaEscala = {
   turnos: Turno[];
   pessoas: Pessoa[];
   custo: { total: number; semValor: number; porPessoa: Array<{ nome: string; turnos: number; total: number }> } | null;
+  /** Os valores da diária por função e por dia — só o dono. */
+  valores: ValorDaDiaria[] | null;
 };
 
 // ── Cores e textos ──────────────────────────────────────────────────────────
@@ -143,6 +147,36 @@ export function BotaoCopiarPix({ pix, pixTipo, nome, avisar, rotulo = "📋 Pix"
       style={{ ...S.botaoPequeno, height: 28, padding: "0 9px", fontSize: 12, borderColor: "#A7F3D0", color: "#047857", flexShrink: 0 }}>
       {rotulo}
     </button>
+  );
+}
+
+/** "13/11 14:20" — a hora do aceite como o dono lê. */
+export const diaEHora = (iso: string) => new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+
+const SELO_DO_ACEITE: Record<SituacaoDoAceite, { icone: string; cor: string; fundo: string }> = {
+  aceito: { icone: "✅", cor: "#047857", fundo: "#ECFDF5" },
+  aguardando: { icone: "⏳", cor: "#B45309", fundo: "#FFFBEB" },
+  "sem-whatsapp": { icone: "📵", cor: "#B91C1C", fundo: "#FEF2F2" },
+  falhou: { icone: "⚠️", cor: "#B91C1C", fundo: "#FEF2F2" },
+};
+
+/** O texto do aceite: "aceito pelo funcionário em 13/11 14:20", "aguardando aceite"… */
+export function textoDoAceite(i: Pick<Inscrito, "aceitoEm" | "avisoStatus" | "avisoEm">): string {
+  const s = situacaoDoAceite(i);
+  if (s === "aceito") return `aceito pelo funcionário em ${diaEHora(i.aceitoEm!)}`;
+  if (s === "sem-whatsapp") return "sem WhatsApp cadastrado — não recebeu o pedido de aceite";
+  if (s === "falhou") return "o WhatsApp da loja não enviou o pedido de aceite";
+  return i.avisoEm ? `aguardando aceite (pedido em ${diaEHora(i.avisoEm)})` : "aguardando aceite";
+}
+
+/** O selo do aceite (prova de que a pessoa escolheu o turno). Compacto = só o ícone, com o texto no title. */
+export function SeloDoAceite({ inscrito, compacto = false }: { inscrito: Pick<Inscrito, "aceitoEm" | "avisoStatus" | "avisoEm">; compacto?: boolean }) {
+  const s = SELO_DO_ACEITE[situacaoDoAceite(inscrito)];
+  const texto = textoDoAceite(inscrito);
+  return (
+    <span title={texto} style={{ ...S.chip, color: s.cor, background: s.fundo, padding: compacto ? "0 4px" : "1px 7px", fontSize: compacto ? 11 : 11.5, flexShrink: 0, whiteSpace: compacto ? "nowrap" : "normal" }}>
+      {s.icone}{!compacto && <> {texto}</>}
+    </span>
   );
 }
 

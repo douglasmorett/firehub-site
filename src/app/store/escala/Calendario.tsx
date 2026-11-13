@@ -20,7 +20,7 @@ import { useState } from "react";
 import {
   NOMES_CURTOS_DOS_DIAS, diaDaSemana, diaEMes, diasDaSemanaDe, horarioDoTurno, semanasDoMes, situacaoDasVagas, situacaoDoPagamento, viraAMeiaNoite,
 } from "@/lib/escala-da-equipe/regras";
-import { Avatar, COR, COR_CLARA, COR_DA_SITUACAO, S, SeloDoLink, SeloDoPagamento, TIPO_DO_ARRASTO, comecarArrasto, lerArrasto, reais, arrastoAtual, type Arrasto, type Turno } from "./ui";
+import { Avatar, COR, COR_CLARA, COR_DA_SITUACAO, S, SeloDoAceite, SeloDoLink, SeloDoPagamento, TIPO_DO_ARRASTO, comecarArrasto, lerArrasto, reais, arrastoAtual, type Arrasto, type Turno } from "./ui";
 
 export type AoSoltar = (turno: Turno, a: Arrasto) => void;
 
@@ -92,6 +92,7 @@ export function CartaoDoTurno({ turno, onAbrir, onSoltar, compacto = false, most
             <Avatar nome={i.nome} tipo={i.pessoaTipo} tamanho={compacto ? 24 : 28} />
             <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 700 }}>{i.nome}</span>
             {i.origem === "link" && (compacto ? <span title="Se inscreveu pelo link" style={{ fontSize: 11, flexShrink: 0 }}>🔗</span> : <SeloDoLink />)}
+            <SeloDoAceite inscrito={i} compacto />
             {mostrarDiaria && !compacto && i.diaria ? <span style={{ marginLeft: "auto", fontSize: 12.5, color: "#64748B" }}>{reais(i.diaria)}</span> : null}
             {pagamentoAte && (
               <span style={{ marginLeft: mostrarDiaria && !compacto && i.diaria ? 0 : "auto" }}>

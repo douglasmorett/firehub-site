@@ -3,11 +3,16 @@
  *   { turnoId, pessoaTipo, pessoaId }          quem já está na lista (equipe, motoboy, freelancer)
  *   { turnoId, novoFreelancer: { nome, telefone?, funcao? } }   cadastra na hora e encaixa
  *   aumentarVaga: true                          turno cheio — abre mais uma vaga e encaixa
+ *
+ * Encaixou: o WhatsApp da loja manda à pessoa os turnos e o link para ela
+ * tocar em "Aceito" (lib/escala-da-equipe/aviso.ts) — depois da resposta,
+ * para a tela não esperar o envio.
  */
 import { NextResponse } from "next/server";
 import { ErroDaEscala, inscrever, pessoasDaLoja, salvarFreelancer } from "@/lib/escala-da-equipe/banco";
 import { ehTipoDePessoa } from "@/lib/escala-da-equipe/regras";
 import { lerCorpo, respostaDoErro, sessaoDaEscala } from "@/lib/escala-da-equipe/sessao";
+import { avisarDepois } from "@/lib/escala-da-equipe/aviso";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +38,7 @@ export async function POST(req: Request) {
       const r = await inscrever(s.lojaId, turnoId, { tipo: pessoa.tipo, id: pessoa.id, nome: pessoa.nome }, {
         origem: "painel", quem: s.quem, aumentarVaga: corpo.aumentarVaga === true,
       });
+      avisarDepois(s.lojaId, pessoa, "painel");
       return NextResponse.json({ ok: true, id: r.id });
     } catch (err) {
       // Turno cheio com freelancer recém-cadastrado: a tela pergunta "abrir mais
