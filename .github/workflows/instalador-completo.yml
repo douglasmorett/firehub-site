@@ -1,0 +1,105 @@
+name: Instalador completo (Windows)
+
+# ── O FireHub inteiro num instalador só (pedido do Douglas, 12/11/2026) ───────
+#
+# "FireHub-Completo-Setup.exe": o Assistente de sempre + o Node 22 + o Postgres
+# + o FireHub do commit escolhido, para o computador da loja ativar o Modo
+# Contingência sem baixar nada e funcionar até offline (vault: Projetos/FireHub
+# - Modo Contingência.md, seção 13/11).
+#
+# SÓ À MÃO (Actions → "Instalador completo" → Run workflow). Nunca sobe com o
+# push: o arquivo tem centenas de MB e não vai para public/downloads (o git
+# não aceita). O .exe fica como artefato da execução; publicar (R2 ou Release)
+# e apontar FIREHUB_INSTALADOR_COMPLETO_URL no Coolify é passo do Douglas.
+#
+# A semente sai da IMAGEM publicada do commit (ghcr.io/…:<commit>): é o
+# mesmo /app que a nuvem serve, com a lista ASSINADA no build
+# (contingencia/pacote.json). Assim cada arquivo da semente bate com a lista
+# que o Assistente confere na ativação. Nada aqui assina: a chave privada só
+# existe no build da imagem (deploy.yml).
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: "Commit COMPLETO (40 caracteres) já publicado no ghcr.io. Vazio = o commit deste ramo."
+        required: false
+        default: ""
+
+jobs:
+  semente:
+    name: Semente (do /app da imagem)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tirar o /app da imagem
+        env:
+          COMMIT: ${{ inputs.commit || github.sha }}
+        run: |
+          docker pull "ghcr.io/douglasmorett/firehub-site:${COMMIT}"
+          id=$(docker create "ghcr.io/douglasmorett/firehub-site:${COMMIT}")
+          docker cp "$id:/app" ./app
+          docker rm "$id"
+          test -f app/contingencia/pacote.json
+          test -f app/contingencia/pacote.assinatura || (echo "A imagem saiu SEM assinatura: nenhum Assistente aceitaria." && exit 1)
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Montar a semente (FireHub + Node + Postgres, por hash)
+        run: node firehub-print-assistant/scripts/montar-semente.js --app ./app --saida ./semente --runtime
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: semente
+          path: semente
+          retention-days: 3
+          compression-level: 0
+
+  instalador:
+    name: Instalador (NSIS)
+    needs: semente
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: semente
+          path: semente
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Dependências do Assistente
+        working-directory: firehub-print-assistant
+        run: npm ci --no-audit --no-fund
+
+      - name: Testes do instalador completo
+        working-directory: firehub-print-assistant
+        run: |
+          node scripts/teste-semente.js
+          node scripts/teste-contingencia-assistente.js
+
+      - name: Montar o instalador
+        working-directory: firehub-print-assistant
+        run: node scripts/montar-instalador-completo.js --semente ../semente --saida dist-completo
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FireHub-Completo-Setup
+          path: firehub-print-assistant/dist-completo/FireHub-Completo-Setup.exe
+          retention-days: 14
+          compression-level: 0

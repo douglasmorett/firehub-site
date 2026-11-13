@@ -303,12 +303,136 @@ function extrair(arquivo, pasta) {
   );
 }
 
+// ── A semente do instalador completo ────────────────────────────────────────
+//
+// O instalador completo ("FireHub para Windows", pedido do Douglas em
+// 12/11/2026) já traz o Node, o Postgres e os arquivos do FireHub — por hash,
+// no mesmo formato de objetos/. Nada da semente é usado sem conferir: o
+// runtime pelo hash fixo daqui e cada arquivo do FireHub pelo sha256 da lista
+// ASSINADA que vem da nuvem na ativação. Arquivo que não confere (semente de
+// outra versão) é só ignorado e baixado como sempre. Depois da primeira versão
+// montada a semente sai do disco: objetos/ já tem o que ela tinha.
+//
+// Onde ela pode estar: <instalação>/resources/semente (o instalador põe) ou
+// %APPDATA%\FireHub\contingencia\semente (para onde o Assistente a muda na
+// primeira abertura, para sobreviver à atualização automática, que troca a
+// pasta de instalação inteira).
+const PASTA_DA_SEMENTE = path.join(PASTA, "semente");
+/** Marca de que este computador recebeu o instalador completo (fica depois das atualizações). */
+const ARQUIVO_DA_INSTALACAO_COMPLETA = path.join(PASTA_FIREHUB, "instalacao-completa.json");
+
+function sementeDoInstalador() {
+  try {
+    return process.resourcesPath ? path.join(process.resourcesPath, "semente") : null;
+  } catch {
+    return null;
+  }
+}
+
+function pastasDaSemente() {
+  return [PASTA_DA_SEMENTE, sementeDoInstalador()].filter(Boolean);
+}
+
+/** O hash de um arquivo do disco, lido em fluxo (sem carregar inteiro na memória). */
+function hashDoArquivo(arquivo) {
+  return new Promise((ok, falha) => {
+    const h256 = crypto.createHash("sha256");
+    const h512 = crypto.createHash("sha512");
+    fs.createReadStream(arquivo)
+      .on("data", (p) => {
+        h256.update(p);
+        h512.update(p);
+      })
+      .on("error", falha)
+      .on("end", () => ok({ sha256: h256.digest("hex"), sha512b64: h512.digest("base64") }));
+  });
+}
+
+/**
+ * Põe em `destino` o arquivo `rel` da semente, se ele existir e conferir.
+ * Move (instantâneo, mesmo disco) e, se o Windows não deixar, copia.
+ * Devolve false quando não há semente ou o arquivo não confere.
+ */
+async function daSemente(rel, destino, conferencia, pastas = pastasDaSemente()) {
+  const { sha256, sha512b64 } = conferencia || {};
+  if (!sha256 && !sha512b64) return false; // sem hash para conferir, nada da semente entra
+  for (const base of pastas) {
+    const origem = path.join(base, rel);
+    let h;
+    try {
+      if (!(await fsp.stat(origem)).isFile()) continue;
+      h = await hashDoArquivo(origem);
+    } catch {
+      continue;
+    }
+    if ((sha256 && h.sha256 !== sha256) || (sha512b64 && h.sha512b64 !== sha512b64)) continue;
+    await fsp.mkdir(path.dirname(destino), { recursive: true });
+    try {
+      await fsp.rename(origem, destino);
+    } catch {
+      try {
+        await fsp.copyFile(origem, destino);
+      } catch {
+        continue;
+      }
+    }
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Na abertura: a semente do instalador vai para o %APPDATA% (um rename só, no
+ * mesmo disco) e fica a marca de instalação completa. Se não der (instalação
+ * em outro disco, em Arquivos de Programas), ela fica onde está e é lida de lá.
+ */
+async function adotarSementeDoInstalador(doInstalador = sementeDoInstalador()) {
+  if (!doInstalador || !(await existe(doInstalador))) return false;
+  let info = null;
+  try {
+    info = JSON.parse(await fsp.readFile(path.join(doInstalador, "semente.json"), "utf8"));
+  } catch {
+    /* semente sem descrição: segue igual */
+  }
+  try {
+    await fsp.mkdir(PASTA_FIREHUB, { recursive: true });
+    await fsp.writeFile(
+      ARQUIVO_DA_INSTALACAO_COMPLETA,
+      JSON.stringify({ desde: new Date().toISOString(), versaoDaSemente: (info && info.versao) || null }),
+    );
+  } catch {
+    /* sem disco: segue */
+  }
+  if (await existe(PASTA_DA_SEMENTE)) return true; // já mudada numa abertura anterior
+  try {
+    await fsp.mkdir(PASTA, { recursive: true });
+    await fsp.rename(doInstalador, PASTA_DA_SEMENTE);
+    registro("Semente do instalador completo guardada para a ativação.");
+  } catch (e) {
+    registro(`A semente do instalador fica na pasta da instalação (${(e && e.code) || e}).`);
+  }
+  return true;
+}
+
+function instalacaoCompleta() {
+  return fs.existsSync(ARQUIVO_DA_INSTALACAO_COMPLETA);
+}
+
+/** Com a versão montada, a semente não serve mais: sai do disco (renomeada e apagada em segundo plano). */
+async function descartarSemente() {
+  for (const p of pastasDaSemente()) {
+    if (await existe(p)) await tirarDoCaminho(p).catch(() => {});
+  }
+}
+
 async function garantirRuntime() {
   const nodeExe = path.join(PASTA, "runtime", NODE.pasta, "node.exe");
   if (!fs.existsSync(nodeExe)) {
     etapa = "baixando o Node";
     const zip = path.join(PASTA, "baixados", "node.zip");
-    await baixar(NODE.url, zip, { sha256: NODE.sha256, aoAvancar: (p) => (progresso = p * 100) });
+    if (!(await daSemente("runtime/node.zip", zip, { sha256: NODE.sha256 }))) {
+      await baixar(NODE.url, zip, { sha256: NODE.sha256, aoAvancar: (p) => (progresso = p * 100) });
+    }
     await extrair(zip, path.join(PASTA, "runtime"));
     fs.rmSync(zip, { force: true });
   }
@@ -316,7 +440,9 @@ async function garantirRuntime() {
   if (!fs.existsSync(path.join(pgBin, "postgres.exe"))) {
     etapa = "baixando o banco (Postgres)";
     const tgz = path.join(PASTA, "baixados", "postgres.tgz");
-    await baixar(POSTGRES.url, tgz, { sha512b64: POSTGRES.sha512b64, aoAvancar: (p) => (progresso = p * 100) });
+    if (!(await daSemente("runtime/postgres.tgz", tgz, { sha512b64: POSTGRES.sha512b64 }))) {
+      await baixar(POSTGRES.url, tgz, { sha512b64: POSTGRES.sha512b64, aoAvancar: (p) => (progresso = p * 100) });
+    }
     await extrair(tgz, path.join(PASTA, "runtime", POSTGRES.pasta));
     fs.rmSync(tgz, { force: true });
   }
@@ -443,7 +569,25 @@ async function sincronizarPacote() {
   // Um download por hash: o mesmo conteúdo aparece em mais de um caminho.
   const porHash = new Map();
   for (const a of arquivos) if (!porHash.has(a.hash) && !jaTem.has(a.hash)) porHash.set(a.hash, a);
-  const faltam = [...porHash.values()];
+  let faltam = [...porHash.values()];
+  // Instalador completo: o que a semente tem e confere com a lista assinada
+  // não precisa de internet. Poucos de cada vez (disco, ver DE_CADA_VEZ).
+  if (faltam.length && (await Promise.all(pastasDaSemente().map(existe))).some(Boolean)) {
+    etapa = "preparando o FireHub que veio no instalador";
+    const veio = new Set();
+    let vistos = 0;
+    await emFila(faltam, DE_CADA_VEZ, async (a) => {
+      seguirSoAtivada();
+      if (await daSemente(`objetos/${a.hash}`, path.join(objetos, a.hash), { sha256: a.hash })) veio.add(a.hash);
+      progresso = (++vistos / faltam.length) * 100;
+    });
+    if (veio.size) {
+      faltam = faltam.filter((a) => !veio.has(a.hash));
+      registro(`Semente do instalador: ${veio.size} arquivo(s) sem baixar; faltam ${faltam.length}.`);
+    }
+    etapa = `baixando o FireHub (versão ${versao})`;
+    progresso = null;
+  }
   const totalBytes = faltam.reduce((s, a) => s + (Number(a.tamanho) || 0), 0) || 1;
   let feitos = 0;
   const fila = [...faltam];
@@ -465,6 +609,8 @@ async function sincronizarPacote() {
   await montarVersao(versao, arquivos, dir, objetos);
   registro(`Versão ${versao} montada (${arquivos.length} arquivos, ${faltam.length} baixados) em ${Math.round((Date.now() - inicio) / 1000)} s.`);
   progresso = null;
+  // objetos/ já tem tudo o que a semente tinha de útil.
+  void descartarSemente();
   return { versao, dir, nova: true, esquema, adiar };
 }
 
@@ -936,6 +1082,7 @@ function estadoPublico() {
     pendentes: s.pendentes || 0,
     memoriaTotalMb: Math.round(os.totalmem() / 1024 / 1024),
     trocaAdiada,
+    instalacaoCompleta: instalacaoCompleta(),
   };
 }
 
@@ -1014,6 +1161,7 @@ function iniciar() {
   const comecar = async () => {
     // Pastas postas de lado por um Assistente que fechou antes de apagá-las.
     void apagarRestos(PASTA).then(() => apagarRestos(path.join(PASTA, "app")));
+    await adotarSementeDoInstalador().catch(() => false);
     pareamento = lerPareamento();
     if (!pareamento) return;
     try {
@@ -1057,4 +1205,12 @@ module.exports = {
   tirarDoCaminho,
   apagarArvore,
   NUVEM_ESTAVEL_MS,
+  // Instalador completo (main.js, scripts/montar-semente.js e scripts/teste-semente.js):
+  instalacaoCompleta,
+  daSemente,
+  adotarSementeDoInstalador,
+  NODE,
+  POSTGRES,
+  PASTA_DA_SEMENTE,
+  ARQUIVO_DA_INSTALACAO_COMPLETA,
 };
