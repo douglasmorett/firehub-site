@@ -84,17 +84,23 @@ export type CustoDosItens = {
 
 /** O cardápio da loja no formato da conta (fichas, combos, custo digitado). Também da lista de compras e da previsão de insumos. */
 export async function carregarCatalogo(lojaId: string): Promise<Catalogo> {
-  const produtos = await prisma.menuProduct.findMany({
+  const lidos = await prisma.menuProduct.findMany({
     // Espelho de integração não é produto da loja (lib/espelho-de-integracao.ts).
-    where: { franchiseeId: lojaId, ...SEM_ESPELHO },
+    // Só entra o VINCULADO, para levar o item gravado antes do vínculo ao
+    // produto real (Fogo e Sabor Prime, 13/11/2026).
+    where: { franchiseeId: lojaId, OR: [SEM_ESPELHO, { vinculadoA: { not: null } }] },
     select: {
-      id: true, name: true, active: true, cost: true, isCombo: true,
+      id: true, name: true, active: true, cost: true, isCombo: true, origemIntegracao: true, vinculadoA: true,
       recipeItems: { select: { stockItemId: true, quantityConsumed: true, stockItem: { select: { name: true } } } },
       comboGroups: { select: { id: true, items: { select: { id: true, menuProductId: true } } } },
     },
   });
+  // Vínculo para produto que não existe mais: o espelho fica de fora, como sempre ficou.
+  const reais = new Set(lidos.filter((p) => p.origemIntegracao == null).map((p) => p.id));
+  const produtos = lidos.filter((p) => p.origemIntegracao == null || reais.has(p.vinculadoA || ""));
   return montarCatalogo(produtos.map((p): ProdutoParaCusto => ({
     id: p.id, nome: p.name || "", ativo: p.active !== false, custo: p.cost ?? null, combo: Boolean(p.isCombo),
+    origemIntegracao: p.origemIntegracao, vinculadoA: p.vinculadoA,
     ficha: p.recipeItems.map((r) => ({ insumoId: r.stockItemId, nome: r.stockItem?.name || "insumo", quantidade: Number(r.quantityConsumed) || 0 })),
     grupos: p.comboGroups.map((g) => ({ id: g.id, opcoes: g.items.map((i) => ({ id: i.id, produtoId: i.menuProductId })) })),
   })));

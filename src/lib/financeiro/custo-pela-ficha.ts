@@ -21,7 +21,9 @@
  *     casa pelo NOME, sem diferenciar caixa, com o produto ATIVO do cardápio —
  *     o mesmo que a baixa faz. "Esfirra de Carne (Promo)" existe como produto;
  *     nome que não existe ("Combo Imperial Mix") fica sem custo e a tela diz
- *     qual é.
+ *     qual é. Espelho que o lojista VINCULOU ao produto real (`vinculadoA`)
+ *     vai direto no produto real, mesmo com outro nome (Fogo e Sabor Prime,
+ *     13/11/2026).
  *   • `comboSelections` tem dois formatos: o do iFood/PDV é a lista
  *     `[{ name, quantity, price }]`; o do site é `{ grupoId: { nome: qtd } }`.
  *     A quantidade da opção é POR unidade do item nos dois.
@@ -50,6 +52,8 @@ export type ProdutoParaCusto = {
   ativo: boolean;
   /** Carimbo do espelho de integração (lib/espelho-de-integracao.ts); nulo = produto da loja. */
   origemIntegracao?: string | null;
+  /** Só no espelho: o produto real que o lojista apontou em "Vincular itens do iFood e 99". */
+  vinculadoA?: string | null;
   /** `MenuProduct.cost` digitado (nulo/zero = sem custo). */
   custo: number | null;
   combo: boolean;
@@ -101,6 +105,8 @@ export type Catalogo = {
   porId: Map<string, ProdutoParaCusto>;
   /** Produtos ATIVOS que não são espelho, pelo nome. Nulo = dois produtos com o mesmo nome e fichas diferentes. */
   porNome: Map<string, ProdutoParaCusto | null>;
+  /** Nome do espelho VINCULADO → o produto real. Nulo = dois espelhos de mesmo nome em produtos diferentes. */
+  vinculoPorNome: Map<string, ProdutoParaCusto | null>;
   /** A loja tem alguma ficha técnica gravada. */
   usaFicha: boolean;
 };
@@ -124,7 +130,27 @@ export function montarCatalogo(produtos: ProdutoParaCusto[]): Catalogo {
       porNome.set(k, null);
     }
   }
-  return { porId, porNome, usaFicha: produtos.some((p) => p.ficha.length > 0) };
+  // O vínculo do espelho (Fogo e Sabor Prime, 13/11/2026): a loja ligou cada
+  // item do iFood e da 99 ao produto real, mas o pedido gravado ANTES segue
+  // apontando para o espelho, com o nome do app — e o custo ficava "nome do
+  // app que não existe no cardápio". O vínculo vale também para eles.
+  const vinculoPorNome = new Map<string, ProdutoParaCusto | null>();
+  for (const p of produtos) {
+    const real = vinculoDoEspelho(p, porId);
+    if (!real || !p.nome.trim()) continue;
+    const k = chave(p.nome);
+    const atual = vinculoPorNome.get(k);
+    if (atual === undefined) vinculoPorNome.set(k, real);
+    else if (atual && atual.id !== real.id) vinculoPorNome.set(k, null); // não chuta
+  }
+  return { porId, porNome, vinculoPorNome, usaFicha: produtos.some((p) => p.ficha.length > 0) };
+}
+
+/** O produto real do espelho vinculado; nulo se não é espelho, não tem vínculo ou o real sumiu. */
+function vinculoDoEspelho(p: ProdutoParaCusto, porId: Map<string, ProdutoParaCusto>): ProdutoParaCusto | null {
+  if (!p.vinculadoA || !ehEspelho(p)) return null;
+  const real = porId.get(p.vinculadoA);
+  return real && !ehEspelho(real) ? real : null;
 }
 
 // ── O custo do insumo no dia ────────────────────────────────────────────────
@@ -270,6 +296,14 @@ function acharOpcao(indice: IndiceDoCombo | null, e: EscolhaDoItem, cat: Catalog
 function produtoDoItem(item: ItemParaCusto, cat: Catalogo): { proprio: ProdutoParaCusto | null; produto: ProdutoParaCusto | null; nome: string } {
   const proprio = item.produtoId ? cat.porId.get(item.produtoId) ?? null : null;
   const nome = (item.nome || proprio?.nome || "Item sem nome").trim();
+  // Espelho vinculado pelo lojista (Fogo e Sabor Prime, 13/11/2026): o produto
+  // real vale sobre o nome, como no pedido novo (produtoRealDoItem). Sem o
+  // espelho no catálogo, o nome do item procura um espelho vinculado — mas só
+  // se não casa com produto do cardápio, para não mudar o que já casava.
+  const vinculado = proprio
+    ? vinculoDoEspelho(proprio, cat.porId)
+    : cat.porNome.has(chave(nome)) ? null : cat.vinculoPorNome.get(chave(nome)) ?? null;
+  if (vinculado) return { proprio: vinculado, produto: vinculado, nome };
   const temEstrutura = (p: ProdutoParaCusto) => p.ficha.length > 0 || p.grupos.length > 0;
   let produto: ProdutoParaCusto | null = proprio && temEstrutura(proprio) ? proprio : null;
   if (!produto) {
@@ -302,7 +336,13 @@ export function custoDoItem(item: ItemParaCusto, cat: Catalogo, insumo: CustoDoI
     }
   };
 
-  const ehCombo = Boolean(produto && (produto.combo || produto.grupos.length > 0));
+  // Produto com complementos (grupos) e custo digitado, que não é combo: o
+  // custo dele vale pelo item inteiro, como o de qualquer produto só com custo
+  // digitado. Antes ele virava "combo" e o custo vinha só das opções — o
+  // "Sem cebola" deixava o lanche sem custo e o adicional pago apagava o custo
+  // do lanche (achado no vínculo da Fogo e Sabor Prime, 13/11/2026). Combo de
+  // verdade, ou produto com grupos SEM custo próprio, segue pelas opções.
+  const ehCombo = Boolean(produto && (produto.combo || (produto.grupos.length > 0 && !temCusto(produto))));
   if (produto && produto.ficha.length) {
     somarFicha(produto, 1);
   } else if (ehCombo && escolhas.length > 0) {

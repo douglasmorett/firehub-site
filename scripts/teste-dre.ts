@@ -361,6 +361,47 @@ async function main() {
   const ambiguo = montarCatalogo([prod("a", "Esfirra", { ficha: ficha(["Massa", 1]) }), prod("b", "esfirra", { ficha: ficha(["Massa", 2]) })]);
   confere("dois produtos ativos com o mesmo nome e fichas diferentes: não chuta", ambiguo.porNome.get("esfirra"), null);
 
+  // Fogo e Sabor Prime, 13/11/2026: a loja vinculou os itens do iFood e da 99
+  // ao produto real ("Vincular itens do iFood e 99"); o pedido gravado antes
+  // segue no espelho, com o nome do app, e o DRE ficava "resultado incompleto".
+  const espelho = (id: string, nome: string, vinculadoA: string | null, origem = "IFOOD") => prod(id, nome, { ativo: false, origemIntegracao: origem, vinculadoA });
+  const VINCULOS = montarCatalogo([
+    prod("p-carne", "Esfirra de Carne", { ficha: ficha(["Massa", 1], ["Recheio de carne", 25]) }),
+    prod("p-xtudo", "X-Tudo", { custo: 8 }),
+    prod("p-pizza", "Pizza Calabresa", { custo: 20 }),
+    espelho("ifood-300", "Esfiha Tradicional Carne", "p-carne"),
+    espelho("99food_loja_X Tudo Artesanal", "X Tudo Artesanal", "p-xtudo", "99FOOD"),
+    espelho("ifood-301", "Pizza Grande Calabresa", null),
+    espelho("ifood-302", "Lanche Sumido", "p-apagado"),
+    // O espelho com o nome de um produto do cardápio, ligado a outro produto.
+    espelho("ifood-303", "Pizza Calabresa", "p-xtudo"),
+  ]);
+  const doVinculo = (x: Partial<ItemParaCusto>) => custoDoItem({ produtoId: null, nome: null, quantidade: 2, preco: 10, escolhas: null, ...x }, VINCULOS, noDia("2026-10-13"));
+  confere("espelho vinculado: o custo é o da ficha do produto real", [doVinculo({ produtoId: "ifood-300", nome: "Esfiha Tradicional Carne" }).custo, doVinculo({ produtoId: "ifood-300", nome: "Esfiha Tradicional Carne" }).fonte], [4, "FICHA"]);
+  confere("espelho vinculado da 99: o custo digitado do produto real", doVinculo({ produtoId: "99food_loja_X Tudo Artesanal", nome: "X Tudo Artesanal" }).custo, 16);
+  confere("item sem o espelho no catálogo acha o vínculo pelo nome do espelho", doVinculo({ produtoId: "ifood-apagado", nome: "esfiha tradicional carne" }).custo, 4);
+  confere("espelho SEM vínculo: segue nome do app que não existe no cardápio", doVinculo({ produtoId: "ifood-301", nome: "Pizza Grande Calabresa" }).faltas, [{ motivo: "NOME_NAO_CASA", nome: "Pizza Grande Calabresa" }]);
+  confere("vínculo para produto que sumiu: segue sem custo", doVinculo({ produtoId: "ifood-302", nome: "Lanche Sumido" }).faltas, [{ motivo: "NOME_NAO_CASA", nome: "Lanche Sumido" }]);
+  confere("o espelho vinculado vale sobre o nome (o lojista escolheu)", doVinculo({ produtoId: "ifood-303", nome: "Pizza Calabresa" }).custo, 16);
+  confere("sem o espelho, o nome que casa com produto do cardápio segue o produto", doVinculo({ produtoId: null, nome: "Pizza Calabresa" }).custo, 40);
+  confere("produto normal da loja: nada muda", [doVinculo({ produtoId: "p-xtudo" }).custo, doVinculo({ produtoId: "p-carne" }).custo], [16, 4]);
+  confere("dois espelhos de mesmo nome em produtos diferentes: não chuta",
+    montarCatalogo([prod("a", "A", { custo: 1 }), prod("b", "B", { custo: 2 }), espelho("ifood-1", "Lanche", "a"), espelho("ifood-2", "lanche", "b")]).vinculoPorNome.get("lanche"), null);
+
+  // Produto com complementos e custo próprio (não é combo): a opção escolhida
+  // não apaga o custo dele. Combo de verdade segue pelas opções.
+  const COMPLEMENTOS = montarCatalogo([
+    prod("p-bacon", "Bacon", { custo: 2 }),
+    prod("p-salada", "X-Salada", { custo: 7, grupos: [{ id: "g-add", opcoes: [{ id: "o-bacon", produtoId: "p-bacon" }] }] }),
+    prod("p-acai", "Monte seu Açaí", { grupos: [{ id: "g-acai", opcoes: [{ id: "o-bacon2", produtoId: "p-bacon" }] }] }),
+    prod("p-combo2", "Combo Lanche", { combo: true, custo: 5, grupos: [{ id: "g-c", opcoes: [{ id: "o-b3", produtoId: "p-bacon" }] }] }),
+  ]);
+  const comComplemento = (x: Partial<ItemParaCusto>) => custoDoItem({ produtoId: null, nome: null, quantidade: 1, preco: 20, escolhas: null, ...x }, COMPLEMENTOS, noDia("2026-10-13"));
+  confere("complemento sem preço (“Sem cebola”) não tira o custo do lanche", comComplemento({ produtoId: "p-salada", escolhas: [{ name: "Sem cebola", quantity: 1, price: 0 }] }).custo, 7);
+  confere("adicional pago não apaga o custo do lanche", comComplemento({ produtoId: "p-salada", escolhas: [{ name: "Bacon", quantity: 1, price: 3 }] }).custo, 7);
+  confere("produto com grupos e SEM custo próprio: segue pelas opções", comComplemento({ produtoId: "p-acai", escolhas: [{ name: "Bacon", quantity: 2, price: 0 }] }).custo, 4);
+  confere("combo de verdade: segue pelas opções", comComplemento({ produtoId: "p-combo2", escolhas: [{ name: "Bacon", quantity: 1, price: 0 }] }).custo, 2);
+
   console.log("\n— CMV do DRE: contagem → ficha → custo do produto —");
   const SEMANA_DO_HAKIM = { diaDaContagem: 2, fecha: 1, comecaEm: 2 }; // contagem na terça antes de abrir: semana de terça a segunda
   const trechoReal = { de: "2026-10-13", ate: "2026-10-19", estoqueInicial: 5000, compras: 3000, estoqueFinal: 4500, cmv: 3500, vendas: 0, pct: null, tipoDoFechamento: "COMPLETA" };
