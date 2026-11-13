@@ -560,6 +560,16 @@ body:has([data-pagina-do-cliente]) .fcw-do-firehub {
   display: none !important;
 }
 
+/* As bolinhas flutuantes do painel (WhatsApp da loja e Bill) somem enquanto
+   houver modal aberto: no celular a do WhatsApp cobria o "Conectar e
+   Autorizar no Portal iFood" e o "Concluir Vinculação" (Holy Top, 13/11/2026).
+   Para um modal entrar nisso basta a caixa dele ter role="dialog" e
+   aria-modal="true" (o padrão dos modais do painel) e só existir no DOM
+   enquanto aberto. */
+body:has([aria-modal="true"]) .flutuante-da-loja {
+  display: none !important;
+}
+
 /* ── Responsive: hide widget on mobile ── */
 @media (max-width: 600px) {
   .fcw-container,

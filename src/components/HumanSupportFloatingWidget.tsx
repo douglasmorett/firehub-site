@@ -346,7 +346,10 @@ export default function HumanSupportFloatingWidget() {
     //
     // Este sobe 76px e ganha um rótulo, para os dois conviverem e cada um dizer
     // o que é. z-index 10000 porque o outro já ocupa 9999.
-    <div style={{ position: "fixed", bottom: "100px", right: "clamp(8px, 4vw, 24px)", zIndex: 10000, fontFamily: "sans-serif", ...arraste.estiloDoContainer }}>
+    //
+    // Some enquanto há modal aberto (classe flutuante-da-loja, regra em
+    // globals.css): no celular cobria os botões do modal do iFood (Holy Top, 13/11/2026).
+    <div className="flutuante-da-loja" style={{ position: "fixed", bottom: "100px", right: "clamp(8px, 4vw, 24px)", zIndex: 10000, fontFamily: "sans-serif", ...arraste.estiloDoContainer }}>
       {/* JANELA DO CHAT DE SUPORTE */}
       {open && (
         <div

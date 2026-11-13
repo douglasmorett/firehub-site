@@ -1946,15 +1946,28 @@ export default function IntegracoesHubClient({
       {/* ================= MODAL DE CONFIGURAÇÃO DEDICADA ================= */}
       {openModal && (
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(15,23,42,0.65)", backdropFilter: "blur(6px)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}>
-          <div style={{ background: "#fff", borderRadius: "24px", width: "100%", maxWidth: openModal === "asaas" ? "780px" : "560px", maxHeight: "92vh", overflowY: "auto", padding: "28px", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)", position: "relative", animation: "modalIn 0.2s ease-out" }}>
-            
-            {/* Close Button */}
-            <button
-              onClick={() => setOpenModal(null)}
-              style={{ position: "absolute", top: "20px", right: "20px", background: "#F1F5F9", border: "none", borderRadius: "50%", width: "36px", height: "36px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#475569" }}
-            >
-              <X size={18} />
-            </button>
+          {/* role="dialog" + aria-modal="true" também esconde as bolinhas
+              flutuantes do painel (WhatsApp da loja, Bill) enquanto o modal
+              está aberto — no celular a do WhatsApp cobria o "Conectar e
+              Autorizar no Portal iFood" e o "Concluir Vinculação" (Holy Top,
+              13/11/2026). A regra fica em globals.css (.flutuante-da-loja). */}
+          <div role="dialog" aria-modal="true" style={{ background: "#fff", borderRadius: "24px", width: "100%", maxWidth: openModal === "asaas" ? "780px" : "560px", maxHeight: "92vh", overflowY: "auto", padding: "28px", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.25)", position: "relative", animation: "modalIn 0.2s ease-out" }}>
+
+            {/* Close Button — preso no alto da caixa. Era absolute dentro da
+                caixa que rola: no celular o X subia junto com o conteúdo e a
+                loja não conseguia fechar o modal do iFood (Holy Top, 13/11/2026).
+                A faixa sticky tem altura 0 e gruda na borda do conteúdo (o sticky
+                conta a partir do padding de 28px): parado ou rolando, o X fica
+                onde sempre esteve, 20px do canto (conferido no Chromium e WebKit). */}
+            <div style={{ position: "sticky", top: 0, height: 0, zIndex: 2 }}>
+              <button
+                onClick={() => setOpenModal(null)}
+                aria-label="Fechar"
+                style={{ position: "absolute", top: "-8px", right: "-8px", background: "#F1F5F9", border: "none", borderRadius: "50%", width: "36px", height: "36px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#475569" }}
+              >
+                <X size={18} />
+              </button>
+            </div>
 
             {/* 🎯 MODAL: META PIXEL */}
             {openModal === "pixel" && (
