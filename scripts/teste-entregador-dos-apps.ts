@@ -9,6 +9,7 @@ import {
   motivoParaNaoChamar, ehDa99ComEntregaDaLoja, telefoneParaIfood, pagamentoParaIfood, entradaDoPedido,
 } from "../src/lib/entregador-ifood-no-pedido";
 import { montarPedido } from "../src/lib/ifood-shipping";
+import { faltaReautorizar, modulosLiberados } from "../src/lib/ifood-permissoes";
 
 let ok = 0;
 const caso = (nome: string, f: () => void) => { f(); ok++; console.log("✓", nome); };
@@ -70,6 +71,21 @@ caso("pago online vai como ONLINE com o valor total", () => {
     endereco, { metodo: "ONLINE", bandeira: "VISA" }, "q"));
   assert.equal(corpo.payments.methods[0].type, "ONLINE");
   assert.equal(corpo.payments.methods[0].value, 97.9);
+});
+
+// Token no formato do iFood (medido na Hakim Centro em 12/11/2026).
+const jwt = (merchantScope: string[]) =>
+  `x.${Buffer.from(JSON.stringify({ scope: ["order", "events", "catalog", "shipping", "merchant"], merchant_scope: merchantScope })).toString("base64url")}.y`;
+const M = "6a5fb96d-68bd-46af-ada4-456a9a160787";
+caso("loja autorizada antes das novidades precisa autorizar de novo", () =>
+  assert.equal(faltaReautorizar(jwt([`${M}:order`, `${M}:events`]), M), true));
+caso("loja já com merchant/catalog/shipping não precisa", () =>
+  assert.equal(faltaReautorizar(jwt([`${M}:order`, `${M}:events`, `${M}:merchant`, `${M}:catalog`, `${M}:shipping`]), M), false));
+caso("permissão de OUTRA loja não conta", () =>
+  assert.equal(faltaReautorizar(jwt([`${M}:order`, "outra:catalog", "outra:shipping", "outra:merchant"]), M), true));
+caso("token que não é JWT não acusa (sem informação)", () => {
+  assert.equal(faltaReautorizar("token-opaco", M), false);
+  assert.equal(modulosLiberados(null, M), null);
 });
 
 console.log(`\n${ok} casos ok`);
