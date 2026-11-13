@@ -6,7 +6,7 @@
  * versão: toda conta de dono volta a ver a tela de aceite no próximo acesso ao
  * painel (lib/termos-de-uso.ts). Correção de vírgula não precisa.
  */
-export const VERSAO_DOS_TERMOS = "2026-10-04";
+export const VERSAO_DOS_TERMOS = "2026-11-13";
 
 /** "04/10/2026" — o que aparece no topo do texto. */
-export const DATA_DOS_TERMOS = "04/10/2026";
+export const DATA_DOS_TERMOS = "13/11/2026";
