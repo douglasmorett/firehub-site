@@ -35,6 +35,8 @@ import {
 } from "@/lib/stone-connect";
 import { credencialStone } from "@/lib/stone-connect-loja";
 import { ESTADO_TEF_NO_PINPAD, formaDoPedidoTef, tefDaLicenca } from "@/lib/tef-do-totem";
+import { ehCartao, lerFormaDoTotem, textoDaForma } from "@/lib/forma-do-totem";
+import { PROVEDOR_ASAAS, largarPixDoPedido } from "@/lib/pix-online-pedido";
 import {
   PROVEDOR_STONE,
   aplicarPedidoStoneNoTotem,
@@ -391,6 +393,8 @@ export async function POST(req: NextRequest) {
         paymentPaidAt: true,
         posOrderId: true,
         posTerminalId: true,
+        gatewayProvider: true,
+        gatewayPaymentId: true,
       },
     });
     if (!pedido) {
@@ -412,6 +416,20 @@ export async function POST(req: NextRequest) {
         { error: "Este pedido foi cancelado e não pode ser cobrado.", code: "PEDIDO_CANCELADO" },
         { status: 409 },
       );
+    }
+
+    // O cliente gerou o Pix e voltou para pagar no cartão: o QR deixa de valer
+    // antes de o cartão acender — senão ele pagaria duas vezes. Se o Pix já
+    // caiu, o pedido está pago e não há o que cobrar.
+    const formaEscolhida = lerFormaDoTotem(forma);
+    if (pedido.gatewayProvider === PROVEDOR_ASAAS && pedido.gatewayPaymentId) {
+      const largado = await largarPixDoPedido(pedido.id);
+      if (largado.pago) {
+        return NextResponse.json({ error: "Este pedido já foi pago.", code: "JA_PAGO", pago: true }, { status: 409 });
+      }
+      if (!largado.ok) {
+        return NextResponse.json({ error: largado.erro || "Não deu para trocar a forma de pagamento agora. Tente de novo." }, { status: 409 });
+      }
     }
 
     const valorEmCentavos = Math.round((pedido.totalAmount || 0) * 100);
@@ -549,7 +567,9 @@ export async function POST(req: NextRequest) {
           posStatus: ESTADOS_DA_COBRANCA.aguardando,
           posTerminalId: enderecada ? terminalComApp.id : null,
           posTentativas: { increment: 1 },
-          paymentMethod: FORMA_MAQUININHA,
+          // A forma escolhida na tela vai junto para o app, que pula a pergunta
+          // (lib/forma-do-totem → /api/pos/terminal/pendente).
+          paymentMethod: ehCartao(formaEscolhida) ? textoDaForma(formaEscolhida) : FORMA_MAQUININHA,
         },
         select: { posTentativas: true },
       });

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { ehCartao, lerFormaDoTotem, textoDaForma } from "@/lib/forma-do-totem";
 import { prisma } from "@/lib/prisma";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
 import { generateDailyOrderNumberTx } from "@/lib/order-number";
@@ -95,6 +96,11 @@ const FORMA_MAQUININHA = "Cartão (Maquininha)";
 const FORMA_NO_CAIXA = "Pagar no caixa";
 
 function formaDePagamentoDoTotem(valor: unknown): string {
+  // Crédito/Débito/Vale escolhidos na tela (lib/forma-do-totem). O Pix NÃO
+  // entra aqui: quem grava PIX_ONLINE é /api/totem/pix, depois de conferir que
+  // a loja recebe Pix pelo FireHub — senão volta o "Pago via Online" falso.
+  const forma = lerFormaDoTotem(valor);
+  if (ehCartao(forma)) return textoDaForma(forma);
   const texto = typeof valor === "string" ? valor.trim().toLowerCase() : "";
   if (texto.includes("caixa") || texto.includes("balcao") || texto.includes("balcão")) {
     return FORMA_NO_CAIXA;

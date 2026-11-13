@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { formasDoTotem } from "@/lib/forma-do-totem";
 import { prisma } from "@/lib/prisma";
 import { autenticarTotem, ipDaRequisicao } from "@/lib/totem-auth";
 import { normalizarConfigFiscal } from "@/lib/fiscal-config";
@@ -59,6 +60,8 @@ export async function POST(req: NextRequest) {
               totemConfig: true,
               storeHours: true,
               paymentFees: true,
+              // Pix do FireHub (Asaas da loja): o único Pix do totem (lib/forma-do-totem).
+              pixOnlineAtivo: true,
               // Só para a regra do CPF na nota (lib/fiscal-modo); o
               // fiscalConfig em si não sai daqui.
               fiscalConfig: true,
@@ -98,6 +101,8 @@ export async function POST(req: NextRequest) {
         config: loja.totemConfig,
         hours: loja.storeHours,
         paymentFees: loja.paymentFees,
+        // Os botões de "Como deseja pagar?" (lib/forma-do-totem).
+        formasDePagamento: formasDoTotem(loja),
         // A loja que emite a nota sozinha pergunta "CPF na nota?" antes do
         // pagamento (lib/fiscal-modo). Só a regra — nunca a config fiscal.
         notaFiscal: documentoNoPedido(normalizarConfigFiscal(loja.fiscalConfig)),

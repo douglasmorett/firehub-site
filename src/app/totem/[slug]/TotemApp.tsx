@@ -14,6 +14,7 @@ import {
   Minus,
   Nfc,
   Plus,
+  QrCode,
   RefreshCw,
   Search,
   ShoppingCart,
@@ -25,6 +26,8 @@ import { minimoExigidoDoGrupo, precoUnitarioDoItem, regraDoGrupo, precoDaOpcaoNa
 import { itemFixoDoGrupo } from "@/lib/combo-e-pergunta";
 import { lerDocumentoDoCliente, mascararDocumentoDigitado, problemaDoDocumento } from "@/lib/documento-do-cliente";
 import { acharTef, chamarTef, type EstadoTef } from "@/lib/tef-no-assistente";
+import { ROTULO_DA_FORMA, ehCartao, lerFormaDoTotem, type FormaDoTotem } from "@/lib/forma-do-totem";
+import { cpfValido } from "@/lib/fiscal-validacao";
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * TOTEM DE AUTOATENDIMENTO
@@ -99,6 +102,21 @@ const ESPERA_ATE_CHAMAR_ATENDENTE_MS = 120_000;
 const ESPERA_MAXIMA_NA_MAQUININHA_MS = 5 * 60_000;
 
 /**
+ * Pix na tela sem pagar: depois disto o QR é cancelado e o totem volta ao
+ * começo. Sem o limite, um QR abandonado prenderia o quiosque pelos 30 min de
+ * validade do Pix (lib/pix-online), e alguém pagando depois mandaria à
+ * cozinha o pedido de quem já foi embora.
+ */
+const ESPERA_MAXIMA_NO_PIX_MS = 5 * 60_000;
+
+/** O vocabulário de `forma` que /api/totem/payment/start já entendia (Stone). */
+const FORMA_NO_START: Record<"CREDITO" | "DEBITO" | "VOUCHER", string> = {
+  CREDITO: "credit",
+  DEBITO: "debit",
+  VOUCHER: "voucher",
+};
+
+/**
  * De quanto em quanto tempo o cancelamento automático insiste. Uma tentativa só
  * não basta: o Mercado Pago fora do ar por um minuto deixava o quiosque preso
  * na tela da maquininha para sempre, porque enquanto o pagamento não termina
@@ -128,6 +146,8 @@ type Tela =
   | "NOME"
   | "DOCUMENTO"
   | "PAGAMENTO"
+  | "CPF_PIX"
+  | "PIX"
   | "ENVIANDO"
   | "MAQUININHA"
   | "CAIXA"
@@ -139,7 +159,7 @@ type Tela =
  * administrativo (licença desligada, módulo desativado) troca a tela por um
  * erro daqui: isso apagaria o número do pedido de quem acabou de pagar.
  */
-const TELAS_DE_PAGAMENTO = new Set<Tela>(["ENVIANDO", "MAQUININHA", "CAIXA", "CONFIRMADO"]);
+const TELAS_DE_PAGAMENTO = new Set<Tela>(["ENVIANDO", "MAQUININHA", "PIX", "CAIXA", "CONFIRMADO"]);
 
 type EstadoDoPagamento =
   | "INICIANDO"
@@ -875,6 +895,19 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
   const [segundosDoAviso, setSegundosDoAviso] = useState(Math.round(AVISO_ANTES_MS / 1000));
 
   const [pedido, setPedido] = useState<PedidoCriado | null>(null);
+  /*
+   * As formas que a loja aceita no totem (lib/forma-do-totem, vem do auth).
+   * null = servidor que ainda não manda a lista: fica o botão único de antes.
+   */
+  const [formasDaLoja, setFormasDaLoja] = useState<FormaDoTotem[] | null>(null);
+  /** Crédito/Débito/Vale tocado na tela: vai no start e vale para "Tentar de novo". */
+  const formaDoCartaoRef = useRef<"CREDITO" | "DEBITO" | "VOUCHER" | null>(null);
+  const [cpfDoPix, setCpfDoPix] = useState("");
+  const [pix, setPix] = useState<{ qr: string | null; expiraEm: string } | null>(null);
+  const [erroDoPix, setErroDoPix] = useState<string | null>(null);
+  const [mexendoNoPix, setMexendoNoPix] = useState(false);
+  /** Relógio da validade do QR na tela do Pix. */
+  const [agoraDoPix, setAgoraDoPix] = useState(() => Date.now());
   const [erroDoEnvio, setErroDoEnvio] = useState<string | null>(null);
   const [estadoDoPagamento, setEstadoDoPagamento] = useState<EstadoDoPagamento>("INICIANDO");
   const [detalheDoPagamento, setDetalheDoPagamento] = useState<string | null>(null);
@@ -993,6 +1026,10 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
     setNomeDoCliente("");
     // O CPF é o dado que MENOS pode sobrar para o próximo cliente.
     setDocumentoDoCliente("");
+    setCpfDoPix("");
+    setPix(null);
+    setErroDoPix(null);
+    formaDoCartaoRef.current = null;
     setObservacao("");
     setBusca("");
     setComboAberto(null);
@@ -1085,6 +1122,10 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
         pagarNoCaixa: auth.dados?.store?.config?.pagarNoCaixa !== false,
       });
       setMaquininha(extrairMaquininha(auth.dados));
+      const formas = auth.dados?.store?.formasDePagamento;
+      setFormasDaLoja(
+        Array.isArray(formas) ? formas.map(lerFormaDoTotem).filter((f): f is FormaDoTotem => f !== null) : null
+      );
       const tefDaLicenca = auth.dados?.license?.tef;
       segredoTefRef.current = tefDaLicenca?.ligado && tefDaLicenca?.segredoLocal ? String(tefDaLicenca.segredoLocal) : null;
       // Licença com pinpad: o cartão existe mesmo sem maquininha vinculada.
@@ -1283,7 +1324,8 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
    * o aviso aparece na hora de concluir.
    */
   useEffect(() => {
-    const emVenda = tela === "CARDAPIO" || tela === "CARRINHO" || tela === "NOME" || tela === "DOCUMENTO" || tela === "PAGAMENTO";
+    const emVenda =
+      tela === "CARDAPIO" || tela === "CARRINHO" || tela === "NOME" || tela === "DOCUMENTO" || tela === "PAGAMENTO" || tela === "CPF_PIX";
     if (!lojaAberta && emVenda) {
       setCarrinho([]);
       setComboAberto(null);
@@ -1313,9 +1355,10 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
     tela === "NOME" ||
     tela === "DOCUMENTO" ||
     tela === "PAGAMENTO" ||
+    tela === "CPF_PIX" ||
     (tela === "MAQUININHA" && pagamentoEncerrado);
   const temAlgoAPerder =
-    carrinho.length > 0 || nomeDoCliente.length > 0 || documentoDoCliente.length > 0 || busca.length > 0 || comboAberto !== null || observacao.length > 0;
+    carrinho.length > 0 || nomeDoCliente.length > 0 || documentoDoCliente.length > 0 || cpfDoPix.length > 0 || busca.length > 0 || comboAberto !== null || observacao.length > 0;
 
   /**
    * O cliente que foi chamar o atendente NÃO está inativo — ele está fazendo
@@ -1766,7 +1809,12 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
       const r = await chamar("/api/totem/payment/start", {
         metodo: "POST",
         prazoMs: 20_000,
-        corpo: { token, orderId },
+        corpo: {
+          token,
+          orderId,
+          // A forma tocada na tela: a maquininha abre direto a tela do cartão.
+          ...(formaDoCartaoRef.current ? { forma: FORMA_NO_START[formaDoCartaoRef.current] } : {}),
+        },
       });
 
       // A rota confirma o pagamento sozinha quando descobre no MP que o cartão
@@ -1806,12 +1854,130 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
     [bipar, token, iniciarNoPinpad]
   );
 
-  const pagarNaMaquininha = async () => {
-    const criado = await criarPedido("Cartão (Maquininha)");
+  const pagarNaMaquininha = async (forma?: "CREDITO" | "DEBITO" | "VOUCHER") => {
+    formaDoCartaoRef.current = forma ?? null;
+    const criado = await criarPedido(forma ?? "Cartão (Maquininha)");
     if (!criado) return;
     setTela("MAQUININHA");
     await iniciarCobranca(criado.id);
   };
+
+  /* ──────────────────────────── PIX DO FIREHUB ───────────────────────────── */
+
+  /** O Asaas exige o CPF de quem paga: aproveita o da nota, senão pergunta. */
+  const pagarComPix = async () => {
+    const daNota = documentoDoCliente.length === 11 && cpfValido(documentoDoCliente) ? documentoDoCliente : "";
+    const cpf = cpfValido(cpfDoPix) ? cpfDoPix : daNota;
+    if (!cpf) {
+      setErroDoPix(null);
+      setTela("CPF_PIX");
+      return;
+    }
+    await gerarPix(cpf);
+  };
+
+  const gerarPix = async (cpf: string) => {
+    setErroDoPix(null);
+    const criado = await criarPedido("PIX");
+    if (!criado) return;
+    setTela("ENVIANDO");
+    const r = await chamar("/api/totem/pix", { metodo: "POST", prazoMs: 25_000, corpo: { token, orderId: criado.id, cpf } });
+    if (r.dados?.pago === true) {
+      bipar();
+      setTela("CONFIRMADO");
+      return;
+    }
+    if (!r.ok) {
+      const mensagem = r.falhaDeRede
+        ? "Não conseguimos gerar o Pix agora. Tente de novo ou escolha outra forma."
+        : r.dados?.error || "Não foi possível gerar o Pix.";
+      if (r.dados?.code === "CPF_INVALIDO") {
+        setErroDoPix(mensagem);
+        setTela("CPF_PIX");
+        return;
+      }
+      setErroDoEnvio(mensagem);
+      setTela("PAGAMENTO");
+      return;
+    }
+    setPix({ qr: r.dados?.qrCodeBase64 || null, expiraEm: String(r.dados?.expiraEm || "") });
+    setTela("PIX");
+  };
+
+  /**
+   * O QR deixa de valer ANTES de o cliente sair desta tela — senão ele (ou quem
+   * achar o QR) paga depois e o pedido vai para a cozinha sem ninguém esperar.
+   * Pix que caiu no meio do caminho é pedido pago: vai para a confirmação.
+   */
+  const desistirDoPix = async (destino: "PAGAMENTO" | "SAIR") => {
+    if (!pedido?.id || mexendoNoPix) return;
+    setMexendoNoPix(true);
+    const r = await chamar("/api/totem/pix", { metodo: "POST", prazoMs: 20_000, corpo: { token, orderId: pedido.id, acao: "desistir" } });
+    setMexendoNoPix(false);
+    if (r.dados?.pago === true) {
+      bipar();
+      setTela("CONFIRMADO");
+      return;
+    }
+    if (!r.ok) {
+      setErroDoPix(
+        r.falhaDeRede
+          ? "Não conseguimos cancelar o Pix agora. Se você já pagou, aguarde: o pedido segue sozinho."
+          : r.dados?.error || "Não foi possível cancelar o Pix."
+      );
+      return;
+    }
+    setPix(null);
+    setErroDoPix(null);
+    if (destino === "SAIR") reiniciarSessao();
+    else setTela("PAGAMENTO");
+  };
+  useEffect(() => {
+    if (tela !== "PIX") return;
+    const id = setInterval(() => setAgoraDoPix(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [tela]);
+  const desistirDoPixRef = useRef(desistirDoPix);
+  useEffect(() => {
+    desistirDoPixRef.current = desistirDoPix;
+  });
+
+  /** Pix na tela: pergunta se caiu. A rota confere no Asaas se o webhook atrasar. */
+  useEffect(() => {
+    if (tela !== "PIX" || !pedido?.id) return;
+    let vivo = true;
+    const consultar = async () => {
+      const r = await chamar(
+        `/api/totem/payment-status?token=${encodeURIComponent(token)}&orderId=${encodeURIComponent(pedido.id)}`,
+        { prazoMs: 8_000 }
+      );
+      if (!vivo || !r.ok) return;
+      if (r.dados?.paid === true) {
+        bipar();
+        setTela("CONFIRMADO");
+      } else if (r.dados?.canceled === true) {
+        setPix(null);
+        setErroDoPix("O tempo do Pix acabou e o pedido foi cancelado. Faça o pedido de novo.");
+      }
+    };
+    void consultar();
+    const id = setInterval(() => void consultar(), INTERVALO_POLL_MS * 1.5);
+    return () => {
+      vivo = false;
+      clearInterval(id);
+    };
+  }, [tela, pedido?.id, token, bipar]);
+
+  /** QR abandonado: cancela e libera o totem, insistindo se a rede falhar. */
+  useEffect(() => {
+    if (tela !== "PIX" || !pix) return;
+    const limite = Date.now() + ESPERA_MAXIMA_NO_PIX_MS;
+    const id = setInterval(() => {
+      if (Date.now() < limite) return;
+      void desistirDoPixRef.current("SAIR");
+    }, INTERVALO_NOVA_TENTATIVA_DE_CANCELAR_MS);
+    return () => clearInterval(id);
+  }, [tela, pix]);
 
   const pagarNoCaixa = async () => {
     const criado = await criarPedido("Pagar no caixa");
@@ -2185,7 +2351,9 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
           textoNao="Não, continuar"
           onSim={() => {
             setConfirmarCancelamento(false);
-            reiniciarSessao();
+            // Com o QR na tela, cancelar é antes derrubar o Pix (desistirDoPix).
+            if (tela === "PIX") void desistirDoPix("SAIR");
+            else reiniciarSessao();
           }}
           onNao={() => setConfirmarCancelamento(false)}
         />
@@ -3224,8 +3392,40 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
 
   if (tela === "PAGAMENTO") {
     const mostrarMaquininha = maquininha.estado !== "NAO";
-    // Sem maquininha o caixa é a única forma de pagar: aparece mesmo desligado.
-    const mostrarCaixa = loja?.pagarNoCaixa !== false || !mostrarMaquininha;
+    // Com a lista da loja (lib/forma-do-totem): um botão por forma aceita.
+    // Cartão só com maquininha (ou pinpad); Pix só o do FireHub.
+    const cartoesDaLoja = formasDaLoja && mostrarMaquininha ? formasDaLoja.filter(ehCartao) : [];
+    const pixDaLoja = Boolean(formasDaLoja?.includes("PIX"));
+    const algumaFormaNaTela = formasDaLoja ? cartoesDaLoja.length > 0 || pixDaLoja : mostrarMaquininha;
+    // Sem outra forma o caixa é a única saída: aparece mesmo desligado.
+    const mostrarCaixa = loja?.pagarNoCaixa !== false || !algumaFormaNaTela;
+    const quantosBotoes = (formasDaLoja ? cartoesDaLoja.length + (pixDaLoja ? 1 : 0) : mostrarMaquininha ? 1 : 0) + (mostrarCaixa ? 1 : 0);
+    const cartaoDeForma = (p: { chave: string; cor: string; icone: React.ReactNode; titulo: string; texto: React.ReactNode; onClick: () => void }) => (
+      <button
+        key={p.chave}
+        type="button"
+        disabled={!podePagar}
+        onClick={p.onClick}
+        style={{
+          ...vidro,
+          padding: 32,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 14,
+          border: `2px solid ${p.cor}`,
+          color: "white",
+          minHeight: quantosBotoes > 2 ? 220 : 300,
+          font: "inherit",
+          ...estiloDoCartao,
+        }}
+      >
+        {p.icone}
+        <h2 style={{ fontSize: 30, fontWeight: 800, margin: 0 }}>{p.titulo}</h2>
+        <p style={{ fontSize: 18, color: "#94A3B8", textAlign: "center", margin: 0, lineHeight: 1.4 }}>{p.texto}</p>
+      </button>
+    );
     // Os dois cartões ficavam clicáveis com um POST em voo e depois de uma
     // resposta perdida na rede — cada toque extra é uma senha a mais para a
     // mesma comida, faturada e baixada do estoque de novo. Eles não somem: a
@@ -3301,7 +3501,7 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: mostrarMaquininha ? "1fr 1fr" : "1fr",
+              gridTemplateColumns: quantosBotoes > 1 ? `repeat(${quantosBotoes > 4 ? 3 : 2}, 1fr)` : "1fr",
               gap: 24,
               width: "100%",
               maxWidth: 1000,
@@ -3310,7 +3510,29 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
             {/* Some de vez quando o servidor já respondeu que esta licença não
                 tem maquininha: o botão mandaria a cobrança para o visor de
                 outro totem do salão — ou para lugar nenhum. */}
-            {mostrarMaquininha && (
+            {formasDaLoja &&
+              cartoesDaLoja.map((forma) =>
+                cartaoDeForma({
+                  chave: forma,
+                  cor: "#3B82F6",
+                  icone: <CreditCard size={64} color="#3B82F6" />,
+                  titulo: ROTULO_DA_FORMA[forma],
+                  texto: <>Na maquininha {maquininha.rotulo ? `"${maquininha.rotulo}"` : "ao lado do totem"}.</>,
+                  onClick: () => void pagarNaMaquininha(forma),
+                })
+              )}
+
+            {pixDaLoja &&
+              cartaoDeForma({
+                chave: "PIX",
+                cor: "#14B8A6",
+                icone: <QrCode size={64} color="#14B8A6" />,
+                titulo: "Pix",
+                texto: <>O QR Code aparece aqui na tela.</>,
+                onClick: () => void pagarComPix(),
+              })}
+
+            {!formasDaLoja && mostrarMaquininha && (
               <button
                 type="button"
                 disabled={!podePagar}
@@ -3380,6 +3602,159 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
               style={{ ...botaoSecundario, minWidth: 360 }}
             >
               O atendente conferiu — tentar de novo
+            </button>
+          )}
+        </div>
+
+        {sobreposicoes}
+      </div>
+    );
+  }
+
+  /* ─────────────────────────── TELA: CPF DO PIX ──────────────────────────── */
+
+  if (tela === "CPF_PIX") {
+    const completo = cpfDoPix.length === 11;
+    const valido = completo && cpfValido(cpfDoPix);
+    const aviso = erroDoPix || (completo && !valido ? "CPF inválido. Confira os números." : null);
+    return (
+      <div style={telaEscura}>
+        <div style={{ padding: "20px 28px", display: "flex", alignItems: "center", gap: 16 }}>
+          <button type="button" onClick={() => setTela("PAGAMENTO")} style={botaoVoltar} aria-label="Voltar às formas de pagamento">
+            <ArrowLeft size={30} />
+          </button>
+          <div style={{ flex: 1 }} />
+          {botaoCancelarPedido}
+        </div>
+
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", padding: 28 }}>
+          <div style={{ margin: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: 24, width: "100%" }}>
+            <h2 style={{ fontSize: 40, fontWeight: 800, margin: 0, textAlign: "center" }}>Digite seu CPF para o Pix</h2>
+            <p style={{ fontSize: 20, color: "#94A3B8", margin: 0, textAlign: "center" }}>O banco pede o CPF de quem paga.</p>
+            <div
+              style={{
+                width: "100%",
+                maxWidth: 560,
+                background: "rgba(255,255,255,0.06)",
+                borderRadius: 20,
+                padding: "22px 28px",
+                fontSize: 40,
+                fontWeight: 800,
+                textAlign: "center",
+                minHeight: 100,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                letterSpacing: 1,
+                border: aviso ? "2px solid #F87171" : "2px solid transparent",
+              }}
+            >
+              {mascararDocumentoDigitado(cpfDoPix) || <span style={{ color: "rgba(255,255,255,0.2)" }}>000.000.000-00</span>}
+            </div>
+            <p aria-live="polite" style={{ fontSize: 20, color: "#FCA5A5", margin: 0, textAlign: "center", minHeight: 28 }}>
+              {aviso || ""}
+            </p>
+            <TecladoNumerico
+              texto={cpfDoPix}
+              onTexto={(t) => {
+                setErroDoPix(null);
+                setCpfDoPix(t.slice(0, 11));
+              }}
+              maxLen={11}
+            />
+          </div>
+        </div>
+
+        <div style={{ padding: 24, background: "#1E293B", display: "flex", gap: 16 }}>
+          <button
+            type="button"
+            disabled={!valido || enviandoPedido}
+            onClick={() => void gerarPix(cpfDoPix)}
+            style={{ ...botaoPrimario, flex: 1, minHeight: 84, fontSize: 26, opacity: valido ? 1 : 0.45 }}
+          >
+            Gerar o Pix <ChevronRight size={32} />
+          </button>
+        </div>
+
+        {sobreposicoes}
+      </div>
+    );
+  }
+
+  /* ───────────────────────────── TELA: PIX ───────────────────────────────── */
+
+  if (tela === "PIX") {
+    const restaMs = pix?.expiraEm ? Math.max(0, Date.parse(pix.expiraEm) - agoraDoPix) : null;
+    const resta =
+      restaMs === null || !Number.isFinite(restaMs)
+        ? null
+        : `${Math.floor(restaMs / 60_000)}:${String(Math.floor((restaMs % 60_000) / 1000)).padStart(2, "0")}`;
+    return (
+      <div style={telaEscura}>
+        <div style={{ padding: "20px 28px", display: "flex", alignItems: "center", gap: 16, borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
+          <h1 style={{ fontSize: 28, fontWeight: 800, margin: 0, flex: 1 }}>Pague com Pix</h1>
+          {botaoCancelarPedido}
+        </div>
+
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 28, gap: 22 }}>
+          <div style={{ fontSize: 46, fontWeight: 900 }}>{formatarPreco(pedido?.valor ?? total)}</div>
+
+          {pix?.qr ? (
+            <div style={{ background: "white", borderRadius: 24, padding: 18 }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={`data:image/png;base64,${pix.qr}`} alt="QR Code do Pix" style={{ width: 340, height: 340, display: "block" }} />
+            </div>
+          ) : (
+            !erroDoPix && <p style={{ fontSize: 22, color: "#94A3B8", margin: 0 }}>Carregando o QR Code…</p>
+          )}
+
+          {pix && (
+            <p style={{ fontSize: 22, color: "#CBD5E1", margin: 0, textAlign: "center", lineHeight: 1.5 }}>
+              Abra o app do seu banco, escolha <b>Pix</b> e <b>pagar com QR Code</b>.
+              <br />
+              Assim que o pagamento cair, seu pedido vai para a cozinha.
+            </p>
+          )}
+
+          {pix && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 20, color: "#94A3B8" }}>
+              <RefreshCw size={20} />
+              Aguardando o pagamento{resta ? ` · vale por ${resta}` : ""}
+            </div>
+          )}
+
+          {erroDoPix && (
+            <div
+              style={{
+                background: "rgba(229,57,53,0.15)",
+                border: "1px solid rgba(248,113,113,0.5)",
+                color: "#FCA5A5",
+                borderRadius: 16,
+                padding: "18px 24px",
+                fontSize: 19,
+                fontWeight: 700,
+                maxWidth: 900,
+                textAlign: "center",
+              }}
+            >
+              {erroDoPix}
+            </div>
+          )}
+        </div>
+
+        <div style={{ padding: 24, background: "#1E293B", display: "flex", gap: 16 }}>
+          {pix ? (
+            <button
+              type="button"
+              disabled={mexendoNoPix}
+              onClick={() => void desistirDoPix("PAGAMENTO")}
+              style={{ ...botaoSecundario, flex: 1, minHeight: 84, fontSize: 24, opacity: mexendoNoPix ? 0.5 : 1 }}
+            >
+              Escolher outra forma de pagamento
+            </button>
+          ) : (
+            <button type="button" onClick={reiniciarSessao} style={{ ...botaoPrimario, flex: 1, minHeight: 84, fontSize: 26 }}>
+              Voltar ao início
             </button>
           )}
         </div>
