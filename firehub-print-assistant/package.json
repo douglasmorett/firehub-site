@@ -30,6 +30,7 @@
       "impressao-windows.js",
       "contingencia.js",
       "token-da-nuvem.js",
+      "janela-do-firehub.js",
       "tef/**/*",
       "package.json",
       "assets/**/*"

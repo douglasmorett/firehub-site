@@ -63,6 +63,8 @@ const {
   APP_ID, oQueFazerComAOutra, outrasCopiasNoAr, derrubarPeloPid, arquivoDaVigia, respondeEmAlgumaTentativa,
 } = require("./instancias");
 
+const { abrirJanelaDoFireHub, garantirAtalhoDaJanela } = require("./janela-do-firehub");
+
 const PASTA_DADOS = path.join(process.env.APPDATA || os.homedir(), "FireHub");
 const VERSAO = require("./package.json").version;
 
@@ -346,6 +348,7 @@ function iniciar() {
     criarJanela();
     criarBandeja();
     log(`FireHub Assistente de Impressão ${VERSAO} no ar, na bandeja.`);
+    prepararInstalacaoCompleta();
     // Cópia de outra instalação que abrir depois desta (item 5).
     setInterval(() => { conferirCopiasDuplicadas().catch(() => {}); }, 60_000);
   });
@@ -373,9 +376,52 @@ function iniciar() {
     // A vigia pergunta nas portas antes de pedir a trava, mas se esta cópia
     // não respondeu a tempo ela chega aqui — e não é gente pedindo a janela.
     if (Array.isArray(linhaDeComando) && linhaDeComando.includes("--vigia")) return;
+    // O ícone "FireHub" (instalador completo): abre o sistema, não o status.
+    if (Array.isArray(linhaDeComando) && linhaDeComando.includes("--abrir-firehub")) return abrirOFireHub();
     log("Atalho aberto de novo — mostrando a janela desta cópia.");
     mostrarJanela();
   });
+}
+
+/* ── 7. O FIREHUB NO COMPUTADOR (instalador completo, 12/11/2026) ────────
+ *
+ * O instalador completo traz o FireHub inteiro (a "semente",
+ * contingencia.js) e o ícone "FireHub" na área de trabalho, que abre o
+ * sistema numa janela própria (janela-do-firehub.js) — com internet, a
+ * nuvem; sem, o FireHub deste computador. Só para quem instalou o completo:
+ * o Assistente de sempre (o que já está nas lojas) não ganha ícone nem janela
+ * novos — quem já tem a contingência segue com o atalho do navegador. */
+const ARQ_JANELA_JA_ABRIU = path.join(PASTA_DADOS, "janela-do-firehub.json");
+
+function ehInstalacaoCompleta() {
+  try {
+    if (process.resourcesPath && fs.existsSync(path.join(process.resourcesPath, "semente"))) return true;
+  } catch {}
+  return fs.existsSync(path.join(PASTA_DADOS, "instalacao-completa.json"));
+}
+
+function abrirOFireHub(inicio) {
+  const icone = arquivoDeIcone("icon.ico") || arquivoDeIcone("icon.png");
+  abrirJanelaDoFireHub({ BrowserWindow, shell, icone, log, inicio });
+  gravarMarca(ARQ_JANELA_JA_ABRIU, { em: new Date().toISOString() });
+}
+
+function prepararInstalacaoCompleta() {
+  const pediuAJanela = process.argv.includes("--abrir-firehub");
+  if (!ehInstalacaoCompleta()) {
+    // Ícone antigo de uma instalação completa trocada pela comum: abre o sistema assim mesmo.
+    if (pediuAJanela) abrirOFireHub();
+    return;
+  }
+  if (app.isPackaged) {
+    garantirAtalhoDaJanela({
+      shell, fs, path, areaDeTrabalho: app.getPath("desktop"), executavel: process.execPath, log,
+    });
+  }
+  if (pediuAJanela) return abrirOFireHub();
+  // Logo depois de instalar (o instalador abre o Assistente sem --hidden): a
+  // janela abre uma vez na tela do Modo Contingência, para entrar e ativar.
+  if (!process.argv.includes("--hidden") && !lerMarca(ARQ_JANELA_JA_ABRIU)) abrirOFireHub("/store/contingencia?instalado=1");
 }
 
 let tray = null;
@@ -466,6 +512,7 @@ function criarBandeja() {
     { label: `FireHub Assistente ${VERSAO}`, enabled: false },
     { label: "Imprimindo normalmente", enabled: false },
     { type: "separator" },
+    ...(ehInstalacaoCompleta() ? [{ label: "Abrir o FireHub", click: () => abrirOFireHub() }] : []),
     { label: "Abrir janela de status", click: mostrarJanela },
     { label: "Ver impressoras encontradas", click: () => shell.openExternal("http://localhost:7899/printers") },
     { type: "separator" },
