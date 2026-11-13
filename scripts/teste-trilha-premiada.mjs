@@ -211,7 +211,7 @@ const entrega = { subtotal: 60, taxa: 9, entrega: true };
 const retirada = { subtotal: 60, taxa: 0, entrega: false };
 
 let ef = efeitoDoPremio({ pedidos: 3, tipo: "frete" }, entrega);
-conferir("frete grátis zera a taxa", ef?.zeraTaxa === true && ef?.descontoExtra === 9);
+conferir("frete grátis zera a taxa e não desconta de novo dos itens", ef?.zeraTaxa === true && ef?.descontoExtra === 0 && ef?.resgate?.valorAplicado === 9);
 conferir("e grava o resgate com o valor", ef?.resgate.valorAplicado === 9 && ef?.resgate.pedidos === 3);
 conferir("frete grátis na RETIRADA não é consumido", efeitoDoPremio({ pedidos: 3, tipo: "frete" }, retirada) === null);
 conferir("frete grátis com taxa zero também fica guardado",

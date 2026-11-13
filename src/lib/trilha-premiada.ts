@@ -488,8 +488,10 @@ export function efeitoDoPremio(
   if (parada.tipo === "frete") {
     if (!conta.entrega || !(conta.taxa > 0)) return null;
     const valor = valorDoPremio(parada, { subtotal: conta.subtotal, taxaDeEntrega: conta.taxa });
+    // A taxa zerada JÁ é o prêmio: somar `valor` ao desconto tirava o frete
+    // duas vezes (pizza de R$ 43 cobrada R$ 40 com frete de R$ 3 — Lapastine, 12/11).
     return {
-      descontoExtra: valor,
+      descontoExtra: 0,
       zeraTaxa: true,
       produtoGratis: null,
       resgate: gravar(parada, valor),
