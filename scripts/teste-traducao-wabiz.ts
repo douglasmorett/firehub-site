@@ -318,5 +318,51 @@ const comCupom: any = {
     "6 Esfihas Tradicionais + Guaraná Mineiro 1,5L | 4x Esfiha Carne | Esfiha Calabresa | Esfiha Pizza | Guaraná Mineiro 1,5l");
 }
 
+// ── NIK 13/11/2026: retirada saía "A combinar" ──────────────────────────────
+// A Wabiz não diz onde mora o pagamento da retirada; o leitor procura no
+// pedido inteiro. Entrega continua lendo de `service.delivery.payment`.
+{
+  const pix = { type: 7, name: "Pix", value: 107.8, externalCode: "7" };
+  const dinheiro120 = { type: 1, name: "Dinheiro", value: 120, externalCode: "1" };
+  const pag = (p: any) => traduzirPedidoWabiz(p, ctx).dados;
+
+  confere("pagamento: entrega continua lendo service.delivery.payment", [pag(delivery).paymentMethod, pag(delivery).changeAmount], ["Dinheiro (Cobrar na Entrega)", 100]);
+  confere("pagamento: entrega ignora `payments` solto quando o campo conhecido veio",
+    pag({ ...delivery, payments: [pix] }).paymentMethod, "Dinheiro (Cobrar na Entrega)");
+  confere("pagamento: retirada com service.payment",
+    [pag({ ...retirada, service: { type: "pickup", payment: dinheiro120 } }).paymentMethod, pag({ ...retirada, service: { type: "pickup", payment: dinheiro120 } }).changeAmount],
+    ["Dinheiro (Cobrar na Entrega)", 120]);
+  confere("pagamento: retirada com service.takeout.payment",
+    pag({ ...retirada, service: { type: "pickup", takeout: { payment: pix } } }).paymentMethod, "Pix (Cobrar na Entrega)");
+  confere("pagamento: retirada com payments[0] no topo do pedido",
+    [pag({ ...retirada, payments: [dinheiro120] }).paymentMethod, pag({ ...retirada, payments: [dinheiro120] }).changeAmount], ["Dinheiro (Cobrar na Entrega)", 120]);
+  confere("pagamento: retirada com formaPagamento só com nome",
+    pag({ ...retirada, formaPagamento: { name: "Vale Refeição" } }).paymentMethod, "Vale Refeição (Cobrar na Entrega)");
+  confere("pagamento: chave de pagamento vazia é ignorada",
+    pag({ ...retirada, payment: {}, service: { type: "pickup", takeout: { payment: pix } } }).paymentMethod, "Pix (Cobrar na Entrega)");
+  confere("pagamento: retirada sem pagamento nenhum → A combinar",
+    [pag(retirada).deliveryType, pag(retirada).paymentMethod, pag(retirada).changeAmount], ["RETIRADA", "A combinar (Cobrar na Entrega)", null]);
+}
+
+// ── NIK 13/11/2026: retirada das 21:14 com previsão 21:53 (40 fixos) ────────
+// A Wabiz mostrava 5–15 min ao cliente. Vale o tempo dela quando vier;
+// agendado continua ganhando; 50/40 só quando não há nada.
+{
+  const criado = horaLocalParaInstante(retirada.dateTime, ctx.fuso)!.getTime();
+  const minutos = (p: any) => Math.round((new Date(traduzirPedidoWabiz(p, ctx).dados.scheduledDatetime).getTime() - criado) / 60_000);
+
+  confere("prazo: retirada sem tempo da Wabiz → 40 min", minutos(retirada), 40);
+  confere("prazo: entrega sem tempo da Wabiz → 50 min", minutos({ ...delivery, dateTime: retirada.dateTime }), 50);
+  confere("prazo: service.estimatedTime = 15", minutos({ ...retirada, service: { type: "pickup", estimatedTime: 15 } }), 15);
+  confere("prazo: service.takeout.takeoutTime = \"5-15\" → fim da janela", minutos({ ...retirada, service: { type: "pickup", takeout: { takeoutTime: "5-15" } } }), 15);
+  confere("prazo: prepareTime no topo = \"5 a 15 min\"", minutos({ ...retirada, prepareTime: "5 a 15 min" }), 15);
+  confere("prazo: horário no relógio da loja", minutos({ ...retirada, service: { type: "pickup", estimated_time: "2018-03-16 14:41:43" } }), 15);
+  confere("prazo: zero e horário antes do pedido são ignorados",
+    [minutos({ ...retirada, service: { type: "pickup", estimatedTime: 0 } }), minutos({ ...retirada, service: { type: "pickup", estimatedTime: "2018-03-16 10:00:00" } })], [40, 40]);
+  confere("prazo: agendado continua ganhando do tempo estimado",
+    traduzirPedidoWabiz({ ...encomenda, service: { ...encomenda.service, estimatedTime: 15 } }, ctx).dados.scheduledDatetime,
+    horaLocalParaInstante("2018-03-20 12:00:00", ctx.fuso));
+}
+
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);
