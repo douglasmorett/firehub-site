@@ -136,15 +136,31 @@ export const TITULO_DA_SECAO: Record<IdDaSecao, string> = {
 };
 
 export const DESCRICAO_DA_SECAO: Record<IdDaSecao, string> = {
-  completo: "Produto pronto do cardápio que foi para o lixo, pelo custo da ficha técnica, e pedidos cancelados depois de produzidos.",
-  incompleto: "Insumo e embalagem jogados fora (pão, alface, copo...).",
-  seguranca: "Descarte por validade, temperatura ou contaminação (pelo motivo lançado) e baixa de lote vencido.",
-  condimentos: "Insumos de uso livre, sem ficha técnica (sachê, sal, óleo): consumo entre as contagens × custo, menos o que já foi lançado como perda.",
-  break: "Lanche da equipe (pedidos de funcionário), pelo custo da ficha técnica no dia.",
-  inventario: "Por insumo de ficha contado em unidade: o que deveria ter saído (vendas + equipe + perdas + saídas) menos o que a contagem diz que saiu. Negativo = sumiu; positivo = sobrou.",
-  rendimento: "A mesma diferença para o que é a granel (kg, l): queijo, molho, carne. Negativo = rendeu menos que a ficha.",
-  indiretos: "Descartáveis de uso livre, sem ficha técnica (guardanapo, sacola, canudo): consumo entre as contagens × custo, menos o que já foi lançado como perda.",
+  completo: "Produto pronto do cardápio que foi para o lixo (ex.: pizza que queimou, lanche que caiu no chão), pelo custo da ficha técnica, mais os pedidos cancelados depois de já estarem prontos.",
+  incompleto: "Insumo ou embalagem jogado fora antes de virar produto (ex.: pão que endureceu, alface que murchou, copo que rasgou).",
+  seguranca: "O que foi para o lixo por segurança do cliente: passou da validade, ficou fora da temperatura ou contaminou (pelo motivo lançado na perda), e lote vencido baixado do estoque.",
+  condimentos: "Temperos e itens de uso livre, que não estão na ficha técnica (ex.: sal, orégano, sachê de ketchup). A conta: quanto foi usado entre as duas contagens × o custo, menos o que já foi lançado como perda.",
+  break: "O que a equipe comeu (pedidos marcados como de funcionário), pelo custo da ficha técnica no dia.",
+  inventario: "É o que sumiu (ou sobrou) do estoque. Comparamos o que SAIU de verdade (contagem do início + compras − contagem do fim) com o que DEVERIA ter saído (vendas pela ficha técnica + refeição da equipe + perdas lançadas + saídas lançadas à mão). Saiu mais do que deveria = valor negativo = sumiu (furo, porção maior que a ficha, desvio ou perda não lançada). Valor positivo = sobrou. Vale para os itens contados em unidade: pão, queijo fatiado, embalagem.",
+  rendimento: "A mesma conta para o que é a granel (kg, litro): carne, queijo, molho, óleo. Negativo = rendeu menos do que a ficha técnica manda (sumiu); positivo = rendeu mais (sobrou).",
+  indiretos: "Descartáveis de uso livre, que não estão na ficha técnica (ex.: guardanapo, sacola, canudo). A conta: quanto foi usado entre as duas contagens × o custo, menos o que já foi lançado como perda.",
 };
+
+/** "Como ler este relatório": a caixa do topo da aba, o PDF e a aba Resumo do Excel. */
+export const COMO_LER_O_RELATORIO: string[] = [
+  "Mostra para onde foi a mercadoria ALÉM do que foi vendido, em R$ e em % da venda do período.",
+  "Cada grupo é dinheiro que saiu do estoque sem virar venda (desperdício, validade, equipe, o que sumiu...).",
+  "As setas ▲ ▼ comparam com o período anterior, do mesmo tamanho. Vermelho = piorou; verde = melhorou.",
+  "Diferença de inventário, Rendimento, Condimentos e Indiretos precisam das DUAS contagens completas do estoque: uma no início e outra no fim do período. Sem elas, ficam em branco (“falta contagem”).",
+  "Nas diferenças: negativo (vermelho) = sumiu do estoque; positivo (verde) = sobrou.",
+];
+
+/** Explica o "Onde está o dinheiro" (tela, PDF e Excel). */
+export const DESCRICAO_DO_ONDE_ESTA_O_DINHEIRO =
+  "Os itens que mais custaram dinheiro no período, somando todos os grupos (desperdício, validade, equipe, o que sumiu no inventário, pedidos cancelados já prontos...). Comece pelo primeiro da lista: é por onde mais está escorrendo.";
+
+/** Rótulo curto da diferença de inventário/rendimento: negativo = sumiu, positivo = sobrou. */
+export const sumiuOuSobrou = (v: number) => (v < 0 ? "sumiu" : v > 0 ? "sobrou" : "");
 
 /** As seções que dependem da contagem (abertura e fechamento). */
 export const SECOES_DA_CONTAGEM: IdDaSecao[] = ["condimentos", "inventario", "rendimento", "indiretos"];

@@ -78,6 +78,9 @@ export default function MargemDasFichas({ onAbrirFicha }: { onAbrirFicha: (produ
       </button>
       {aberto && (
         <div style={{ padding: "0 14px 14px" }}>
+          <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "0 0 0.6rem", lineHeight: 1.45 }}>
+            Custo da ficha hoje × preço de venda = quanto sobra em cada produto. Margem baixa = CMV acima da meta da loja (40% se não houver meta). Produto vendido sem ficha aparece em destaque.
+          </p>
           {erro && <p style={{ color: "#B91C1C", fontSize: "0.85rem" }}>{erro}</p>}
           {!produtos && !erro && <p style={{ color: "#94A3B8", fontSize: "0.85rem" }}>Calculando o custo das fichas...</p>}
           {produtos && (

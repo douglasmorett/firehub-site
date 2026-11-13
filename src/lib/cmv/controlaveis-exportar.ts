@@ -6,7 +6,7 @@
  * Testado em scripts/teste-controlaveis.ts.
  */
 import {
-  ORDEM_DAS_SECOES, ROTULO_DA_CLASSE, TITULO_DA_SECAO,
+  COMO_LER_O_RELATORIO, DESCRICAO_DO_ONDE_ESTA_O_DINHEIRO, ORDEM_DAS_SECOES, ROTULO_DA_CLASSE, sumiuOuSobrou, TITULO_DA_SECAO,
   type IdDaSecao, type LinhaDoRelatorio, type RelatorioDosControlaveis, type Secao,
 } from "@/lib/cmv/controlaveis";
 
@@ -130,6 +130,9 @@ export function gerarExcel(r: RelatorioDosControlaveis): string {
   // Resumo
   const resumo = [
     ...cabecalhoXml(r, "Relatório dos controláveis — resumo", r.contagem ? `Seções de contagem: ${diaBr(r.contagem.de)} a ${diaBr(r.contagem.ate)} (venda desses dias: ${reais(r.contagem.venda)})` : undefined),
+    linhaXml([T("Como ler este relatório", "rotulo")]),
+    ...COMO_LER_O_RELATORIO.map((t) => linhaXml([T(`• ${t}`)])),
+    linhaXml([]),
     linhaXml([T("Seção", "th"), T("Valor (R$)", "th"), T("% da venda", "th"), ...(r.anterior ? [T("Período anterior (R$)", "th"), T("% anterior", "th")] : [])]),
   ];
   const ant = r.anterior ? linhasDoResumo({ ...r, resumo: r.anterior.resumo }) : null;
@@ -142,6 +145,7 @@ export function gerarExcel(r: RelatorioDosControlaveis): string {
   });
   if (r.ondeEstaODinheiro.length) {
     resumo.push(linhaXml([]), linhaXml([T("Onde está o dinheiro (os 10 que mais custaram)", "titulo")]));
+    resumo.push(linhaXml([T(DESCRICAO_DO_ONDE_ESTA_O_DINHEIRO)]));
     resumo.push(linhaXml([T("Item", "th"), T("Seção", "th"), T("Valor (R$)", "th")]));
     for (const i of r.ondeEstaODinheiro) resumo.push(linhaXml([T(i.nome), T(TITULO_DA_SECAO[i.secao]), N(i.valor, "reais")]));
   }
@@ -217,15 +221,18 @@ export function gerarHtmlDeImpressao(r: RelatorioDosControlaveis): string {
   const cab = `<div class="cab"><div><b>Relatório dos controláveis</b> · ${html(r.loja)}</div>
 <div>Período ${diaBr(r.periodo.de)} a ${diaBr(r.periodo.ate)} · Venda líquida ${reais(r.venda)}${r.contagem ? ` · Contagens ${diaBr(r.contagem.de)} a ${diaBr(r.contagem.ate)}` : ""} · Gerado em ${quandoBr(r.geradoEm)}</div></div>`;
 
+  const comoLer = `<div class="ler"><b>Como ler este relatório</b><ul>${COMO_LER_O_RELATORIO.map((t) => `<li>${html(t)}</li>`).join("")}</ul></div>`;
+  const ehDif = (rotulo: string) => rotulo.startsWith("Diferença") || rotulo === TITULO_DA_SECAO.rendimento;
+
   const resumo = `<h2>Resumo</h2><table class="t"><thead><tr><th>Seção</th><th class="n">Valor</th><th class="n">% da venda</th>${r.anterior ? `<th class="n">Anterior (${diaBr(r.anterior.de)} a ${diaBr(r.anterior.ate)})</th>` : ""}</tr></thead><tbody>${
     linhasDoResumo(r).map((l, i) => {
       const ant = r.anterior ? linhasDoResumo({ ...r, resumo: r.anterior.resumo })[i] : null;
-      return `<tr class="${l.destaque ? "tot" : ""}"><td>${html(l.rotulo)}</td><td class="n${l.valor < 0 ? " neg" : ""}">${reais(l.valor)}</td><td class="n">${pct(l.pct)}</td>${ant ? `<td class="n">${reais(ant.valor)} · ${pct(ant.pct)}</td>` : ""}</tr>`;
+      return `<tr class="${l.destaque ? "tot" : ""}"><td>${html(l.rotulo)}</td><td class="n${l.valor < 0 ? " neg" : ""}">${reais(l.valor)}${ehDif(l.rotulo) && sumiuOuSobrou(l.valor) ? ` <small>${sumiuOuSobrou(l.valor)}</small>` : ""}</td><td class="n">${pct(l.pct)}</td>${ant ? `<td class="n">${reais(ant.valor)} · ${pct(ant.pct)}</td>` : ""}</tr>`;
     }).join("")
   }</tbody></table>`;
 
   const top = r.ondeEstaODinheiro.length
-    ? `<h2>Onde está o dinheiro</h2><table class="t"><thead><tr><th>#</th><th>Item</th><th>Seção</th><th class="n">Valor</th></tr></thead><tbody>${
+    ? `<h2>Onde está o dinheiro</h2><p class="d">${html(DESCRICAO_DO_ONDE_ESTA_O_DINHEIRO)}</p><table class="t"><thead><tr><th>#</th><th>Item</th><th>Seção</th><th class="n">Valor</th></tr></thead><tbody>${
         r.ondeEstaODinheiro.map((i, n) => `<tr><td>${n + 1}</td><td>${html(i.nome)}</td><td>${html(TITULO_DA_SECAO[i.secao])}</td><td class="n">${reais(i.valor)}</td></tr>`).join("")
       }</tbody></table>`
     : "";
@@ -254,13 +261,15 @@ table.t tr { break-inside: avoid; }
 .pos { color: #047857; }
 tr.tot td { font-weight: bold; border-top: 1.5px solid #111; border-bottom: none; }
 .falta { color: #92400E; font-style: italic; }
+.ler { border: 1px solid #BFDBFE; background: #EFF6FF; border-radius: 6px; padding: 5px 8px; font-size: 8.5pt; color: #334155; break-inside: avoid; }
+.ler ul { margin: 2px 0 0; padding-left: 16px; }
 .av { margin: 0; padding-left: 16px; font-size: 8.5pt; color: #444; }
 .botao { position: fixed; bottom: 14px; right: 14px; padding: 8px 14px; font-weight: bold; border: 0; border-radius: 8px; background: #C92E09; color: #fff; cursor: pointer; }
 @media print { .botao { display: none; } }
 </style></head><body>
 <button class="botao" onclick="window.print()">Imprimir / salvar PDF</button>
 <table class="pagina"><thead><tr><td>${cab}</td></tr></thead><tbody><tr><td>
-${resumo}${top}${secoes}${avisos}
+${comoLer}${resumo}${top}${secoes}${avisos}
 </td></tr></tbody></table>
 </body></html>`;
 }
@@ -274,7 +283,7 @@ function secaoHtml(r: RelatorioDosControlaveis, s: Secao, id: IdDaSecao): string
   if (s.falta) corpo = `<p class="falta">${html(s.falta)}</p>`;
   else if (!s.linhas.length && !s.cancelados?.length) corpo = `<p class="d">Nada no período.</p>`;
   else {
-    const linhas = (ls: LinhaDoRelatorio[]) => ls.map((l) => `<tr><td>${html(l.nome)}${l.classe ? ` <small>(${ROTULO_DA_CLASSE[l.classe]})</small>` : ""}</td><td class="n${dif && l.quantidade < 0 ? " neg" : ""}">${qtd(l.quantidade)} ${html(l.unidade)}</td><td class="n">${reais(l.custoUnitario)}</td><td class="n${l.total < 0 ? " neg" : dif && l.total > 0 ? " pos" : ""}">${l.semCusto ? "sem custo" : reais(l.total)}</td><td class="n">${p(l.total)}</td></tr>`).join("");
+    const linhas = (ls: LinhaDoRelatorio[]) => ls.map((l) => `<tr><td>${html(l.nome)}${l.classe ? ` <small>(${ROTULO_DA_CLASSE[l.classe]})</small>` : ""}</td><td class="n${dif && l.quantidade < 0 ? " neg" : ""}">${qtd(l.quantidade)} ${html(l.unidade)}</td><td class="n">${reais(l.custoUnitario)}</td><td class="n${l.total < 0 ? " neg" : dif && l.total > 0 ? " pos" : ""}">${l.semCusto ? "sem custo" : reais(l.total)}${dif && sumiuOuSobrou(l.total) ? ` <small>${sumiuOuSobrou(l.total)}</small>` : ""}</td><td class="n">${p(l.total)}</td></tr>`).join("");
     const cabecalho = `<thead><tr><th>Item</th><th class="n">${dif ? "Diferença" : "Qtde"}</th><th class="n">Custo unit.</th><th class="n">${dif ? "Diferença R$" : "Custo total"}</th><th class="n">% venda</th></tr></thead>`;
     if (id === "inventario") {
       const al = s.linhas.filter((l) => l.grupo !== "EMBALAGENS"), em = s.linhas.filter((l) => l.grupo === "EMBALAGENS");
@@ -290,5 +299,5 @@ function secaoHtml(r: RelatorioDosControlaveis, s: Secao, id: IdDaSecao): string
     }
   }
   return `<h2>${html(s.titulo)}</h2><p class="d">${html(s.descricao)}${recorte ? ` Vale para as ${recorte} (venda desses dias: ${reais(venda)}).` : ""}</p>${corpo}
-<table class="t"><tbody><tr class="tot"><td>Total — ${html(s.titulo)}${s.semValor ? ` <small>(${s.semValor} sem valor, fora do total)</small>` : ""}</td><td class="n${s.total < 0 ? " neg" : ""}">${reais(s.total)}</td><td class="n" style="width:80px">${pct(s.pct)}</td></tr></tbody></table>`;
+<table class="t"><tbody><tr class="tot"><td>Total — ${html(s.titulo)}${s.semValor ? ` <small>(${s.semValor} sem valor, fora do total)</small>` : ""}</td><td class="n${s.total < 0 ? " neg" : ""}">${reais(s.total)}${dif && sumiuOuSobrou(s.total) ? ` <small>${sumiuOuSobrou(s.total)}</small>` : ""}</td><td class="n" style="width:80px">${pct(s.pct)}</td></tr></tbody></table>`;
 }

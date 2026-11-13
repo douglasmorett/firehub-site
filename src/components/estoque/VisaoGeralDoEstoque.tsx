@@ -43,6 +43,9 @@ export default function VisaoGeralDoEstoque({ onAbrirAba }: { onAbrirAba: (aba: 
   const v = dados;
   return (
     <div style={{ display: "grid", gap: "1rem" }}>
+      <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "0 0 -0.5rem", lineHeight: 1.45 }}>
+        O resumo do seu estoque: quanto vale, o CMV real e as perdas da última semana, o que está acabando ou vencendo, e a lista “O que fazer hoje” (clique para resolver).
+      </p>
       {/* Números do topo */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "0.75rem" }}>
         {v.veValor && <Numero icone={<Package size={18} />} rotulo="Valor em estoque" valor={fmtR(v.valorEmEstoque)} detalhe={`${v.insumos.total} insumos · custo de hoje`} />}

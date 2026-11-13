@@ -120,6 +120,9 @@ export default function TabelaDeInsumos({ items, veValor, versao, onMovimentar, 
 
   return (
     <>
+      <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "0 0 0.6rem", lineHeight: 1.45 }}>
+        Consumo/dia = média das saídas reais dos últimos 14 dias. Cobertura = para quantos dias ainda dá (vermelho = menos de 2). Curva ABC: A são os itens que mais pesam no custo. Clique no nome para ver o histórico de preço, fichas e perdas.
+      </p>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center", marginBottom: "0.75rem" }}>
         <div className="search-bar" style={{ flex: "1 1 260px", margin: 0 }}>
           <Search size={18} className="search-icon" />

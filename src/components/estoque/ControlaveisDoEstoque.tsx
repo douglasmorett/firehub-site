@@ -12,7 +12,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Download, Printer, RefreshCw } from "lucide-react";
 import {
-  CLASSES, ORDEM_DAS_SECOES, ROTULO_DA_CLASSE, SECOES_DA_CONTAGEM, TITULO_DA_SECAO,
+  CLASSES, COMO_LER_O_RELATORIO, DESCRICAO_DO_ONDE_ESTA_O_DINHEIRO, ORDEM_DAS_SECOES, ROTULO_DA_CLASSE, SECOES_DA_CONTAGEM, sumiuOuSobrou, TITULO_DA_SECAO,
   type Classe, type Comparacao, type IdDaSecao, type LinhaDoRelatorio, type RelatorioDosControlaveis, type Secao,
 } from "@/lib/cmv/controlaveis";
 import { gerarCsv, gerarExcel, gerarHtmlDeImpressao, linhasDoResumo, nomeDoArquivo } from "@/lib/cmv/controlaveis-exportar";
@@ -66,6 +66,40 @@ const ICONE: Record<IdDaSecao, string> = {
 };
 
 type Coluna = "nome" | "quantidade" | "custoUnitario" | "total";
+
+/** "Como ler este relatório": aberta na 1ª vez; se a pessoa fechar, o navegador lembra. */
+const CHAVE_COMO_LER = "firehub:controlaveis:como-ler-fechado";
+function ComoLer() {
+  const [aberta, setAberta] = useState(true);
+  useEffect(() => {
+    try { if (localStorage.getItem(CHAVE_COMO_LER) === "1") setAberta(false); } catch {}
+  }, []);
+  const alternar = () => setAberta((a) => {
+    try { if (a) localStorage.setItem(CHAVE_COMO_LER, "1"); else localStorage.removeItem(CHAVE_COMO_LER); } catch {}
+    return !a;
+  });
+  return (
+    <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 12, marginBottom: "1rem" }}>
+      <button type="button" onClick={alternar} aria-expanded={aberta}
+        style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "none", border: "none", cursor: "pointer", textAlign: "left", color: "#1E3A8A" }}>
+        {aberta ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        <span style={{ fontWeight: 800, fontSize: "0.9rem" }}>📖 Como ler este relatório</span>
+      </button>
+      {aberta && (
+        <ul style={{ margin: 0, padding: "0 14px 12px 34px", display: "grid", gap: 4, fontSize: "0.82rem", lineHeight: 1.45, color: "#334155" }}>
+          {COMO_LER_O_RELATORIO.map((t) => <li key={t}>{t}</li>)}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** "sumiu" / "sobrou" ao lado do número da diferença. */
+function RotuloDaDiferenca({ v }: { v: number }) {
+  const t = sumiuOuSobrou(v);
+  if (!t) return null;
+  return <span style={{ fontSize: "0.7rem", fontWeight: 800, marginLeft: 4, color: v < 0 ? "#B91C1C" : "#047857" }}>{t}</span>;
+}
 
 export default function ControlaveisDoEstoque() {
   const [dados, setDados] = useState<Resposta | null>(null);
@@ -168,6 +202,7 @@ export default function ControlaveisDoEstoque() {
   return (
     <div className="controlaveis">
       <AvisoNoTopo aviso={aviso} onFechar={fecharAviso} />
+      <ComoLer />
 
       {/* Período e exportar */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "flex-end", marginBottom: "1rem" }}>
@@ -271,7 +306,7 @@ export default function ControlaveisDoEstoque() {
                   {linhasDoResumo(rel).map((l) => (
                     <tr key={l.rotulo} style={l.destaque ? { fontWeight: 800, background: "#FAF6F2" } : undefined}>
                       <td>{l.rotulo}</td>
-                      <td style={{ textAlign: "right", color: l.valor < 0 ? "#B91C1C" : undefined, whiteSpace: "nowrap" }}>{fmtR(l.valor)}</td>
+                      <td style={{ textAlign: "right", color: l.valor < 0 ? "#B91C1C" : undefined, whiteSpace: "nowrap" }}>{fmtR(l.valor)}{(l.rotulo.startsWith("Diferença") || l.rotulo === TITULO_DA_SECAO.rendimento) && <RotuloDaDiferenca v={l.valor} />}</td>
                       <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>{fmtP(l.pct)}</td>
                     </tr>
                   ))}
@@ -280,7 +315,8 @@ export default function ControlaveisDoEstoque() {
             </div>
             {/* Onde está o dinheiro */}
             <div style={caixa}>
-              <h3 style={tituloCaixa}>💸 Onde está o dinheiro</h3>
+              <h3 style={{ ...tituloCaixa, marginBottom: "0.25rem" }}>💸 Onde está o dinheiro</h3>
+              <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "0 0 0.6rem", lineHeight: 1.45 }}>{DESCRICAO_DO_ONDE_ESTA_O_DINHEIRO}</p>
               {rel.ondeEstaODinheiro.length === 0 ? (
                 <p style={{ fontSize: "0.85rem", color: "#94A3B8" }}>Nada custou no período.</p>
               ) : (
@@ -358,7 +394,7 @@ function Cartao({ rotulo, valor, pct, cmp, destaque, diferenca, falta, onClick }
         <>
           <div style={{ fontSize: destaque ? "1.45rem" : "1.2rem", fontWeight: 900, color: cor, marginTop: 2 }}>{fmtR(valor)}</div>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
-            <span style={{ fontSize: "0.8rem", fontWeight: 700, color: destaque ? "#fff" : "#475569" }}>{fmtP(pct)} da venda</span>
+            <span style={{ fontSize: "0.8rem", fontWeight: 700, color: destaque ? "#fff" : "#475569" }}>{fmtP(pct)} da venda{diferenca && <RotuloDaDiferenca v={valor} />}</span>
             {destaque ? <span style={{ background: "#fff", borderRadius: 99, padding: "1px 6px" }}><Seta cmp={cmp} /></span> : <Seta cmp={cmp} />}
           </div>
         </>
@@ -429,7 +465,7 @@ function SecaoDoRelatorio({ secao, aberta, onAlternar, venda, recorte, onClasse 
                   )}
                   <td style={{ textAlign: "right", whiteSpace: "nowrap", color: corDif, fontWeight: dif ? 700 : undefined }}>{dif && l.quantidade > 0 ? "+" : ""}{fmtQ(l.quantidade)} {l.unidade}</td>
                   <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>{fmtR(l.custoUnitario)}</td>
-                  <td style={{ textAlign: "right", whiteSpace: "nowrap", fontWeight: 800, color: corDif }}>{l.semCusto && l.total === 0 ? <span style={{ color: "#B45309" }}>sem custo</span> : fmtR(l.total)}</td>
+                  <td style={{ textAlign: "right", whiteSpace: "nowrap", fontWeight: 800, color: corDif }}>{l.semCusto && l.total === 0 ? <span style={{ color: "#B45309" }}>sem custo</span> : <>{fmtR(l.total)}{dif && <RotuloDaDiferenca v={l.total} />}</>}</td>
                   <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>{pct(l.total)}</td>
                 </tr>
                 {estaAberto && (
@@ -476,7 +512,7 @@ function SecaoDoRelatorio({ secao, aberta, onAlternar, venda, recorte, onClasse 
             <tr style={{ fontWeight: 800, background: "#FAF6F2" }}>
               <td />
               <td colSpan={colunas - 3}>{rodape.rotulo}</td>
-              <td style={{ textAlign: "right", whiteSpace: "nowrap", color: dif && rodape.valor < 0 ? "#B91C1C" : undefined }}>{fmtR(rodape.valor)}</td>
+              <td style={{ textAlign: "right", whiteSpace: "nowrap", color: dif && rodape.valor < 0 ? "#B91C1C" : undefined }}>{fmtR(rodape.valor)}{dif && <RotuloDaDiferenca v={rodape.valor} />}</td>
               <td style={{ textAlign: "right" }}>{pct(rodape.valor)}</td>
             </tr>
           )}
@@ -493,7 +529,7 @@ function SecaoDoRelatorio({ secao, aberta, onAlternar, venda, recorte, onClasse 
         <span style={{ fontSize: "1rem", fontWeight: 900, flex: 1, minWidth: 0 }}>{ICONE[secao.id]} {secao.titulo}</span>
         {secao.falta ? <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "#B45309" }}>falta contagem</span> : (
           <>
-            <span style={{ fontWeight: 900, color: dif ? (secao.total < 0 ? "#B91C1C" : secao.total > 0 ? "#047857" : undefined) : "#C92E09", whiteSpace: "nowrap" }}>{fmtR(secao.total)}</span>
+            <span style={{ fontWeight: 900, color: dif ? (secao.total < 0 ? "#B91C1C" : secao.total > 0 ? "#047857" : undefined) : "#C92E09", whiteSpace: "nowrap" }}>{fmtR(secao.total)}{dif && <RotuloDaDiferenca v={secao.total} />}</span>
             <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#475569", whiteSpace: "nowrap", minWidth: 64, textAlign: "right" }}>{fmtP(secao.pct)}</span>
           </>
         )}
