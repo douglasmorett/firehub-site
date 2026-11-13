@@ -31,6 +31,33 @@ export function modulosLiberados(accessToken: string | null | undefined, merchan
   }
 }
 
+/**
+ * true quando `novo` foi emitido DEPOIS de `velho` (campo `iat` do JWT; sem ele,
+ * o `exp`). Sem como comparar, false — na dúvida não se troca token nenhum.
+ *
+ * Existe para o Merchant ID colado à mão nunca trocar o token novo da loja por
+ * um mais velho (Holy Top, 13/11/2026: autorizou de novo, colou o UUID e o selo
+ * "Autorize de novo" não saiu).
+ */
+export function tokenMaisNovo(novo: string | null | undefined, velho: string | null | undefined): boolean {
+  const corpo = (t: string | null | undefined) => {
+    const partes = String(t || "").split(".");
+    if (partes.length < 2) return null;
+    try {
+      return JSON.parse(Buffer.from(partes[1], "base64url").toString("utf8"));
+    } catch {
+      return null;
+    }
+  };
+  const a = corpo(novo);
+  const b = corpo(velho);
+  if (!a || !b) return false;
+  for (const campo of ["iat", "exp"]) {
+    if (typeof a[campo] === "number" && typeof b[campo] === "number") return a[campo] > b[campo];
+  }
+  return false;
+}
+
 /** true quando o token mostra que falta algum módulo das novidades. Sem informação, não acusa. */
 export function faltaReautorizar(accessToken: string | null | undefined, merchantId: string): boolean {
   const mods = modulosLiberados(accessToken, merchantId);

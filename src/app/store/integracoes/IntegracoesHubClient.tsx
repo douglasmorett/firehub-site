@@ -1402,6 +1402,9 @@ export default function IntegracoesHubClient({
         // A lista vem do servidor, que é quem sabe.
         if (data.merchantId) setIfMerchant(data.merchantId);
         else if (data.needsMerchantId) setNeedsMerchantId(true);
+        // Autorização renovada (Holy Top, 13/11/2026): a loja já é conhecida,
+        // então o passo "3. Cole o Merchant ID" de uma tentativa anterior some.
+        if (data.renovada) setNeedsMerchantId(false);
 
         try {
           const lista = await fetch("/api/ifood/integration/list").then(r => r.json());
@@ -1476,7 +1479,7 @@ export default function IntegracoesHubClient({
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        showToast("🎉 Loja iFood vinculada com sucesso!", "#0F766E");
+        showToast(data.renovada ? data.message : "🎉 Loja iFood vinculada com sucesso!", "#0F766E");
         setIfMerchant(uuid);
         setIfoodIntegrations(prev => [
           { id: "main", label: "Loja Principal", merchantId: uuid, connected: true, active: true, createdAt: new Date().toISOString() },
