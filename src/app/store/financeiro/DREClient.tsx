@@ -29,7 +29,7 @@ import AbaCustosFixos from "./AbaCustosFixos";
 import type { VisaoDoCiclo } from "@/lib/billing";
 import {
   ATALHOS_DO_FINANCEIRO, atalhoDoFinanceiro, calcularDRE, diaCurto, lerPeriodo, periodoDoFinanceiro,
-  type ComissoesDosApps, type CustoFixo, type DadosDoPeriodo,
+  type ComissoesDosApps, type CustoFixo, type DadosDoPeriodo, type TaxasDosApps,
 } from "@/lib/financeiro/dre";
 
 type Aba = "mensalidade" | "extrato" | "relatorio" | "configuracoes" | "dre" | "custosfix" | "pagamentos" | "contasapagar" | "notascompras";
@@ -39,7 +39,7 @@ const ABAS_COM_PERIODO = new Set<Aba>(["dre", "extrato", "relatorio", "pagamento
 
 export default function DREClient({
   inicio, dadosIniciais, erroInicial, cicloInicial, papel, paymentFees, storeName,
-  initialFixedCosts = [], comissoesIniciais = {}, initialRepasseConfig = {}, payables = [], initialDespesas = [],
+  initialFixedCosts = [], comissoesIniciais = {}, taxasIniciais = {}, initialRepasseConfig = {}, payables = [], initialDespesas = [],
 }: {
   /** Período, "hoje" e fuso decididos NO SERVIDOR (o dia operacional da loja). */
   inicio: { de: string; ate: string; hoje: string; tz: string; aba: Aba; visao?: "periodo" | "ano" };
@@ -51,6 +51,7 @@ export default function DREClient({
   storeName: string;
   initialFixedCosts?: CustoFixo[];
   comissoesIniciais?: ComissoesDosApps;
+  taxasIniciais?: TaxasDosApps;
   initialRepasseConfig?: any;
   payables?: PayableDTO[];
   initialDespesas?: DespesaDTO[];
@@ -64,6 +65,7 @@ export default function DREClient({
   const [custos, setCustos] = useState<CustoFixo[]>(initialFixedCosts);
   const [despesas, setDespesas] = useState<DespesaDTO[]>(initialDespesas);
   const [comissoes, setComissoes] = useState<ComissoesDosApps>(comissoesIniciais);
+  const [taxasDosApps, setTaxasDosApps] = useState<TaxasDosApps>(taxasIniciais);
   // O DRE do período escolhido ou o do ano, mês a mês (o "Balancete" do SWFast).
   const [visao, setVisao] = useState<"periodo" | "ano">(inicio.visao === "ano" ? "ano" : "periodo");
   const ultimoPedido = useRef(0);
@@ -133,8 +135,8 @@ export default function DREClient({
   }, [textoDe, textoAte]);
 
   const dre = useMemo(
-    () => (dados ? calcularDRE({ dados, custosFixos: custos, despesas, comissoes, paymentFees }) : null),
-    [dados, custos, despesas, comissoes, paymentFees],
+    () => (dados ? calcularDRE({ dados, custosFixos: custos, despesas, comissoes, taxasDosApps, paymentFees }) : null),
+    [dados, custos, despesas, comissoes, taxasDosApps, paymentFees],
   );
 
   const atalhoAtivo = atalhoDoFinanceiro(periodo.de, periodo.ate, hoje);
@@ -243,20 +245,20 @@ export default function DREClient({
         )}
 
         {aba === "dre" && visao === "ano" && (
-          <DREDoAno hoje={hoje} custosFixos={custos} despesas={despesas} comissoes={comissoes} paymentFees={paymentFees} />
+          <DREDoAno hoje={hoje} custosFixos={custos} despesas={despesas} comissoes={comissoes} taxasDosApps={taxasDosApps} paymentFees={paymentFees} />
         )}
 
         {aba === "dre" && visao === "periodo" && (dre && dados
-          ? <AbaDRE dre={dre} de={dados.de} ate={dados.ate} comissoes={comissoes}
+          ? <AbaDRE dre={dre} de={dados.de} ate={dados.ate} comissoes={comissoes} taxasDosApps={taxasDosApps}
               despesas={despesas} onDespesas={setDespesas} irPara={(a) => setAba(a)} />
           : semDados)}
 
-        {aba === "extrato" && (dados ? <AbaExtrato dados={dados} comissoes={comissoes} repasseConfig={initialRepasseConfig} /> : semDados)}
+        {aba === "extrato" && (dados ? <AbaExtrato dados={dados} comissoes={comissoes} taxasDosApps={taxasDosApps} repasseConfig={initialRepasseConfig} /> : semDados)}
 
         {(aba === "relatorio" || aba === "pagamentos") && (dados && dre ? <AbaRelatorio dados={dados} dre={dre} /> : semDados)}
 
         {aba === "configuracoes" && (
-          <AbaConfiguracoes comissoes={comissoes} onComissoes={setComissoes} dre={dre} repasseConfig={initialRepasseConfig} />
+          <AbaConfiguracoes comissoes={comissoes} taxasDosApps={taxasDosApps} onSalvo={(c, t) => { setComissoes(c); setTaxasDosApps(t); }} dre={dre} repasseConfig={initialRepasseConfig} />
         )}
 
         {aba === "custosfix" && <AbaCustosFixos custos={custos} onCustos={setCustos} dre={dre} />}

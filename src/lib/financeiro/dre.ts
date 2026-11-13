@@ -37,7 +37,9 @@
  *    repassa à loja).
  * 4. CUSTOS que andam com a venda (margem de contribuição): CMV pela contagem
  *    do estoque, senão pela ficha técnica, senão pelo custo digitado (ver "O
- *    CMV", mais abaixo), comissão dos apps pelo percentual que A LOJA cadastra, taxa
+ *    CMV", mais abaixo), comissão dos apps pelo percentual que A LOJA cadastra
+ *    (comissão sobre os itens + pagamento online só no pedido pago no app +
+ *    outras taxas; ver "COMISSÃO DOS APPS"), taxa
  *    de pagamento pela forma do caixa (`formaDoPedido`) e pela média das
  *    bandeiras ativas, entregadores pelo acerto de cada um mais as diárias.
  * 5. Depois: mensalidade FireHub (o ciclo de verdade, rateado por dia),
@@ -393,9 +395,41 @@ export function taxaDaForma(paymentFees: unknown, forma: FormaComTaxa): { pct: n
 }
 
 // ── COMISSÃO DOS APPS ───────────────────────────────────────────────────────
+//
+// Cada app cobra da loja três coisas diferentes, e cada loja tem o seu plano
+// (Frangoso, 13/11/2026: "quero ver quanto cada app me cobra de verdade"):
+//
+//   1. COMISSÃO da plataforma — % sobre o valor dos itens, em TODO pedido do
+//      app. Mora em `financialGoals.comissaoDosApps` ({ IFOOD: 23 }).
+//   2. PAGAMENTO ONLINE no app — % só nos pedidos que o cliente pagou dentro
+//      do app (iFood ~3,2%), sobre o que foi pago online. "Pago no app" é a
+//      régua do caixa: a parte do pagamento que cai em "ONLINE"
+//      (formas-de-pagamento.ts, foiPagoOnline) — a mesma que manda o dinheiro
+//      para o repasse do app no fechamento.
+//   3. OUTRAS taxas / antecipação — % sobre os itens, em todo pedido do app.
+//
+//   2 e 3 moram em `financialGoals.taxasDosApps` ({ IFOOD: { pagamentoOnline:
+//   3.2, outras: 0 } }), ao lado da comissão, sem mexer nela.
+//
+// O pedido do app pago NA ENTREGA no cartão não paga o pagamento online do
+// app: paga a taxa da maquininha DA LOJA (Minha Loja › Pagamentos), que já
+// entra em "Taxas de pagamento" pela forma do caixa. Dinheiro e Pix na
+// entrega não têm taxa de cartão. A linha do app mostra esse pedaço só para
+// a loja enxergar — ele não é somado duas vezes.
+//
+// LOJA QUE JÁ TINHA CADASTRADO: o percentual único antigo ("26,2 = 23 +
+// 3,2") continua em `comissaoDosApps` e vale como comissão sobre os itens de
+// todo pedido, com pagamento online e outras em 0 — exatamente a conta de
+// antes, nenhum número muda sozinho. A tela de Configurações avisa que agora
+// dá para separar.
 
-/** Percentual de comissão + taxas que cada app cobra da loja, por canal. Mora em `User.financialGoals.comissaoDosApps`. */
+/** Percentual de COMISSÃO que cada app cobra da loja, por canal, sobre os itens. Mora em `User.financialGoals.comissaoDosApps`. */
 export type ComissoesDosApps = Partial<Record<ChaveDeCanal, number>>;
+
+/** As outras duas taxas de um app: pagamento online (só no pedido pago no app) e outras/antecipação (sobre os itens). */
+export type TaxasDoApp = { pagamentoOnline: number; outras: number };
+/** Mora em `User.financialGoals.taxasDosApps`. App ausente = loja que ainda não separou (vale só a comissão). */
+export type TaxasDosApps = Partial<Record<ChaveDeCanal, TaxasDoApp>>;
 
 /** Os canais que cobram comissão: os marketplaces (lib/canal-do-pedido.ts). */
 export const CANAIS_COM_COMISSAO: { chave: ChaveDeCanal; nome: string }[] = canaisConhecidos()
@@ -419,9 +453,48 @@ export function lerComissoesDosApps(financialGoals: unknown): ComissoesDosApps {
   return saida;
 }
 
+/** Lê as taxas separadas; percentual fora de 0–100 vira 0. App sem nada gravado fica de fora. */
+export function lerTaxasDosApps(financialGoals: unknown): TaxasDosApps {
+  const bruto = financialGoals && typeof financialGoals === "object" ? (financialGoals as any).taxasDosApps : null;
+  const saida: TaxasDosApps = {};
+  if (!bruto || typeof bruto !== "object") return saida;
+  const pct = (v: unknown) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 && n <= 100 ? n : 0;
+  };
+  for (const { chave } of CANAIS_COM_COMISSAO) {
+    const t = (bruto as any)[chave];
+    if (!t || typeof t !== "object") continue;
+    saida[chave] = { pagamentoOnline: pct(t.pagamentoOnline), outras: pct(t.outras) };
+  }
+  return saida;
+}
+
 // ── O RESULTADO ─────────────────────────────────────────────────────────────
 
-export type LinhaDeComissao = { canal: ChaveDeCanal; nome: string; base: number; pedidos: number; pct: number | null; valor: number };
+/**
+ * O que um app cobrou no período. `base`/`pedidos`/`pct` são da comissão
+ * (sobre os itens); `valor` é o total que entra em "Comissão e taxas dos
+ * apps" = comissão + pagamento online + outras.
+ */
+export type LinhaDeComissao = {
+  canal: ChaveDeCanal; nome: string; base: number; pedidos: number; pct: number | null; valor: number;
+  /** Só a comissão (pct × itens). */
+  comissao: number;
+  /** Pagamento online no app: os pedidos pagos dentro do app e quanto foi pago online. */
+  online: { pct: number; pedidos: number; base: number; valor: number };
+  /** Outras taxas / antecipação, sobre os itens. */
+  outras: { pct: number; valor: number };
+  /**
+   * Pedidos do app pagos NA ENTREGA. O cartão paga a taxa da maquininha da
+   * loja — informativo: já está somado em "Taxas de pagamento". `taxaConfigurada`
+   * false = a loja não cadastrou a taxa de alguma forma usada. Dinheiro e Pix:
+   * sem taxa de cartão.
+   */
+  naEntrega: { cartao: { pedidos: number; base: number; taxa: number; taxaConfigurada: boolean }; semCartao: { pedidos: number; base: number } };
+  /** Loja que tem a comissão e ainda não separou as taxas (o percentual único antigo). */
+  percentualUnico: boolean;
+};
 export type LinhaDeTaxa = { chave: FormaComTaxa | "SITE"; rotulo: string; base: number; pct: number | null; valor: number; configurada: boolean; comoFoi: string };
 export type LinhaDoMes = { mes: string; dias: number; diasDoMes: number; valorDoMes: number; valor: number; situacao?: SituacaoDoCiclo };
 
@@ -788,6 +861,8 @@ export function calcularDRE(e: {
   custosFixos: CustoFixo[];
   despesas: DespesaDoPeriodo[];
   comissoes: ComissoesDosApps;
+  /** Pagamento online e outras taxas de cada app. Ausente = só a comissão (a conta de antes). */
+  taxasDosApps?: TaxasDosApps;
   paymentFees: unknown;
 }): ResultadoDoDRE {
   const { dados } = e;
@@ -801,6 +876,11 @@ export function calcularDRE(e: {
   let entregasDaLoja = 0, entregasSemEntregador = 0, entregasDoApp = 0;
   const validos: PedidoDoFinanceiro[] = [];
   const porCanal = new Map<ChaveDeCanal, { pedidos: number; c: number; cItens: number }>();
+  // Pedidos de app pelo jeito que foram pagos (ver "COMISSÃO DOS APPS"):
+  // online no app, cartão na entrega (por forma, para a taxa da maquininha)
+  // e dinheiro/Pix na entrega.
+  type PagosDoApp = { nOnline: number; cOnline: number; nCartao: number; cartaoPorForma: Map<FormaComTaxa, number>; nSemCartao: number; cSemCartao: number };
+  const pagosDoApp = new Map<ChaveDeCanal, PagosDoApp>();
   const basePorForma = new Map<FormaComTaxa, number>();
   let cSiteOnline = 0, cTaxaSite = 0;
 
@@ -846,12 +926,31 @@ export function calcularDRE(e: {
     // app; o pago pelo site tem o 1% do FireHub gravado no pedido.
     if (p.tableSessionId) continue;
     let pagoNoSite = false;
+    const doApp = p.marketplace
+      ? pagosDoApp.get(p.canal) || { nOnline: 0, cOnline: 0, nCartao: 0, cartaoPorForma: new Map(), nSemCartao: 0, cSemCartao: 0 }
+      : null;
+    let noApp = false, noCartao = false, semCartao = false;
     for (const parte of p.pagamentos) {
       if (parte.forma === "ONLINE") {
         if (!p.marketplace) { pagoNoSite = true; cSiteOnline += cent(parte.valor); }
+        else if (doApp) { noApp = true; doApp.cOnline += cent(parte.valor); }
         continue;
       }
       somarForma(parte.forma, cent(parte.valor));
+      if (!doApp) continue;
+      if (parte.forma === "CREDITO" || parte.forma === "DEBITO" || parte.forma === "VALE") {
+        noCartao = true;
+        doApp.cartaoPorForma.set(parte.forma, (doApp.cartaoPorForma.get(parte.forma) || 0) + cent(parte.valor));
+      } else if (parte.forma === "DINHEIRO" || parte.forma === "PIX") {
+        semCartao = true;
+        doApp.cSemCartao += cent(parte.valor);
+      }
+    }
+    if (doApp) {
+      if (noApp) doApp.nOnline++;
+      if (noCartao) doApp.nCartao++;
+      if (semCartao) doApp.nSemCartao++;
+      pagosDoApp.set(p.canal, doApp);
     }
     if (pagoNoSite) cTaxaSite += cent(p.taxaOnline);
   }
@@ -890,10 +989,35 @@ export function calcularDRE(e: {
     if (!c || c.pedidos === 0) continue;
     const p = e.comissoes[chave];
     const definido = typeof p === "number" && Number.isFinite(p);
+    const t = e.taxasDosApps?.[chave];
+    const pg = pagosDoApp.get(chave);
+    const cComissao = definido ? Math.round((c.cItens * p!) / 100) : 0;
+    const pctOnline = t?.pagamentoOnline || 0;
+    const pctOutras = t?.outras || 0;
+    const cOnline = pg?.cOnline || 0;
+    const cTaxaOnline = Math.round((cOnline * pctOnline) / 100);
+    const cOutras = Math.round((c.cItens * pctOutras) / 100);
+    // A maquininha da loja nos pedidos pagos na entrega, forma a forma (a
+    // mesma taxa de "Taxas de pagamento"; aqui só para enxergar por app).
+    let cCartao = 0, cTaxaCartao = 0, taxaConfigurada = true;
+    for (const [forma, base] of pg?.cartaoPorForma || []) {
+      const tx = taxaDaForma(e.paymentFees, forma);
+      cCartao += base;
+      if (!tx.configurada) taxaConfigurada = false;
+      else cTaxaCartao += Math.round((base * tx.pct) / 100);
+    }
     comissoes.push({
       canal: chave, nome, base: reais(c.cItens), pedidos: c.pedidos,
       pct: definido ? p! : null,
-      valor: definido ? reais(Math.round((c.cItens * p!) / 100)) : 0,
+      valor: reais(cComissao + cTaxaOnline + cOutras),
+      comissao: reais(cComissao),
+      online: { pct: pctOnline, pedidos: pg?.nOnline || 0, base: reais(cOnline), valor: reais(cTaxaOnline) },
+      outras: { pct: pctOutras, valor: reais(cOutras) },
+      naEntrega: {
+        cartao: { pedidos: pg?.nCartao || 0, base: reais(cCartao), taxa: reais(cTaxaCartao), taxaConfigurada },
+        semCartao: { pedidos: pg?.nSemCartao || 0, base: reais(pg?.cSemCartao || 0) },
+      },
+      percentualUnico: definido && !t,
     });
   }
   const totalComissoes = reais(comissoes.reduce((s, l) => s + cent(l.valor), 0));
@@ -1178,12 +1302,17 @@ export const COMISSAO_DE_REFERENCIA = 26;
  * e a venda que JÁ é do app, obviamente, também não: o card antigo calculava
  * 26% de TODA a receita, e a Delícia de Casa, 100% iFood, "economizou"
  * R$ 14.397,62.
+ *
+ * O percentual da loja é o total do iFood dela (comissão + pagamento online +
+ * outras), como a referência de 26% (23 + 3,2): quem separou as taxas
+ * continua vendo a mesma economia de quem cadastrou o número único.
  */
-export function economiaNosCanaisProprios(r: Pick<ResultadoDoDRE, "porCanal">, comissoes: ComissoesDosApps) {
+export function economiaNosCanaisProprios(r: Pick<ResultadoDoDRE, "porCanal">, comissoes: ComissoesDosApps, taxasDosApps: TaxasDosApps = {}) {
   const proprios = r.porCanal.filter((c) => c.canal === "SITE" || c.canal === "WHATSAPP_IA");
   const base = reais(proprios.reduce((s, c) => s + cent(c.valor), 0));
   const daLoja = typeof comissoes.IFOOD === "number";
-  const percentual = daLoja ? comissoes.IFOOD! : COMISSAO_DE_REFERENCIA;
+  const t = taxasDosApps.IFOOD;
+  const percentual = daLoja ? Math.round((comissoes.IFOOD! + (t?.pagamentoOnline || 0) + (t?.outras || 0)) * 100) / 100 : COMISSAO_DE_REFERENCIA;
   return { base, percentual, daLoja, valor: reais(Math.round((cent(base) * percentual) / 100)), pedidos: proprios.reduce((s, c) => s + c.pedidos, 0) };
 }
 

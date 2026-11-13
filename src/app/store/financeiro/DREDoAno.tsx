@@ -11,7 +11,7 @@
  * comissão ou sem taxa) vem marcado: o resultado dele ainda não é lucro.
  */
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { calcularDRE, type ComissoesDosApps, type CustoFixo, type DadosDoPeriodo, type ResultadoDoDRE } from "@/lib/financeiro/dre";
+import { calcularDRE, type ComissoesDosApps, type CustoFixo, type TaxasDosApps, type DadosDoPeriodo, type ResultadoDoDRE } from "@/lib/financeiro/dre";
 import { somarDias } from "@/lib/relatorios/base";
 import type { DespesaDTO } from "./DespesasLancadas";
 import { fmtR } from "./ui";
@@ -47,11 +47,12 @@ const LINHAS: Linha[] = [
 
 const ultimoDoMes = (mes: string) => somarDias(`${somarDias(`${mes}-28`, 4).slice(0, 7)}-01`, -1);
 
-export default function DREDoAno({ hoje, custosFixos, despesas, comissoes, paymentFees }: {
+export default function DREDoAno({ hoje, custosFixos, despesas, comissoes, taxasDosApps, paymentFees }: {
   hoje: string;
   custosFixos: CustoFixo[];
   despesas: DespesaDTO[];
   comissoes: ComissoesDosApps;
+  taxasDosApps: TaxasDosApps;
   paymentFees: unknown;
 }) {
   const [ano, setAno] = useState(Number(hoje.slice(0, 4)));
@@ -90,8 +91,8 @@ export default function DREDoAno({ hoje, custosFixos, despesas, comissoes, payme
 
   const dres = useMemo(() => meses.map((m) => {
     const d = porMes[m];
-    return d ? calcularDRE({ dados: d, custosFixos, despesas, comissoes, paymentFees }) : null;
-  }), [meses, porMes, custosFixos, despesas, comissoes, paymentFees]);
+    return d ? calcularDRE({ dados: d, custosFixos, despesas, comissoes, taxasDosApps, paymentFees }) : null;
+  }), [meses, porMes, custosFixos, despesas, comissoes, taxasDosApps, paymentFees]);
 
   const comDados = dres.filter((d): d is ResultadoDoDRE => Boolean(d));
   const total = (l: Linha) => {

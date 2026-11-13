@@ -20,7 +20,7 @@ import AjudaModulo from "@/components/AjudaModulo";
 import { fmtNum, fmtPct, fmtR } from "./ui";
 import {
   diaCurto, entraNoDRE, recebimentosDoPeriodo,
-  type ComissoesDosApps, type DadosDoPeriodo, type PedidoDoFinanceiro, type ResultadoDoDRE,
+  type ComissoesDosApps, type DadosDoPeriodo, type PedidoDoFinanceiro, type ResultadoDoDRE, type TaxasDosApps,
 } from "@/lib/financeiro/dre";
 import { situacaoDoPedido } from "@/lib/relatorios/regua-da-venda";
 
@@ -43,7 +43,7 @@ type Lancamento = {
   liquido: number;
 };
 
-function lancamentosDoPeriodo(pedidos: PedidoDoFinanceiro[], comissoes: ComissoesDosApps, tz: string): Lancamento[] {
+function lancamentosDoPeriodo(pedidos: PedidoDoFinanceiro[], comissoes: ComissoesDosApps, taxasDosApps: TaxasDosApps, tz: string): Lancamento[] {
   const quando = (iso: string) => new Date(iso).toLocaleString("pt-BR", { timeZone: tz, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
   const saida: Lancamento[] = [];
   for (const p of [...pedidos].reverse()) {
@@ -57,12 +57,17 @@ function lancamentosDoPeriodo(pedidos: PedidoDoFinanceiro[], comissoes: Comissoe
         ? (p.marketplace ? `Repasse do ${canal}` : "Sua conta Asaas")
         : "Caixa da loja";
     // A taxa que se sabe por pedido: a do FireHub no pago pelo site (gravada no pedido), e a
-    // comissão do app pelo percentual que a loja cadastrou (estimada).
+    // comissão do app pelo percentual que a loja cadastrou (estimada), com as
+    // outras taxas sobre os itens e o pagamento online só no pago dentro do app
+    // (a mesma conta do DRE, pedido a pedido).
     let taxa = 0, estimada = false;
     if (!cancelado) {
       if (online && !p.marketplace) taxa = p.taxaOnline;
       else if (p.marketplace && typeof comissoes[p.canal] === "number") {
-        taxa = Math.round((p.itens > 0 ? p.itens : Math.max(0, p.totalAmount - p.deliveryFee)) * comissoes[p.canal]!) / 100;
+        const t = taxasDosApps[p.canal];
+        const itens = p.itens > 0 ? p.itens : Math.max(0, p.totalAmount - p.deliveryFee);
+        const pagoNoApp = p.pagamentos.filter((x) => x.forma === "ONLINE").reduce((s, x) => s + x.valor, 0);
+        taxa = Math.round(itens * (comissoes[p.canal]! + (t?.outras || 0)) + pagoNoApp * (t?.pagamentoOnline || 0)) / 100;
         estimada = true;
       }
     }
@@ -104,9 +109,9 @@ function baixarCsv(linhas: Lancamento[], de: string, ate: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function AbaExtrato({ dados, comissoes, repasseConfig }: { dados: DadosDoPeriodo; comissoes: ComissoesDosApps; repasseConfig: any }) {
+export function AbaExtrato({ dados, comissoes, taxasDosApps, repasseConfig }: { dados: DadosDoPeriodo; comissoes: ComissoesDosApps; taxasDosApps: TaxasDosApps; repasseConfig: any }) {
   const [todos, setTodos] = useState(false);
-  const lancamentos = useMemo(() => lancamentosDoPeriodo(dados.pedidos, comissoes, dados.tz), [dados, comissoes]);
+  const lancamentos = useMemo(() => lancamentosDoPeriodo(dados.pedidos, comissoes, taxasDosApps, dados.tz), [dados, comissoes, taxasDosApps]);
   const receb = useMemo(() => recebimentosDoPeriodo(dados), [dados]);
   const visiveis = todos ? lancamentos : lancamentos.slice(0, 200);
 
