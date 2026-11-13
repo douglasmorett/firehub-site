@@ -7,6 +7,7 @@
 import assert from "node:assert/strict";
 import {
   motivoParaNaoChamar, ehDa99ComEntregaDaLoja, telefoneParaIfood, pagamentoParaIfood, entradaDoPedido,
+  motivoDaCobrancaRecusada,
 } from "../src/lib/entregador-ifood-no-pedido";
 import { montarPedido } from "../src/lib/ifood-shipping";
 import { faltaReautorizar, modulosLiberados } from "../src/lib/ifood-permissoes";
@@ -72,6 +73,17 @@ caso("pago online vai como ONLINE com o valor total", () => {
   assert.equal(corpo.payments.methods[0].type, "ONLINE");
   assert.equal(corpo.payments.methods[0].value, 97.9);
 });
+
+// Cotação real da Hakim Centro (12/11/2026): sem formas de pagamento.
+const semCobranca = { hasPaymentMethods: false, paymentMethods: [] };
+caso("loja onde o entregador do iFood não cobra: dinheiro na porta é recusado com motivo", () =>
+  assert.match(String(motivoDaCobrancaRecusada({ metodo: "CASH", trocoPara: 50 }, semCobranca)), /só dá para chamar em pedido já pago/));
+caso("loja onde o entregador não cobra: pedido já pago passa", () =>
+  assert.equal(motivoDaCobrancaRecusada({ metodo: "ONLINE", bandeira: "VISA" }, semCobranca), null));
+caso("cartão que o iFood não aceita na porta é recusado", () =>
+  assert.match(String(motivoDaCobrancaRecusada({ metodo: "DEBIT", bandeira: "ELO" }, { hasPaymentMethods: true, paymentMethods: [{ method: "CREDIT", brand: "VISA" }] })), /débito/));
+caso("forma aceita passa", () =>
+  assert.equal(motivoDaCobrancaRecusada({ metodo: "CASH" }, { hasPaymentMethods: true, paymentMethods: [{ method: "CASH" }] }), null));
 
 // Token no formato do iFood (medido na Hakim Centro em 12/11/2026).
 const jwt = (merchantScope: string[]) =>

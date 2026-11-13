@@ -86,6 +86,26 @@ export function pagamentoParaIfood(pedido: any, cotacao: any): PagamentoPedido {
 }
 
 /**
+ * O entregador do iFood consegue receber ESTE pagamento na porta? null = sim;
+ * senão o motivo para a tela. A cotação diz o que ele cobra (`paymentMethods`)
+ * — na Hakim Centro, em 12/11/2026, veio `hasPaymentMethods: false` e lista
+ * vazia: ali o entregador do iFood não cobra nada, só leva pedido já pago.
+ * Mandar "dinheiro na entrega" assim seria pedir uma corrida que o iFood
+ * recusa (ou pior, um cliente que não paga).
+ */
+export function motivoDaCobrancaRecusada(pagamento: PagamentoPedido, cotacao: any): string | null {
+  if (pagamento.metodo === "ONLINE") return null;
+  const aceitos: any[] = Array.isArray(cotacao?.paymentMethods) ? cotacao.paymentMethods : [];
+  if (cotacao?.hasPaymentMethods === false || aceitos.length === 0) {
+    return "O entregador do iFood não cobra na entrega nesta loja: só dá para chamar em pedido já pago.";
+  }
+  const aceita = aceitos.some((p) => String(p?.method).toUpperCase() === pagamento.metodo);
+  if (aceita) return null;
+  const nome = pagamento.metodo === "CASH" ? "dinheiro" : pagamento.metodo === "DEBIT" ? "cartão de débito" : "cartão de crédito";
+  return `O entregador do iFood não recebe ${nome} na entrega nesta loja.`;
+}
+
+/**
  * O pedido da loja no formato que o iFood registra. Os itens vão como UMA
  * linha com o valor do pedido sem a taxa: o iFood confere total = itens + taxa,
  * e o entregador cobra exatamente o que o cliente deve — desconto, cupom e

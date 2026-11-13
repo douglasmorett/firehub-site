@@ -29,6 +29,7 @@ import {
 } from "@/lib/ifood-shipping";
 import {
   motivoParaNaoChamar, pagamentoParaIfood, entradaDoPedido, telefoneParaIfood, ehDa99ComEntregaDaLoja,
+  motivoDaCobrancaRecusada,
 } from "@/lib/entregador-ifood-no-pedido";
 import { enderecoImpresso } from "@/lib/endereco-impresso";
 import { cepDoEndereco, buscarCep } from "@/lib/cep";
@@ -149,11 +150,15 @@ async function cotarIfood(ctx: ContextoIfood | null, pedido: any, ponto: { latit
   const r = await consultarDisponibilidade(ctx, ponto.latitude, ponto.longitude);
   if (!r.ok || !r.data?.id) return { app: "IFOOD", ok: false, erro: r.ok ? "Sem entregador do iFood para este endereço agora." : mensagemDeErro(r) };
   const c: any = r.data;
+  // O entregador só leva se puder receber o que o cliente deve na porta.
+  const cobranca = pagamentoParaIfood(pedido, c);
+  const recusa = motivoDaCobrancaRecusada(cobranca, c);
+  if (recusa) return { app: "IFOOD", ok: false, erro: recusa };
   return {
     app: "IFOOD", ok: true,
     price: Number(c.quote?.netValue ?? 0), raise: Number(c.quote?.raise ?? 0) || 0,
     minutosMin: Math.round((c.deliveryTime?.min ?? 0) / 60), minutosMax: Math.round((c.deliveryTime?.max ?? 0) / 60),
-    distancia: c.distance ?? null, cobranca: pagamentoParaIfood(pedido, c),
+    distancia: c.distance ?? null, cobranca,
   };
 }
 
@@ -250,7 +255,10 @@ export async function POST(req: NextRequest) {
   // o quoteId ainda vale (ele expira e o valor pode mudar).
   const cot = await consultarDisponibilidade(ctx, ponto.latitude, ponto.longitude);
   if (!cot.ok || !cot.data?.id) return NextResponse.json({ error: cot.ok ? "Sem entregador do iFood agora." : mensagemDeErro(cot) }, { status: 409 });
-  const entrada = entradaDoPedido(pedido, endereco, pagamentoParaIfood(pedido, cot.data), String(cot.data.id));
+  const pagamento = pagamentoParaIfood(pedido, cot.data);
+  const recusa = motivoDaCobrancaRecusada(pagamento, cot.data);
+  if (recusa) return NextResponse.json({ error: recusa }, { status: 409 });
+  const entrada = entradaDoPedido(pedido, endereco, pagamento, String(cot.data.id));
   const r = await registrarPedido(ctx, entrada);
   if (!r.ok || !r.data?.id) return NextResponse.json({ error: mensagemDeErro(r) }, { status: r.status || 502 });
 
