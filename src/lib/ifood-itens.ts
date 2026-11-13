@@ -194,6 +194,7 @@ export async function montarItensDoPedidoIfood(
       franchiseeId,
       codigoExterno: i?.externalCode ?? i?.code ?? null,
       idDoEspelho: produtoId,
+      nomeDoItem: nome,
     });
     if (!produtoReal) await corrigirNomeDoEspelho(produtoId, nome, franchiseeId, "iFood");
 
