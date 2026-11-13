@@ -700,7 +700,7 @@ export default function IntegracoesHubClient({
   const [ifMerchant, setIfMerchant] = useState(ifoodMerchantId || "");
   const [ifWidget, setIfWidget] = useState(ifoodWidgetId || "");
   const [ifSaving, setIfSaving] = useState(false);
-  const [ifoodIntegrations, setIfoodIntegrations] = useState<{id:string;label:string;merchantId:string;connected:boolean;active:boolean;widgetId?:string|null;createdAt:string}[]>(initialIfoodIntegrations || []);
+  const [ifoodIntegrations, setIfoodIntegrations] = useState<{id:string;label:string;merchantId:string;connected:boolean;active:boolean;widgetId?:string|null;createdAt:string;faltaReautorizar?:boolean}[]>(initialIfoodIntegrations || []);
   const [ifoodLoading, setIfoodLoading] = useState(!initialIfoodIntegrations || initialIfoodIntegrations.length === 0);
   const [newIfLabel, setNewIfLabel] = useState("");
   const [newIfMerchantId, setNewIfMerchantId] = useState("");
@@ -1641,6 +1641,10 @@ export default function IntegracoesHubClient({
       // `connected` false = o iFood tirou a autorização (lib/ifood-autorizacao.ts).
       badge: ifoodIntegrations.some(i => i.active && i.connected === false)
         ? { text: "🔴 Autorize de novo", bg: "#FFF4EF", color: "#9A3412", border: "#FFD3C2" }
+        // Autorizada antes dos módulos novos (12/11/2026): pedidos entram, mas
+        // entregador, cardápio e pausa no iFood só depois de autorizar de novo.
+        : ifoodIntegrations.some(i => i.faltaReautorizar)
+        ? { text: "🟡 Autorize de novo para liberar as novidades", bg: "#FFFBEB", color: "#92400E", border: "#FCD34D" }
         : (ifoodIntegrations.length > 0 || ifMerchant || initialIfoodConnected) ? { text: `🟢 ${ifoodIntegrations.length || 1} Integração(ões)`, bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
       description: "Gerencie suas integrações iFood. Conecte múltiplas lojas e acompanhe o status.",
     },
@@ -2394,6 +2398,9 @@ export default function IntegracoesHubClient({
                                 <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>
                                   {titulo}
                                 </div>
+                                {(principal as any)?.faltaReautorizar && (
+                                  <div style={{ fontSize: "0.7rem", fontWeight: 800, color: "#92400E" }}>🟡 Autorize de novo para liberar as novidades</div>
+                                )}
                                 <div style={{ fontSize: "0.72rem", color: "#64748B", fontFamily: ifMerchant ? "monospace" : "inherit" }}>
                                   {ifMerchant || "Identificando a loja — entra sozinha no primeiro pedido"}
                                 </div>
@@ -2455,6 +2462,7 @@ export default function IntegracoesHubClient({
                         </div>
                         <div style={{ flex: 1 }}>
                           <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>{integ.label || `Loja iFood (${integ.merchantId.slice(0, 6)})`}</div>
+                          {integ.faltaReautorizar && <div style={{ fontSize: "0.7rem", fontWeight: 800, color: "#92400E" }}>🟡 Autorize de novo para liberar as novidades</div>}
                           <div style={{ fontSize: "0.72rem", color: "#64748B", fontFamily: "monospace" }}>{integ.merchantId}</div>
                         </div>
                         {/* O selo de estado vem ANTES do preço, e é o mesmo da
@@ -2575,6 +2583,14 @@ export default function IntegracoesHubClient({
                 ) : (
                   /* Botão Principal de Conexão com 1-Clique */
                   <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "16px" }}>
+                    {ifoodIntegrations.some(i => i.faltaReautorizar) && (
+                      <div style={{ padding: "12px 14px", borderRadius: 12, background: "#FFFBEB", border: "1.5px solid #FCD34D", color: "#78350F", fontSize: "0.8rem", lineHeight: 1.45 }}>
+                        <div style={{ fontWeight: 800, marginBottom: 4 }}>🟡 Autorize de novo para liberar as novidades</div>
+                        O iFood liberou para o FireHub chamar entregador do iFood, pausar itens do cardápio do iFood e mais.
+                        Para usar em <b>{ifoodIntegrations.filter(i => i.faltaReautorizar).map(i => i.label || i.merchantId.slice(0, 8)).join(", ")}</b>,
+                        clique no botão abaixo, autorize no Portal do iFood e cole aqui o código que ele mostrar. Os pedidos continuam entrando normalmente.
+                      </div>
+                    )}
                     <button
                       onClick={handleGenerateUserCode}
                       disabled={loadingUserCode}

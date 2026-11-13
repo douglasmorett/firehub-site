@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { faltaReautorizar } from "@/lib/ifood-permissoes";
 
 export async function GET() {
   try {
@@ -29,10 +30,18 @@ export async function GET() {
         active: true,
         widgetId: true,
         createdAt: true,
+        accessToken: true,
       },
     });
 
-    return NextResponse.json({ integrations });
+    // O token não sai daqui: só o "falta autorizar de novo" lido dele
+    // (lib/ifood-permissoes.ts — novidades de 12/11/2026).
+    return NextResponse.json({
+      integrations: integrations.map(({ accessToken, ...i }) => ({
+        ...i,
+        faltaReautorizar: i.active && i.connected !== false && faltaReautorizar(accessToken, i.merchantId),
+      })),
+    });
   } catch (error) {
     console.error("Erro ao listar integrações iFood:", error);
     return NextResponse.json({ error: "Erro interno" }, { status: 500 });
