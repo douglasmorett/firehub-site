@@ -14,6 +14,7 @@ import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
 import { calcularContaDaMesa, sanearTaxa } from "@/lib/conta-da-mesa";
 import { normalizarConfigFiscal } from "@/lib/fiscal-config";
 import { documentoNoPedido } from "@/lib/fiscal-modo";
+import { contaSemTaxa, gravacaoDaTaxa } from "@/lib/taxa-da-mesa";
 
 export const dynamic = "force-dynamic";
 
@@ -86,5 +87,47 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const loja = await prisma.user.findUnique({ where: { id: lojaId }, select: { fiscalConfig: true } }).catch(() => null);
   const notaFiscal = documentoNoPedido(normalizarConfigFiscal(loja?.fiscalConfig));
 
-  return NextResponse.json({ ...calcularContaDaMesa(mesa, pessoas, taxaPct, gorjeta, desconto), notaFiscal });
+  // `semTaxa`: a conta foi marcada "sem taxa de serviço" (POST abaixo). Só
+  // informa; a conta acima segue a `taxa` pedida, como sempre.
+  return NextResponse.json({ ...calcularContaDaMesa(mesa, pessoas, taxaPct, gorjeta, desconto), notaFiscal, semTaxa: contaSemTaxa(mesa) });
+}
+
+/**
+ * POST /api/store/table-sessions/[id]/conta  { semTaxa: boolean }
+ *
+ * O cliente pediu para pagar sem a taxa de serviço (ou mudou de ideia). A
+ * escolha fica na conta aberta (lib/taxa-da-mesa.ts) para o fechamento do
+ * painel e do garçom pelo link já abrirem sem a taxa. O app da maquininha usa
+ * esta rota: o HttpURLConnection do Android não manda PATCH.
+ *
+ * Mesma trava do fechamento: garçom sem "pode tirar a taxa" não tira.
+ */
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const operador = await resolverOperadorDaMesa();
+  if (!operador) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
+  const { id } = await params;
+  const corpo = await req.json().catch(() => ({}));
+  const gravar = gravacaoDaTaxa(corpo?.semTaxa);
+  if (!gravar) return NextResponse.json({ error: "Mande semTaxa: true ou false" }, { status: 400 });
+
+  if (gravar.serviceFee === 0 && operador.tipo === "garcom" && !operador.garcom.podeTirarTaxa) {
+    return NextResponse.json(
+      { error: "Este garçom não tira a taxa de serviço. Peça ao caixa para tirar pelo painel." },
+      { status: 403 },
+    );
+  }
+
+  const mesa = await prisma.tableSession.findUnique({
+    where: { id },
+    select: { status: true, table: { select: { franchiseeId: true } } },
+  });
+  if (!mesa || mesa.table?.franchiseeId !== operador.franchiseeId) {
+    return NextResponse.json({ error: "Mesa não encontrada" }, { status: 404 });
+  }
+  // Só a conta aberta: na fechada o campo é o valor da taxa cobrada.
+  const r = await prisma.tableSession.updateMany({ where: { id, status: "OPEN" }, data: gravar });
+  if (r.count !== 1) return NextResponse.json({ error: "Esta mesa já foi fechada." }, { status: 409 });
+
+  return NextResponse.json({ ok: true, semTaxa: gravar.serviceFee === 0 });
 }

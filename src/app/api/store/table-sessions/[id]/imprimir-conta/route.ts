@@ -22,6 +22,7 @@ import { impressorasDaContaDaMesa } from "@/lib/impressao-da-conta";
 import { versaoAtende } from "@/lib/campanha-converter";
 import { VERSAO_ASSISTENTE_COM_TAXA_SEPARADA } from "@/lib/print";
 import { descontoDoCorpo } from "@/lib/desconto-manual";
+import { contaSemTaxa } from "@/lib/taxa-da-mesa";
 
 export const dynamic = "force-dynamic";
 
@@ -87,8 +88,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const taxaDaLoja = sanearTaxa(loja?.taxaServicoPadrao, TAXA_PADRAO);
   const taxaPct = sanearTaxa(body?.taxa, taxaDaLoja);
   // Garçom sem "pode tirar a taxa": a conta impressa por ele sai com a taxa
-  // da loja, nunca abaixo — o campo está travado na tela dele.
-  if (operador.tipo === "garcom" && !operador.garcom.podeTirarTaxa && taxaPct < taxaDaLoja) {
+  // da loja, nunca abaixo — o campo está travado na tela dele. Conta já
+  // marcada "sem taxa" por quem pode (lib/taxa-da-mesa.ts) sai sem ela.
+  if (operador.tipo === "garcom" && !operador.garcom.podeTirarTaxa && taxaPct < taxaDaLoja && !contaSemTaxa(mesa)) {
     return NextResponse.json({ error: `Este garçom não tira a taxa de serviço (${taxaDaLoja}%). A conta sem taxa sai pelo painel da loja.` }, { status: 403 });
   }
   const gorjeta =

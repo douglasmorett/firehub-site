@@ -24,6 +24,7 @@ import HistoricoDeMesas from "@/components/mesas/HistoricoDeMesas";
 import { comSenhaDoGerente, useSenhaDoGerente } from "@/components/SenhaDoGerente";
 import { motivoValido } from "@/lib/motivo-do-cancelamento";
 import { rotuloDaForma } from "@/lib/formas-proprias";
+import { taxaSugeridaDaConta } from "@/lib/taxa-da-mesa";
 import {
   MOTIVOS_COMUNS, SEM_DESCONTO, problemaDoDesconto, valorDoDesconto,
   type DescontoManual,
@@ -48,6 +49,8 @@ interface TableItem {
     orderCount: number;
     /** Conta impressa e nada lançado depois: mesa em fechamento (lib/mesa-em-fechamento.ts). */
     contaPedidaEm?: string | null;
+    /** O cliente pediu sem taxa de serviço (na maquininha do garçom): lib/taxa-da-mesa.ts. */
+    semTaxa?: boolean;
   } | null;
   /** O tablet da mesa chamou o garçom ou pediu a conta (lib/tablet-da-mesa); sai quando alguém abre a mesa. */
   chamado?: { motivo: "GARCOM" | "CONTA"; em: string } | null;
@@ -971,8 +974,9 @@ export default function MesasApp({
    * a loja repassa a ele e não entra aqui — antes entrava, e a casa que cobra
    * 12% via a conta sair com os 10% cadastrados no garçom. O gerente pode
    * mudar no modal ou na própria tela da mesa; aqui é só o ponto de partida.
+   * Conta marcada "sem taxa" (o garçom tirou na maquininha) parte de zero.
    */
-  const taxaSugeridaDaMesa = (_t: TableItem | null): number => taxaSalva;
+  const taxaSugeridaDaMesa = (t: TableItem | null): number => taxaSugeridaDaConta(taxaSalva, t?.openSession?.semTaxa);
 
   /** Marcar a taxa numa conta de loja que não cobra não pode cobrar 0%. */
   const marcarTaxa = (marcar: boolean) => {
@@ -1088,12 +1092,15 @@ export default function MesasApp({
     // Sugere a taxa cadastrada do garçom da mesa UMA vez por mesa: se o
     // gerente mudou para 0% e fechou o modal para lançar um item, reabrir
     // não pode voltar para 10% por baixo dele.
+    // O garçom tirar (ou devolver) a taxa na maquininha sugere de novo.
+    const chaveDaSugestao = sessionId + (selectedTable?.openSession?.semTaxa ? ":sem-taxa" : "");
     let taxa = useServiceFee ? serviceFee : 0;
-    if (sessaoComTaxaSugerida.current !== sessionId) {
-      sessaoComTaxaSugerida.current = sessionId;
+    if (sessaoComTaxaSugerida.current !== chaveDaSugestao) {
+      sessaoComTaxaSugerida.current = chaveDaSugestao;
       taxa = taxaSugeridaDaMesa(selectedTable);
-      // Loja que não cobra: caixa desmarcada, e marcar volta com 10%.
-      setServiceFee(taxa > 0 ? taxa : 10);
+      // Loja que não cobra: caixa desmarcada, e marcar volta com 10%. Conta
+      // sem taxa: desmarcada, e marcar volta com a taxa da loja.
+      setServiceFee(taxaSalva > 0 ? taxaSalva : 10);
       setUseServiceFee(taxa > 0);
     }
     setShowCloseModal(true);
