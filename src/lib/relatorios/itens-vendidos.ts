@@ -42,6 +42,7 @@ import { complementosDaOpcao } from "@/lib/complemento-da-opcao";
 import { precoDaOpcao } from "@/lib/preco-por-canal";
 import { canalDePrecoDo, categoriaDoItem, precoUnitarioDaOpcao, SEM_CATEGORIA, type MapasDaLoja } from "@/lib/itens-do-relatorio";
 import { c2 } from "@/lib/relatorios/base";
+import { canaisConhecidos } from "@/lib/canal-do-pedido";
 
 // ── O QUE ENTRA ─────────────────────────────────────────────────────────────
 
@@ -362,13 +363,42 @@ function finalizar(mapa: Map<string, Acumulado>, por: "quantidade" | "valor"): N
 
 /** A chave que junta "o mesmo produto": id, ou o nome dentro da categoria. */
 function chaveDoProduto(item: ItemParaRelatorio, nome: string, categoria: string, juntarMesmoNome: boolean): string {
+  // O produto apagado não tem id, e o chaveDoNome tira o "R$ 2,90" do rótulo —
+  // juntaria todos os apagados numa linha só de novo. A chave é o rótulo inteiro.
+  if (!nomeGravado(item)) return `p:${categoria}:${nome.toLowerCase()}`;
   if (juntarMesmoNome) return `p:${categoria}:${chaveDoNome(nome) || nome.toLowerCase()}`;
   return `p:${item.menuProductId || item.menuProduct?.id || chaveDoNome(nome)}`;
 }
 
+/** O nome do cadastro, ou o gravado no pedido sem as opções (" | Borda X"); vazio quando não há nenhum. */
+function nomeGravado(item: ItemParaRelatorio): string {
+  return (item.menuProduct?.name || String(item.productName || "").split(" | ")[0]).trim();
+}
+
 /** O nome do produto para o relatório: o do cadastro, ou o gravado sem as opções (" | Borda X"). */
 export function nomeDoProduto(item: ItemParaRelatorio): string {
-  return (item.menuProduct?.name || String(item.productName || "").split(" | ")[0] || "Produto removido").trim();
+  return nomeGravado(item) || "Produto removido";
+}
+
+const NOME_DO_CANAL = new Map<string, string>(canaisConhecidos().map((c) => [c.chave, c.nome]));
+
+/**
+ * O item cujo produto foi APAGADO do cadastro e que não guardou o nome. Hakim
+ * Centro, 13/11/2026: 11.101 itens (R$ 161 mil) de 16/07 a 21/08 numa linha só,
+ * "Produto removido". Até 01/09/2026 o iFood e o JotaJá não gravavam
+ * `productName` (o nome vinha do produto espelho), e o endpoint
+ * clean-menu-duplicates (no ar de 25/07 a 22/08) apagou os espelhos e zerou o
+ * `menuProductId` desses itens. O nome não existe mais em lugar nenhum; o que
+ * sobra é o canal e o preço — e as opções, que o relatório mostra dentro da
+ * linha. Uma linha por canal e preço: "Produto apagado (iFood, R$ 24,90)" com
+ * Carne, Calabresa, Guaravita dentro é o combo que o dono reconhece.
+ */
+function nomeNoRelatorio(item: ItemParaRelatorio, canal: string): string {
+  const nome = nomeGravado(item);
+  if (nome) return nome;
+  const onde = NOME_DO_CANAL.get(canal) || "";
+  const preco = c2(Number(item.price) || 0).toFixed(2).replace(".", ",");
+  return `Produto apagado (${onde ? `${onde}, ` : ""}R$ ${preco})`;
 }
 
 export type ContextoDaConta = {
@@ -419,7 +449,7 @@ export function itensVendidos(pedidos: PedidoParaItens[], conta: ContextoDaConta
       const itemEntra = (!cfg.categorias.size || cfg.categorias.has(categoria)) && (!cfg.produtos.size || cfg.produtos.has(produtoId));
       if (!itemEntra && !cfg.apenasProdutos) continue;
 
-      const nome = nomeDoProduto(item);
+      const nome = nomeNoRelatorio(item, pedido.canal);
       let noProduto: Acumulado | null = null;
       if (itemEntra) {
         const valorDoItem = (Number(item.price) || 0) * qtd;

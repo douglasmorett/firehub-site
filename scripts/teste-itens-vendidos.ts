@@ -295,5 +295,32 @@ confere("sem 'apenas produtos', o filtro continua só no item (2 Cocas avulsas)"
 const totalDoCombo1 = itensVendidos([{ franchiseeId: P17, canal: "SITE", items: [item17("c1", { c1s: { Calabresa: 1, "Bacon c/ Ovos": 1 } })] }] as any, conta17, cfg());
 confere("o total dos itens não muda com a fração (1 combo, R$ 80)", totalDoCombo1.total, { quantidade: 1, valor: 80 });
 
+// Produto apagado sem nome gravado (Hakim Centro, 13/11/2026): 11.101 itens do
+// iFood e do JotaJá de 16/07 a 21/08 numa linha só, "Produto removido", com
+// todas as opções de todos os combos dentro. Agora: uma linha por canal e
+// preço, as opções de cada uma dentro dela, e o total igual.
+console.log("\n11) Produto apagado: uma linha por canal e preço, total igual");
+const apagado = (price: number, quantity: number, opcoes?: [string, number][]) => ({
+  quantity, price, productName: null, menuProductId: null, menuProduct: null,
+  comboSelections: opcoes ? JSON.stringify(opcoes.map(([name, q]) => ({ name, quantity: q, price: 0 }))) : null,
+});
+const PEDIDOS_APAGADOS = [
+  { franchiseeId: L, canal: "IFOOD", items: [apagado(24.9, 1, [["Carne", 2], ["Calabresa", 2], ["Guaravita", 1]]), apagado(2.9, 3)] },
+  { franchiseeId: L, canal: "IFOOD", items: [apagado(24.9, 1, [["Chocolate Branco", 3]]), apagado(2.9, 1)] },
+  { franchiseeId: L, canal: "JOTAJA", items: [apagado(2.9, 2), { quantity: 1, price: 12, productName: "Coca Cola 1,5l", menuProductId: null, menuProduct: null }] },
+];
+for (const juntar of [true, false]) {
+  const r = itensVendidos(PEDIDOS_APAGADOS as any, conta, cfg({ porCategoria: true, opcoesPorProduto: true, juntarMesmoNome: juntar }));
+  const outros = r.itens.find((c) => c.nome === "Outros");
+  confere(`juntarNome=${juntar}: uma linha por canal e preço, nenhuma "Produto removido"`,
+    (outros?.filhos || []).filter((n) => n.nome !== "Coca Cola 1,5l").map((n) => [n.nome, n.quantidade, n.valor]),
+    [["Produto apagado (iFood, R$ 2,90)", 4, 11.6], ["Produto apagado (iFood, R$ 24,90)", 2, 49.8], ["Produto apagado (Jotajá, R$ 2,90)", 2, 5.8]]);
+  confere(`juntarNome=${juntar}: as opções ficam dentro do combo de R$ 24,90`,
+    acha(r.itens, "Produto apagado (iFood, R$ 24,90)")?.filhos?.map((o) => [o.nome, o.quantidade]),
+    [["Calabresa", 2], ["Carne", 2], ["Chocolate Branco", 3], ["Guaravita", 1]].sort((a, b) => (b[1] as number) - (a[1] as number) || String(a[0]).localeCompare(String(b[0]), "pt-BR")));
+  confere(`juntarNome=${juntar}: total igual (9 itens, R$ 79,20) e o produto com nome segue com o nome`,
+    [r.total, acha(r.itens, "Coca Cola 1,5l")?.quantidade], [{ quantidade: 9, valor: 79.2 }, 1]);
+}
+
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);

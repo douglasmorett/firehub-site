@@ -224,7 +224,7 @@ export async function POST(req: NextRequest) {
     const productMap = new Map(dbProducts.map((p) => [p.id, p]));
 
     let totalAmount = 0;
-    const orderItems: Array<{ menuProductId: string; quantity: number; price: number; comboSelections: any }> = [];
+    const orderItems: Array<{ menuProductId: string; productName: string; quantity: number; price: number; comboSelections: any }> = [];
     const recusados: string[] = [];
     // O produto continua no cardápio, mas a OPÇÃO escolhida foi pausada (o
     // sabor que acabou): o totem fica horas com a tela carregada e não vê a
@@ -287,6 +287,9 @@ export async function POST(req: NextRequest) {
 
       orderItems.push({
         menuProductId: product.id,
+        // O nome na hora da venda: produto apagado depois não vira "Produto
+        // removido" no relatório (lib/relatorios/itens-vendidos.ts).
+        productName: product.name,
         quantity,
         price: itemPrice,
         comboSelections: item.comboSelections || null,
