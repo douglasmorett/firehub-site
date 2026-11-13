@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { closeBillingCycle, getCurrentYearMonth, garantirCiclosDoMes } from "@/lib/billing";
 import { verifyCronAuth } from "@/lib/cron-auth";
+import { precoDoTotem } from "@/lib/firehub-billing";
 import { pegarVez } from "@/lib/vez";
 
 export const dynamic = "force-dynamic";
@@ -106,7 +107,8 @@ export async function GET(req: NextRequest) {
     );
     for (const e of varreduraAtual.erros) log.push(`⚠️ Varredura ${currentMonth}: ${e}`);
 
-    // 4. Acumular taxa de Totem nos ciclos ativos (R$100/mês por totem ativo)
+    // 4. Acumular taxa de Totem nos ciclos ativos (por totem ativo: precoDoTotem —
+    //    R$ 100 até nov/2026, R$ 250 desde dez/2026, ou o combinado com a loja)
     const allActiveTotemStores = await prisma.totemLicense.groupBy({
       by: ["franchiseeId"],
       where: { active: true },
@@ -115,7 +117,7 @@ export async function GET(req: NextRequest) {
 
     for (const store of allActiveTotemStores) {
       try {
-        const totemFee = store._count.id * 100; // R$ 100/totem/mês
+        const totemFee = store._count.id * precoDoTotem(store.franchiseeId, currentMonth);
         await prisma.franchiseeBillingCycle.upsert({
           where: {
             franchiseeId_yearMonth: {

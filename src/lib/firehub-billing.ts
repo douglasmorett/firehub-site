@@ -52,6 +52,24 @@ export const FIREHUB_PLAN = {
 };
 
 /**
+ * Totem de autoatendimento: por totem ativo, por mês, somado à fatura.
+ * R$ 100 até novembro/2026; R$ 250 a partir de dezembro/2026 (Douglas,
+ * 13/11/2026). Preço combinado com a loja fica em TOTEM_COMBINADO.
+ */
+export const MES_DO_TOTEM_NOVO = "2026-12";
+export const TOTEM_MENSAL = 250;
+const TOTEM_MENSAL_ANTES = 100;
+const TOTEM_COMBINADO: Record<string, number> = {
+  cmv8bh259001oo401skdc5e88: 150, // Mano Burguer (Douglas, 13/11/2026)
+};
+
+/** Quanto custa UM totem por mês para esta loja no mês AAAA-MM. */
+export function precoDoTotem(franchiseeId: string, yearMonth: string): number {
+  if (yearMonth < MES_DO_TOTEM_NOVO) return TOTEM_MENSAL_ANTES;
+  return TOTEM_COMBINADO[franchiseeId] ?? TOTEM_MENSAL;
+}
+
+/**
  * Percentual de um mês (AAAA-MM) — o que vale para o mês daqui em diante, para
  * mostrar na tela. Sem mês = o atual. Em outubro/2026 as vendas de 01 a 03
  * ainda são 1%: para a conta de verdade, `calcMensalidade` com

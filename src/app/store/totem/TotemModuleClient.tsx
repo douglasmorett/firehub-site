@@ -14,6 +14,7 @@ import TotemCategoriesClient from "@/components/admin/TotemCategoriesClient";
 import MaquininhasClient from "@/components/admin/MaquininhasClient";
 import AppNaMaquininha from "@/components/admin/AppNaMaquininha";
 import TefDoTotemClient from "@/components/admin/TefDoTotemClient";
+import { MES_DO_TOTEM_NOVO, precoDoTotem } from "@/lib/firehub-billing";
 
 export default function TotemModuleClient({ store, categories }: { store: any, categories?: any[] }) {
   const router = useRouter();
@@ -124,7 +125,13 @@ export default function TotemModuleClient({ store, categories }: { store: any, c
 
   const totems = store.totemLicenses || [];
   const onlineCount = totems.filter((t: any) => isOnline(t.lastHeartbeat)).length;
-  const totalCost = totems.length * 100;
+  // O mesmo preço que o fechamento do mês cobra (lib/firehub-billing).
+  const agora = new Date();
+  const mesAtual = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}`;
+  const precoAgora = precoDoTotem(store.id, mesAtual);
+  const precoNovo = mesAtual < MES_DO_TOTEM_NOVO ? precoDoTotem(store.id, MES_DO_TOTEM_NOVO) : precoAgora;
+  const reais = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const totalCost = totems.length * precoAgora;
 
   return (
     <div style={{ padding: "32px", maxWidth: "1200px", margin: "0 auto", fontFamily: "Inter, sans-serif", color: "#0F172A" }}>
@@ -223,7 +230,12 @@ export default function TotemModuleClient({ store, categories }: { store: any, c
               border: "1px solid #F1F5F9", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" 
             }}>
               <p style={{ margin: "0 0 4px 0", color: "#64748B", fontSize: "14px", fontWeight: 500 }}>Custo Mensal (Est.)</p>
-              <p style={{ margin: 0, fontSize: "28px", fontWeight: 800 }}>R$ {totalCost},00</p>
+              <p style={{ margin: 0, fontSize: "28px", fontWeight: 800 }}>{reais(totalCost)}</p>
+              {precoNovo !== precoAgora && (
+                <p style={{ margin: "6px 0 0 0", color: "#64748B", fontSize: "13px" }}>
+                  A partir de 01/12/2026: {reais(precoNovo)} por totem
+                </p>
+              )}
             </div>
           </div>
 
@@ -296,7 +308,7 @@ export default function TotemModuleClient({ store, categories }: { store: any, c
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
                         <span style={{ color: "#64748B" }}>Mensalidade:</span>
-                        <span style={{ fontWeight: 600, color: "#C92E09" }}>R$ 100,00</span>
+                        <span style={{ fontWeight: 600, color: "#C92E09" }}>{reais(precoAgora)}</span>
                       </div>
                     </div>
 
