@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import { parseJson99Food } from "./json-ids-longos";
+import { corpoDoStatus99 } from "./casar-itens-dos-apps";
 
 /**
  * Cliente da API do 99Food (DiDi Food Open Platform).
@@ -524,6 +525,24 @@ export async function detalheDaLoja(authToken: string): Promise<LojaNoNoveNove |
  */
 export async function cardapioDaLoja(authToken: string): Promise<RespostaFood99> {
   return chamar("/v3/item/item/list", { query: { auth_token: authToken }, base: BASE_V3 });
+}
+
+/**
+ * Pausa ou reativa itens na 99 (`POST /v3/item/item/updateItemStatus`). O id é
+ * o `app_item_id` do `cardapioDaLoja`; a resposta diz, item a item, o que deu
+ * certo (data.success) e o que não (data.failed). Usado pelo Bill
+ * (lib/assessor/pausa-nos-apps.ts).
+ */
+export async function mudarStatusDosItens(
+  authToken: string,
+  appItemIds: string[],
+  ativo: boolean
+): Promise<RespostaFood99<{ success?: string[]; failed?: string[] }>> {
+  return chamar("/v3/item/item/updateItemStatus", {
+    metodo: "POST",
+    corpo: corpoDoStatus99(authToken, appItemIds, ativo),
+    base: BASE_V3,
+  });
 }
 
 // ── Diagnóstico ─────────────────────────────────────────────────────────────
