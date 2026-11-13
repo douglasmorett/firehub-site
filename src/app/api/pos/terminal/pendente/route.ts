@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { formaParaAMaquininha } from "@/lib/forma-do-totem";
 import { prisma } from "@/lib/prisma";
 import {
   autenticarTerminal,
@@ -115,6 +116,7 @@ export async function GET(req: NextRequest) {
         totalAmount: true,
         customerName: true,
         posTentativas: true,
+        paymentMethod: true,
       },
     });
 
@@ -158,6 +160,10 @@ export async function GET(req: NextRequest) {
         // O app usa isto para não reenviar o mesmo resultado duas vezes.
         referencia: `${candidato.id}:${candidato.posTentativas}`,
         tipo: "PEDIDO",
+        // Crédito/Débito/Vale já escolhidos na tela do totem: o app abre direto
+        // a tela da adquirente. null = o app pergunta, como antes. App antigo
+        // ignora o campo (lib/forma-do-totem).
+        forma: formaParaAMaquininha(candidato.paymentMethod),
       },
       terminal: terminal.label,
       ...extrasComIdentidade,

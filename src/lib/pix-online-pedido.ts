@@ -21,6 +21,7 @@
  */
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { cifrar, decifrar } from "@/lib/cofre";
 import {
   ambienteDaChave,
@@ -650,6 +651,56 @@ export async function cancelarPeloCliente(
     },
   });
   return { pago: false, cancelado: true };
+}
+
+/**
+ * O cliente do TOTEM gerou o Pix e escolheu outra forma: o QR deixa de valer,
+ * mas o pedido continua — ele vai pagar no cartão ou no caixa. Mesma conferência
+ * do cancelamento: Pix que caiu no meio do caminho é pedido pago.
+ */
+export async function largarPixDoPedido(orderId: string): Promise<{ ok: boolean; pago: boolean; erro?: string }> {
+  const antes = await conferirPagamentoDoPedido(orderId);
+  if (antes.pago) return { ok: false, pago: true };
+
+  const pedido = await prisma.customerOrder.findUnique({
+    where: { id: orderId },
+    select: { status: true, paymentPaidAt: true, gatewayProvider: true, gatewayPaymentId: true, franchiseeId: true },
+  });
+  if (!pedido) return { ok: false, pago: false, erro: "Pedido não encontrado." };
+  if (pedido.gatewayProvider !== PROVEDOR_ASAAS || !pedido.gatewayPaymentId) return { ok: true, pago: false };
+  if (pedido.status !== "AGUARDANDO_PAGAMENTO" || pedido.paymentPaidAt) {
+    return { ok: false, pago: false, erro: "Este pedido não está mais esperando pagamento." };
+  }
+
+  const acesso = await chaveDaLoja(pedido.franchiseeId);
+  const apagada = acesso ? await excluirCobranca(acesso.chave, pedido.gatewayPaymentId) : { ok: false };
+  if (!apagada.ok) {
+    // Sem apagar no Asaas o QR continua pagável: não deixa acender o cartão.
+    const agora = await conferirPagamentoDoPedido(orderId);
+    if (agora.pago) return { ok: false, pago: true };
+    return { ok: false, pago: false, erro: "Não deu para cancelar o Pix agora. Tente de novo em instantes." };
+  }
+
+  await prisma.customerOrder.updateMany({
+    where: { id: orderId, gatewayPaymentId: pedido.gatewayPaymentId, paymentPaidAt: null },
+    data: {
+      gatewayProvider: null,
+      gatewayPaymentId: null,
+      pagarmeStatus: null,
+      pagarmeMethod: null,
+      pagarmePixQrCode: null,
+      pagarmePixExpiry: null,
+      taxaOnline: Prisma.DbNull,
+    },
+  });
+  // "PIX_ONLINE" num pedido sem Pix é o "Pago via Online (NÃO COBRAR)" na
+  // comanda se o atendente confirmar no caixa. Fica o rótulo do balcão; o start
+  // da maquininha troca pelo do cartão.
+  await prisma.customerOrder.updateMany({
+    where: { id: orderId, paymentMethod: "PIX_ONLINE", paymentPaidAt: null },
+    data: { paymentMethod: "Pagar no caixa" },
+  });
+  return { ok: true, pago: false };
 }
 
 /**

@@ -4,8 +4,12 @@ import { autenticarTotem } from "@/lib/totem-auth";
 import { ESTADOS_DA_COBRANCA } from "@/lib/terminal-app";
 import { ESTADO_TEF_NO_PINPAD, PROVEDOR_TEF } from "@/lib/tef-do-totem";
 import { cobrancaEhDaStone, conferirCobrancaStoneDoTotem } from "@/lib/cobranca-stone-do-totem";
+import { PROVEDOR_ASAAS, conferirPagamentoDoPedido } from "@/lib/pix-online-pedido";
 
 export const dynamic = "force-dynamic";
+
+/** Última ida ao Asaas por pedido (memória do processo basta: é só um freio). */
+const ultimaConferenciaDoPix = new Map<string, number>();
 
 /** Status em que o pedido claramente não vai mais ser pago. */
 const ENCERRADOS_SEM_PAGAR = ["CANCELADO"];
@@ -58,6 +62,23 @@ export async function GET(req: NextRequest) {
         order = (await prisma.customerOrder.findUnique({ where: { id: orderId }, select: selecao })) ?? order;
       } catch (e: any) {
         console.error("[Totem PaymentStatus] conferência na Stone falhou:", e?.message);
+      }
+    }
+
+    // ── PIX DO FIREHUB: rede de segurança do webhook do Asaas ──────────────
+    // O totem pergunta a cada poucos segundos; o Asaas é consultado no máximo
+    // a cada 8 s por pedido (lib/pix-online-pedido confirma e manda à cozinha).
+    if (!order.paymentPaidAt && order.gatewayProvider === PROVEDOR_ASAAS && order.gatewayPaymentId) {
+      const ultima = ultimaConferenciaDoPix.get(order.id) || 0;
+      if (Date.now() - ultima > 8_000) {
+        if (ultimaConferenciaDoPix.size > 2000) ultimaConferenciaDoPix.clear();
+        ultimaConferenciaDoPix.set(order.id, Date.now());
+        try {
+          await conferirPagamentoDoPedido(order.id);
+          order = (await prisma.customerOrder.findUnique({ where: { id: orderId }, select: selecao })) ?? order;
+        } catch (e: any) {
+          console.error("[Totem PaymentStatus] conferência do Pix falhou:", e?.message);
+        }
       }
     }
 
