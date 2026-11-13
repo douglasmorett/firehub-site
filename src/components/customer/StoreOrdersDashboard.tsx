@@ -23,6 +23,7 @@ import type { ResumoDasVendas } from "@/lib/resumo-das-vendas";
 import { dataDoPedido, prontoNaCozinha, prontoVoltaParaProducao, contarPedidosDoPrazo, inicioDaJanelaDoQuadro } from "@/lib/pedidos-na-cozinha";
 import { chipsDasRotasAutomaticas } from "@/lib/roteirizacao-automatica/chip-da-rota";
 import { corrigirPeriodo } from "@/lib/periodo-do-quadro";
+import { chaveDosFiltros, lerFiltrosSalvos, horasDoPeriodo, periodoNasHoras, diaDeOperacaoDe, mostrarSaiuParaEntrega, type FiltrosSalvos } from "@/lib/filtros-do-painel";
 import { tempoNaEtapa, textoDoTempo, mesmosCarimbos } from "@/lib/tempo-na-etapa";
 import ModalTempoDeEntrega from "./ModalTempoDeEntrega";
 import { corDoAlerta, lerConfigDoAlerta, faixasDoModo, avisoDasFaixas, type ConfigDoAlerta, type FaixasDoAlerta } from "@/lib/alerta-de-producao";
@@ -1919,8 +1920,24 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     balcao: boolean;
     mesa: boolean;
   }>({ delivery: true, retirada: true, balcao: true, mesa: true });
+  // ── FILTROS FIXOS, POR LOJA E POR APARELHO ───────────────────────────────
+  //
+  // O horário e o filtro "Pedidos" viviam só na memória desta tela: ir ao PDV,
+  // às Mesas ou ao Caixa e voltar (ou F5) remontava o painel com o padrão, e o
+  // almoço voltava a aparecer junto do jantar várias vezes na noite
+  // (Thalyta/Garagem Burger, 13/11/2026). Ficam no localStorage até alguém
+  // mudar — regras em lib/filtros-do-painel.ts.
+  const chaveFiltros = chaveDosFiltros(String(activeStoreId || user?.id || ""));
+  const salvarFiltros = (mudou: FiltrosSalvos) => {
+    try {
+      const atual = lerFiltrosSalvos(localStorage.getItem(chaveFiltros));
+      localStorage.setItem(chaveFiltros, JSON.stringify({ ...atual, ...mudou }));
+    } catch { /* sem storage: vale só nesta tela */ }
+  };
   const toggleType = (t: "delivery" | "retirada" | "balcao" | "mesa") => {
-    setSelectedTypes(prev => ({ ...prev, [t]: !prev[t] }));
+    const novo = { ...selectedTypes, [t]: !selectedTypes[t] };
+    setSelectedTypes(novo);
+    salvarFiltros({ tipos: novo });
   };
 
   const toggleChannel = (ch: "ifood" | "99food" | "jotaja" | "brendi" | "wabiz" | "keeta" | "site") => {
@@ -2401,17 +2418,45 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const t = setInterval(() => {
       const dia = diaDeOperacaoAgora();
       if (dia === diaPadraoRef.current) return;
-      const antigo = periodoDoDiaDeOperacao(diaPadraoRef.current);
+      const antigo = diaPadraoRef.current;
       diaPadraoRef.current = dia;
       const { from, to } = periodoRef.current;
-      if (from !== antigo.de || to !== antigo.ate) return;
-      const novo = periodoDoDiaDeOperacao(dia);
+      // O horário fixo vira junto (Garagem Burger, 13/11/2026): "ontem das
+      // 18h às 2h" vira "hoje das 18h às 2h". Outro dia ou vários dias,
+      // escolhidos à mão, ficam como estão.
+      const horas = horasDoPeriodo(from, to);
+      if (!horas || diaDeOperacaoDe(from) !== antigo) return;
+      const novo = periodoNasHoras(dia, horas.horaDe, horas.horaAte);
       setDateFrom(novo.de);
       setDateTo(novo.ate);
     }, 60_000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Filtros gravados neste aparelho (ver "FILTROS FIXOS" acima). Lidos depois
+  // de montar, não no useState: o servidor não tem localStorage e a primeira
+  // pintura tem que bater com a dele. O horário entra no dia de operação de
+  // hoje. O link "?pedido=&dia=" (mais abaixo) roda depois e manda no dia.
+  const periodoMexidoRef = useRef(false);
+  useEffect(() => {
+    let salvos: FiltrosSalvos = {};
+    try { salvos = lerFiltrosSalvos(localStorage.getItem(chaveFiltros)); } catch { /* sem storage */ }
+    if (salvos.tipos) setSelectedTypes(salvos.tipos);
+    if (salvos.horaDe && salvos.horaAte) {
+      const p = periodoNasHoras(diaPadraoRef.current, salvos.horaDe, salvos.horaAte);
+      setDateFrom(p.de);
+      setDateTo(p.ate);
+    }
+  }, [chaveFiltros]);
+  // Grava o horário só quando a LOJA mexeu nos campos — o link do relatório
+  // de motoboys troca o período sozinho e não pode virar o padrão da tela.
+  useEffect(() => {
+    if (!periodoMexidoRef.current) return;
+    const horas = horasDoPeriodo(dateFrom, dateTo);
+    if (horas) salvarFiltros(horas);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateFrom, dateTo]);
 
   // O período que a tela mostra agora viaja junto do poll, para o servidor
   // devolver só esses pedidos em vez dos 200 mais recentes da loja. Vai por ref
@@ -6946,9 +6991,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             {/* Date range */}
             <div className="bp-periodo" style={{ display: "flex", alignItems: "center", gap: "6px", background: "#F8FAFC", padding: "4px 10px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
               <span style={{ fontSize: "0.75rem", color: "#64748B", fontWeight: 600 }}>De</span>
-              <input type="datetime-local" value={dateFrom} onChange={e => setDateFrom(e.target.value)} onBlur={e => { const p = corrigirPeriodo(e.target.value, dateTo, "de"); if (p.ate !== dateTo) setDateTo(p.ate); }} style={{ padding: "3px 6px", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.75rem", outline: "none", background: "#fff" }} />
+              <input type="datetime-local" value={dateFrom} onChange={e => { periodoMexidoRef.current = true; setDateFrom(e.target.value); }} onBlur={e => { const p = corrigirPeriodo(e.target.value, dateTo, "de"); if (p.ate !== dateTo) setDateTo(p.ate); }} style={{ padding: "3px 6px", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.75rem", outline: "none", background: "#fff" }} />
               <span style={{ fontSize: "0.75rem", color: "#64748B", fontWeight: 600 }}>Até</span>
-              <input type="datetime-local" value={dateTo} onChange={e => setDateTo(e.target.value)} onBlur={e => { const p = corrigirPeriodo(dateFrom, e.target.value, "ate"); if (p.ate !== e.target.value) setDateTo(p.ate); }} style={{ padding: "3px 6px", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.75rem", outline: "none", background: "#fff" }} />
+              <input type="datetime-local" value={dateTo} onChange={e => { periodoMexidoRef.current = true; setDateTo(e.target.value); }} onBlur={e => { const p = corrigirPeriodo(dateFrom, e.target.value, "ate"); if (p.ate !== e.target.value) setDateTo(p.ate); }} style={{ padding: "3px 6px", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.75rem", outline: "none", background: "#fff" }} />
               {/* Até antes do De = janela vazia: o pedido "some" sem aviso (Delícias de Casa, 13/10/2026). */}
               {dateFrom && dateTo && dateTo <= dateFrom && (
                 <button type="button" onClick={() => setDateTo(corrigirPeriodo(dateFrom, dateTo, "ate").ate)}
@@ -7976,6 +8021,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             ))}
           </DashboardColumn>
           )}
+          {/* Filtro sem Delivery: a coluna sai e devolve o espaço às outras
+              (Garagem Burger, 13/11/2026). Com pedido nela, fica. */}
+          {mostrarSaiuParaEntrega(selectedTypes, transporte.length) && (
           <DashboardColumn columnId="col-transporte" title="Saiu para Entrega" emoji="🛵" color={PALETA.carvao} count={transporte.length} columnOrders={transporte}
             isTabActive={activeColumnTab === "all" || activeColumnTab === "col-transporte"}
             selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
@@ -8017,6 +8065,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               />
             ))}
           </DashboardColumn>
+          )}
           <DashboardColumn columnId="col-finalizado" title="Finalizado" emoji="✅" color={PALETA.carvao} count={finalizados.length} columnOrders={finalizados}
             isTabActive={activeColumnTab === "all" || activeColumnTab === "col-finalizado"}
             selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
