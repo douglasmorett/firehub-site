@@ -1278,7 +1278,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
   }
 
   // Taxas de serviço já acumuladas no mês (R$ 50 por semana de tráfego pago,
-  // R$ 100 por totem).
+  // o totem por precoDoTotem em lib/firehub-billing).
   //
   // Esta função ignorava as duas: o lojista com campanha ativa via "Pendente
   // R$ 100,00" o mês inteiro e recebia um boleto de R$ 300,00 no dia 1 — a
