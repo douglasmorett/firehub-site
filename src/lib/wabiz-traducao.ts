@@ -68,6 +68,101 @@ export function traduzirPagamento(pag: WabizPagamento | null | undefined, total:
   };
 }
 
+// ── PAGAMENTO EM QUALQUER LUGAR DO PEDIDO ─────────────────────────────────
+//
+// NIK (13/11/2026): toda retirada saía "Forma de Pagamento: A combinar" na
+// comanda. A doc da Wabiz só mostra o pagamento dentro de `service.delivery`
+// (e `internalDelivery`); a retirada de exemplo vem sem nenhum, e o suporte
+// deles diz que o dado vem e o problema é nosso. Sem saber o nome do campo, o
+// leitor fica tolerante: procura, do raso para o fundo (até 5 níveis), a
+// primeira chave com cara de pagamento cujo valor pareça um — `type` numérico
+// ou `name` preenchido. Objeto ou lista (pega o primeiro). O que não casar é
+// ignorado, nunca chutado; e quando os campos conhecidos vêm, eles valem.
+const NOMES_DE_PAGAMENTO = new Set([
+  "payment", "payments", "pagamento", "pagamentos",
+  "formapagamento", "formadepagamento", "formaspagamento", "formasdepagamento",
+  "paymentmethod", "paymentmethods",
+]);
+
+function pareceUmPagamento(v: unknown): v is WabizPagamento {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+  const o = v as Record<string, unknown>;
+  return Number(o.type) > 0 || !!texto(o.name);
+}
+
+export function pagamentoEmQualquerLugar(raiz: unknown, profundidadeMaxima = 5): WabizPagamento | null {
+  let nivel: unknown[] = [raiz];
+  for (let profundidade = 0; profundidade <= profundidadeMaxima && nivel.length; profundidade++) {
+    const proximo: unknown[] = [];
+    for (const no of nivel) {
+      if (!no || typeof no !== "object") continue;
+      if (Array.isArray(no)) {
+        proximo.push(...no);
+        continue;
+      }
+      for (const [chave, valor] of Object.entries(no)) {
+        if (NOMES_DE_PAGAMENTO.has(chave.toLowerCase().replace(/[_\-\s]/g, ""))) {
+          const candidato = Array.isArray(valor) ? valor[0] : valor;
+          if (pareceUmPagamento(candidato)) return candidato;
+        }
+        if (valor && typeof valor === "object") proximo.push(valor);
+      }
+    }
+    nivel = proximo;
+  }
+  return null;
+}
+
+// ── O TEMPO QUE A WABIZ PROMETEU AO CLIENTE ───────────────────────────────
+//
+// NIK (13/11/2026): retirada das 21:14 saiu "PREVISÃO DE RETIRADA: 21:53" na
+// comanda (os 40 min fixos), enquanto o app da Wabiz dizia 5–15 min ao
+// cliente. A doc não declara esse campo; o leitor procura nomes prováveis no
+// pedido e em `service` (e nos objetos logo dentro dele, ex. `service.takeout`).
+// Aceita minutos (15, "15", "5-15", "5 a 15 min" → o MAIOR, o fim da janela,
+// como a Brendi) ou um horário ("2026-11-13 21:29:00", no relógio da loja).
+// Fora de 1 min a 6 h depois da criação é ignorado — não é prazo, é outro dado.
+const NOMES_DE_PRAZO = new Set([
+  "estimatedtime", "estimatetime", "timeestimate", "estimatedtimeminutes",
+  "estimatedtakeouttime", "takeouttime", "pickuptime", "estimatedpickuptime",
+  "preparetime", "preparationtime", "preptime", "estimatedpreparationtime",
+  "deliverytime", "estimateddeliverytime", "waittime", "waitingtime",
+  "tempoestimado", "tempopreparo", "tempodepreparo", "temporetirada", "tempoderetirada", "tempoentrega", "tempodeentrega",
+]);
+
+function prazoDoValor(v: unknown, criadoEm: Date, fuso: string): Date | null {
+  const criado = criadoEm.getTime();
+  const plausivel = (d: Date | null) =>
+    d && Number.isFinite(d.getTime()) && d.getTime() >= criado + 60_000 && d.getTime() <= criado + 360 * 60_000 ? d : null;
+  if (typeof v === "number") return v >= 1 && v <= 360 ? new Date(criado + Math.round(v) * 60_000) : null;
+  const s = texto(v);
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    const comFuso = /([zZ]|[+-]\d{2}:?\d{2})$/.test(s);
+    return plausivel(comFuso ? new Date(s) : horaLocalParaInstante(s, fuso));
+  }
+  // Minutos soltos: "15", "5-15", "5 a 15 min". "00:15" (hh:mm) fica de fora — ambíguo.
+  if (s.includes(":")) return null;
+  const numeros = (s.match(/\d+/g) || []).map(Number);
+  const maior = numeros.length ? Math.max(...numeros) : 0;
+  return maior >= 1 && maior <= 360 ? new Date(criado + maior * 60_000) : null;
+}
+
+export function prazoEstimadoDaWabiz(pedido: unknown, criadoEm: Date, fuso: string): Date | null {
+  const p = pedido as Record<string, any> | null;
+  const servico = p?.service && typeof p.service === "object" ? p.service : null;
+  const dentroDoServico = servico ? Object.values(servico).filter((v) => v && typeof v === "object" && !Array.isArray(v)) : [];
+  for (const alvo of [p, servico, ...dentroDoServico]) {
+    if (!alvo || typeof alvo !== "object") continue;
+    for (const [chave, valor] of Object.entries(alvo)) {
+      if (!NOMES_DE_PRAZO.has(chave.toLowerCase().replace(/[_\-\s]/g, ""))) continue;
+      const prazo = prazoDoValor(valor, criadoEm, fuso);
+      if (prazo) return prazo;
+    }
+  }
+  return null;
+}
+
 /**
  * De ONDE veio o desconto, para a comanda não dizer só "Desconto".
  *
@@ -374,14 +469,20 @@ export function traduzirPedidoWabiz(
   const total = dinheiro(pedido.total);
   const desconto = dinheiro(pedido.discounts);
 
-  const pagamento = entrega?.payment || interna?.payment || servico.payment || null;
+  // Retirada (NIK 13/11): sem os campos conhecidos, procura no pedido inteiro.
+  const pagamento = entrega?.payment || interna?.payment || servico.payment || pagamentoEmQualquerLugar(pedido);
   const { paymentMethod, changeAmount } = traduzirPagamento(pagamento, total);
 
   // ── Prazo ────────────────────────────────────────────────────────────────
+  // Ordem: agendado → o tempo que a Wabiz mostrou ao cliente → 50/40 fixos
+  // (os mesmos da Brendi e do Open Delivery). O FireHub não tem tempo de
+  // retirada cadastrado por loja; quando tiver, entra antes dos fixos.
   const criadoEm = horaLocalParaInstante(pedido.dateTime, fuso) || new Date();
   const agendadoPara = horaLocalParaInstante(servico.scheduleDatetime || servico.datetime, fuso);
   const scheduledDatetime =
-    agendadoPara ?? new Date(criadoEm.getTime() + (deliveryType === "DELIVERY" ? 50 : 40) * 60_000);
+    agendadoPara ??
+    prazoEstimadoDaWabiz(pedido, criadoEm, fuso) ??
+    new Date(criadoEm.getTime() + (deliveryType === "DELIVERY" ? 50 : 40) * 60_000);
 
   // ── Cliente e observações ────────────────────────────────────────────────
   const cliente = pedido.customer || {};

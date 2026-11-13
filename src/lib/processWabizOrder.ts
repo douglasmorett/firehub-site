@@ -22,7 +22,7 @@ import { prisma } from "@/lib/prisma";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
 import { generateDailyOrderNumberTx } from "@/lib/order-number";
 import type { WabizPedido } from "@/lib/wabiz-api";
-import { texto, traduzirPedidoWabiz } from "@/lib/wabiz-traducao";
+import { horaLocalParaInstante, prazoEstimadoDaWabiz, texto, traduzirPedidoWabiz } from "@/lib/wabiz-traducao";
 import { pontoEDistanciaDoParceiro } from "@/lib/distancia-da-entrega";
 import { aceitaSozinhoAgora } from "@/lib/loja-sem-conexao-no-banco";
 import { guardarPayloadCru } from "@/lib/open-delivery/payload-cru";
@@ -145,6 +145,33 @@ export async function processWabizOrder(
       payload: pedido,
       avisos: [`entrega sem coordenada — chaves de service.delivery: ${chavesDoEndereco(pedido?.service?.delivery)}`],
     });
+  }
+
+  // ── RETIRADA SEM PAGAMENTO OU SEM PRAZO: O PAYLOAD FICA GUARDADO ─────────
+  //
+  // NIK (13/11/2026): retirada saindo "A combinar" na comanda e com previsão
+  // de 40 min enquanto a Wabiz prometia 5–15. O tradutor já procura os dois
+  // pelo pedido (pagamentoEmQualquerLugar, prazoEstimadoDaWabiz); se nem assim
+  // achou, o pedido fica guardado com as chaves no aviso, para a próxima
+  // ocorrência mostrar onde a Wabiz põe esses dados na retirada.
+  if (dados.deliveryType === "RETIRADA") {
+    const faltou = [
+      String(dados.paymentMethod).startsWith("A combinar") ? "pagamento" : "",
+      !texto(pedido?.service?.scheduleDatetime || pedido?.service?.datetime) &&
+      !prazoEstimadoDaWabiz(pedido, horaLocalParaInstante(pedido?.dateTime, fuso) || new Date(), fuso) ? "prazo" : "",
+    ].filter(Boolean);
+    if (faltou.length) {
+      const chaves = `chaves do pedido: ${chavesDoEndereco(pedido)} | chaves de service: ${chavesDoEndereco(pedido?.service)}`;
+      console.log(`[Wabiz] 🔎 Retirada ${orderNumber} sem ${faltou.join(" e ")} — ${chaves}`);
+      await guardarPayloadCru({
+        canal: "WABIZ",
+        tipo: "pedido",
+        idNoParceiro: internalKey,
+        franchiseeId: loja.id,
+        payload: pedido,
+        avisos: [`retirada sem ${faltou.join(" e ")} — ${chaves}`],
+      });
+    }
   }
 
   const doParceiro = await pontoEDistanciaDoParceiro(loja.id, dados.customerLatLng);
