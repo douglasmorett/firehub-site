@@ -135,7 +135,7 @@ export default function ProjecaoTab() {
           { label: "Já garantido", val: fmt0(totais.garantido), sub: `${vendendo.length} lojas pagando e vendendo`, color: "#15803D" },
           { label: "Se todas pagarem", val: fmt0(totais.seTodas), sub: `${linhas.length} boletos previstos`, color: "#0F172A" },
           // O mesmo quadrado mostra valor e transações (pedidos não cancelados) — a meta de transações do Pix.
-          { label: "Vendas pelo sistema", val: fmt0(vendasDoMes.ateAgora), sub: `deve fechar em ${fmt0(vendasDoMes.projetado)}`, color: "#0F172A",
+          { label: "Vendas pelo sistema", val: fmt(vendasDoMes.ateAgora), sub: `deve fechar em ${fmt(vendasDoMes.projetado)}`, color: "#0F172A",
             transacoes: {
               ateAgora: vendasDoMes.pedidosAteAgora, projetado: vendasDoMes.pedidosProjetados,
               proprios: vendasDoMes.propriosAteAgora, propriosProjetados: vendasDoMes.propriosProjetados,
