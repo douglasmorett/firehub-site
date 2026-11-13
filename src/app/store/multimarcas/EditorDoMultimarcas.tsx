@@ -9,6 +9,8 @@
  * Destaques e banners se escolhem pelo item, com busca (Lucas, 25/10/2026).
  * Uma categoria pode ficar em duas ou mais marcas, e a cor da página é livre
  * (Lucas, 11/11/2026: bebida só no Frangoso e no Braseou; o amarelo da marca).
+ * Atalhos embaixo do banner ("Lanches", "Porções") com as marcas de cada um e
+ * a foto do cartão grande de cada marca (Lucas, 13/11/2026).
  * Grava em PUT /api/store/multimarcas/pagina (lib/multimarcas/pagina.ts).
  */
 
@@ -16,14 +18,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Check, ChevronDown, Copy, ExternalLink, Eye, EyeOff, ImagePlus, Loader2, Plus, Search, Sparkles, Star, Trash2, X } from "lucide-react";
 import Vitrine from "@/components/multimarcas/Vitrine";
 import { MARCA_DOS_EXTRAS, marcasDoProduto, reais, textoSobreCor, type ConfigDaVitrine, type ProdutoDaVitrine } from "@/lib/multimarcas/vitrine";
-import type { BannerDaPagina, ConfigDaPagina, MarcaDaPagina } from "@/lib/multimarcas/pagina";
+import type { AtalhoDaPagina, BannerDaPagina, ConfigDaPagina, MarcaDaPagina } from "@/lib/multimarcas/pagina";
 import s from "./Editor.module.css";
 
 type Categoria = { nome: string; emoji: string; produtos: number };
 type Dados = {
   config: ConfigDaPagina;
   salva: boolean;
-  limites: { marcas: number; banners: number };
+  limites: { marcas: number; banners: number; atalhos: number };
   loja: { slug: string | null; nome: string; logo: string | null };
   categorias: Categoria[];
   sugestoes: string[];
@@ -31,6 +33,7 @@ type Dados = {
 };
 
 const CORES = ["#E8590C", "#C92A2A", "#1F1F23", "#2B8A3E", "#1864AB", "#7048E8", "#F08C00", "#FAB005", "#C2255C"];
+const SUGESTOES_DE_ATALHO = ["Lanches", "Porções", "Novidades", "Refeições", "Frango", "Doces"];
 const TIPOS = ["Hambúrguer", "Pizza", "Frango", "Marmita", "Açaí", "Japonês", "Pastel", "Esfiha", "Doces", "Saudável", "Lanches", "Bebidas"];
 const chave = (n: string) => n.trim().toLowerCase();
 const LIMITE_DE_DESTAQUES = 20;
@@ -144,9 +147,9 @@ export default function EditorDoMultimarcas({ onAviso }: { onAviso: (tipo: "ok" 
     const aberta = dados.vitrine.config.marcas[0]?.aberta ?? true;
     const vc: ConfigDaVitrine = {
       ...dados.vitrine.config,
-      nome: config.nome, frase: config.frase, cor: config.cor, banners: config.banners, destaques: config.destaques,
+      nome: config.nome, frase: config.frase, cor: config.cor, banners: config.banners, destaques: config.destaques, atalhos: config.atalhos,
       marcas: config.marcas.map((m) => ({
-        id: m.id, nome: m.nome, tipo: m.tipo, cor: m.cor, logo: m.logo, capa: m.capa, oculta: m.oculta,
+        id: m.id, nome: m.nome, tipo: m.tipo, cor: m.cor, logo: m.logo, capa: m.capa, fundo: m.fundo, oculta: m.oculta,
         nota: notas.get(m.id)?.nota ?? null, avaliacoes: notas.get(m.id)?.avaliacoes ?? 0, aberta,
       })),
     };
@@ -171,11 +174,15 @@ export default function EditorDoMultimarcas({ onAviso }: { onAviso: (tipo: "ok" 
     setConfig((c) => (c ? { ...c, banners: c.banners.map((b, k) => (k === i ? { ...b, ...campo } : b)) } : c));
     setMudou(true);
   };
+  const mudarAtalho = (i: number, campo: Partial<AtalhoDaPagina>) => {
+    setConfig((c) => (c ? { ...c, atalhos: c.atalhos.map((a, k) => (k === i ? { ...a, ...campo } : a)) } : c));
+    setMudou(true);
+  };
   const erroDeImagem = (m: string) => onAviso("erro", "Imagem não enviada", m);
 
   function novaMarca(nome = "") {
     if (config!.marcas.length >= dados!.limites.marcas) return;
-    const nova = { id: novoId("m"), nome: nome || `Marca ${config!.marcas.length + 1}`, tipo: "", cor: CORES[config!.marcas.length % CORES.length], logo: null, capa: null, categorias: [], oculta: false };
+    const nova = { id: novoId("m"), nome: nome || `Marca ${config!.marcas.length + 1}`, tipo: "", cor: CORES[config!.marcas.length % CORES.length], logo: null, capa: null, fundo: null, categorias: [], oculta: false };
     mudar({ ...config!, marcas: [...config!.marcas, nova] });
     setAberta(nova.id);
   }
@@ -213,6 +220,17 @@ export default function EditorDoMultimarcas({ onAviso }: { onAviso: (tipo: "ok" 
       return { ...m, categorias: tem ? m.categorias.filter((c) => chave(c) !== k) : [...m.categorias, nome] };
     });
     mudar({ ...config!, marcas });
+  }
+
+  function novoAtalho(nome = "") {
+    if (config!.atalhos.length >= dados!.limites.atalhos) return;
+    mudar({ ...config!, atalhos: [...config!.atalhos, { id: novoId("a"), nome: nome || `Atalho ${config!.atalhos.length + 1}`, marcas: [] }] });
+  }
+
+  /** Põe ou tira a marca do atalho. */
+  function alternarMarcaNoAtalho(i: number, marcaId: string) {
+    const a = config!.atalhos[i];
+    mudarAtalho(i, { marcas: a.marcas.includes(marcaId) ? a.marcas.filter((x) => x !== marcaId) : [...a.marcas, marcaId] });
   }
 
   async function salvar() {
@@ -325,6 +343,19 @@ export default function EditorDoMultimarcas({ onAviso }: { onAviso: (tipo: "ok" 
                       </div>
                     </div>
                     <CampoDeImagem valor={m.capa} rotulo="Capa da marca (foto larga)" onMudar={(url) => mudarMarca(i, { capa: url })} onErro={erroDeImagem} />
+                    <span className={s.rotulo}>Foto do cartão no começo da página</span>
+                    <div className={s.linha}>
+                      <CampoDeImagem valor={m.fundo} rotulo="Foto do cartão" onMudar={(url) => mudarMarca(i, { fundo: url })} onErro={erroDeImagem} />
+                      {fotos.length > 0 && (
+                        <label className={s.campo}>Ou use uma foto do cardápio
+                          <select value="" onChange={(e) => e.target.value && mudarMarca(i, { fundo: e.target.value })}>
+                            <option value="">Escolher…</option>
+                            {fotos.map((p) => <option key={p.id} value={p.foto!}>{p.nome}</option>)}
+                          </select>
+                        </label>
+                      )}
+                    </div>
+                    <small className={s.dica}>Sem foto, o cartão usa a capa da marca (ou a cor e a logo).</small>
                     <span className={s.rotulo}>Categorias desta marca</span>
                     <div className={s.categorias}>
                       {dados.categorias.map((c) => {
@@ -477,8 +508,52 @@ export default function EditorDoMultimarcas({ onAviso }: { onAviso: (tipo: "ok" 
             ))}
           </section>
 
+          {config.marcas.length > 0 && (
+            <section className={s.bloco}>
+              <div className={s.blocoTopo}>
+                <div>
+                  <h2>5. Atalhos embaixo do banner</h2>
+                  <p className={s.dica}>Escreva os atalhos (ex.: Lanches, Porções, Novidades) e toque nas marcas de cada um. O cliente toca no atalho e vê só essas marcas. Sem atalho, a página filtra pelo tipo de comida das marcas.</p>
+                </div>
+                <button className={s.botaoEscuro} onClick={() => novoAtalho()} disabled={config.atalhos.length >= dados.limites.atalhos}><Plus size={16} /> Atalho</button>
+              </div>
+              {config.atalhos.length < dados.limites.atalhos && (
+                <div className={s.sugestoes}>
+                  <Sparkles size={15} /> Sugestões:
+                  {SUGESTOES_DE_ATALHO.filter((n) => !config.atalhos.some((a) => chave(a.nome) === chave(n))).map((n) => <button key={n} onClick={() => novoAtalho(n)}>+ {n}</button>)}
+                </div>
+              )}
+              {config.atalhos.length === 0 && <div className={s.vazio}>Nenhum atalho ainda.</div>}
+              {config.atalhos.length > 0 && <div className={s.tabelaCategorias}>
+                {config.atalhos.map((a, i) => (
+                  <div key={a.id} className={`${s.linhaCategoria} ${s.linhaAtalho}`}>
+                    <div className={s.linhaAtalhoTopo}>
+                      <input className={s.inputNome} value={a.nome} maxLength={24} placeholder="Nome do atalho" aria-label="Nome do atalho" onChange={(e) => mudarAtalho(i, { nome: e.target.value })} />
+                      <div className={s.botoesDoItem}>
+                        <button onClick={() => mudar({ ...config, atalhos: mover(config.atalhos, i, -1) })} aria-label="Subir"><ArrowUp size={15} /></button>
+                        <button onClick={() => mudar({ ...config, atalhos: mover(config.atalhos, i, 1) })} aria-label="Descer"><ArrowDown size={15} /></button>
+                        <button onClick={() => mudar({ ...config, atalhos: config.atalhos.filter((_, k) => k !== i) })} aria-label="Apagar"><Trash2 size={15} /></button>
+                      </div>
+                    </div>
+                    <div className={s.marcasDaCategoria} role="group" aria-label={`Marcas em ${a.nome}`}>
+                      {config.marcas.map((m) => {
+                        const tem = a.marcas.includes(m.id);
+                        return (
+                          <button key={m.id} className={tem ? s.chipMarcado : s.chip} onClick={() => alternarMarcaNoAtalho(i, m.id)} aria-pressed={tem}>
+                            {tem && <Check size={13} />} {m.nome}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {a.marcas.length === 0 && <small className={s.textoAlerta}>Sem marca: o atalho não aparece na página.</small>}
+                  </div>
+                ))}
+              </div>}
+            </section>
+          )}
+
           <section className={s.bloco}>
-            <h2>5. Aparência da página</h2>
+            <h2>6. Aparência da página</h2>
             <label className={s.campo}>Nome que aparece no topo
               <input value={config.nome} maxLength={40} onChange={(e) => mudar({ ...config, nome: e.target.value })} />
             </label>

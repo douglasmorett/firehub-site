@@ -143,3 +143,10 @@
 .botaoSalvar { height: 42px; padding: 0 18px; border: 0; border-radius: 12px; background: var(--laranja); color: #fff; font-weight: 800; }
 .botaoSalvar:disabled { background: #57524c; cursor: default; }
 @media (prefers-reduced-motion: reduce) { .salvar { transition: none; } .girando { animation: none; } }
+
+/* Atalhos embaixo do banner: o nome em cima, as marcas embaixo. */
+.linhaAtalho { flex-direction: column; align-items: stretch; }
+.linhaAtalho .marcasDaCategoria { justify-content: flex-start; }
+.linhaAtalhoTopo { display: flex; align-items: center; gap: 8px; }
+.linhaAtalhoTopo input { flex: 1; min-width: 0; }
+.linhaAtalho .textoAlerta { color: #b45309; font-weight: 700; margin-left: 0; }

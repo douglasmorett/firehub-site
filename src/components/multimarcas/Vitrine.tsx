@@ -6,8 +6,12 @@ import { MARCA_DOS_EXTRAS, corParaTexto, marcasDoProduto, reais, textoSobreCor, 
 import s from "./Vitrine.module.css";
 
 /**
- * A VITRINE DO MULTIMARCAS — banners, as marcas uma embaixo da outra (nota,
- * tipo, prazo), busca em todas e uma fileira de destaques. Dois usos:
+ * A VITRINE DO MULTIMARCAS — como a home de um app de delivery (Lucas,
+ * 13/11/2026): banners, a fileira de atalhos do dono ("Lanches", "Porções"),
+ * as marcas em cartões grandes com foto e "Aberto"/"Fechado", as promoções do
+ * dia, as marcas uma embaixo da outra (nota, tipo, prazo), busca em todas e
+ * uma fileira de destaques. Sem atalho cadastrado, a fileira é o filtro pelo
+ * tipo de comida, como antes. Dois usos:
  *
  * - `publica` (página /marcas/<slug>): tocar numa marca abre o cardápio de
  *   sempre da loja só com as categorias dela (/loja/<slug>?marca=<id>). A
@@ -106,7 +110,9 @@ export default function Vitrine({ config, produtos, embutida = false, publica }:
   const catalogo = useMemo(() => catalogoDe(produtos), [produtos]);
   const PRODUTO = catalogo.porId;
   const [tela, setTela] = useState<Tela>({ tipo: "inicio" });
+  /** O filtro da fileira embaixo do banner: o id do atalho do dono ou, sem atalhos, o tipo de comida. */
   const [tipo, setTipo] = useState<string | null>(null);
+  const secaoDasLojas = useRef<HTMLElement>(null);
   const [busca, setBusca] = useState("");
   const [sacola, setSacola] = useState<ItemDaSacola[]>([]);
   const [sacolaAberta, setSacolaAberta] = useState(false);
@@ -117,6 +123,16 @@ export default function Vitrine({ config, produtos, embutida = false, publica }:
   const marcas = config.marcas.filter((m) => !m.oculta);
   const marcaPorId = useMemo(() => new Map(config.marcas.map((m) => [m.id, m])), [config.marcas]);
   const tipos = useMemo(() => [...new Set(marcas.map((m) => m.tipo).filter(Boolean))], [marcas]);
+  // Atalho sem nenhuma marca visível não aparece (tocar nele daria tela vazia).
+  const atalhos = (config.atalhos ?? []).filter((a) => a.marcas.some((id) => marcaPorId.get(id) && !marcaPorId.get(id)!.oculta));
+  const atalhoAtivo = atalhos.find((a) => a.id === tipo) ?? null;
+  const passaNoFiltro = (m: MarcaDaVitrine) => (atalhos.length ? !atalhoAtivo || atalhoAtivo.marcas.includes(m.id) : !tipo || m.tipo === tipo);
+  const marcasFiltradas = marcas.filter(passaNoFiltro);
+  function escolherAtalho(id: string | null) {
+    setTipo(id);
+    // Rola até os cartões, com a fileira presa no topo para trocar de atalho.
+    if (id) requestAnimationFrame(() => secaoDasLojas.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }
   // A cor é livre: o texto em cima dela e ela como texto se ajustam (amarelo pede texto escuro).
   const estiloDaCor = { "--cor": config.cor, "--cor-texto": textoSobreCor(config.cor), "--cor-tinta": corParaTexto(config.cor) } as CSSProperties;
   // Na página pública, o que é "para acompanhar" abre na primeira marca (aparece em todas).
@@ -223,14 +239,14 @@ export default function Vitrine({ config, produtos, embutida = false, publica }:
             <>
               <Banners config={config} marcaPorId={marcaPorId} abrir={abrirMarca} abrirItem={abrirProduto} />
 
-              {marcas.length > 1 && (
-                <div className={s.faixaUmaEntrega}>
-                  <ShoppingBag size={20} />
-                  <span><strong>Monte uma sacola só com várias marcas.</strong> Tudo será entregue junto.</span>
-                </div>
-              )}
-
-              {tipos.length > 1 && (
+              {atalhos.length > 0 ? (
+                <nav className={`${s.filtros} ${s.atalhos}`} aria-label="Categorias">
+                  <button className={tipo === null ? s.filtroAtivo : s.filtro} onClick={() => escolherAtalho(null)}>Todas</button>
+                  {atalhos.map((a) => (
+                    <button key={a.id} className={tipo === a.id ? s.filtroAtivo : s.filtro} onClick={() => escolherAtalho(tipo === a.id ? null : a.id)}>{a.nome}</button>
+                  ))}
+                </nav>
+              ) : tipos.length > 1 && (
                 <nav className={s.filtros} aria-label="Tipo de comida">
                   <button className={tipo === null ? s.filtroAtivo : s.filtro} onClick={() => setTipo(null)}>Todas</button>
                   {tipos.map((t) => (
@@ -239,11 +255,30 @@ export default function Vitrine({ config, produtos, embutida = false, publica }:
                 </nav>
               )}
 
+              {marcas.length > 1 && (
+                <div className={s.faixaUmaEntrega}>
+                  <ShoppingBag size={20} />
+                  <span><strong>Monte uma sacola só com várias marcas.</strong> Tudo será entregue junto.</span>
+                </div>
+              )}
+
+              {marcas.length > 0 && (
+                <section ref={secaoDasLojas} className={`${s.secao} ${s.secaoDasLojas}`}>
+                  <h2 className={s.tituloSecao}>{atalhoAtivo ? atalhoAtivo.nome : "Lojas"}</h2>
+                  {marcasFiltradas.length === 0 && <p className={s.vazio}>Nenhuma loja aqui agora.</p>}
+                  <div className={s.cartoesGrandes}>
+                    {marcasFiltradas.map((m) => <CartaoGrande key={m.id} marca={m} toque={abrirMarca(m.id)} />)}
+                  </div>
+                </section>
+              )}
+
+              <Promocoes marcaDe={marcaDe} passa={passaNoFiltro} toque={abrirProduto} />
+
               <section className={s.secao}>
                 <h2 className={s.tituloSecao}>Nossas marcas</h2>
                 {marcas.length === 0 && <p className={s.vazio}>As marcas aparecem aqui assim que forem cadastradas.</p>}
                 <div className={s.gradeDeLojas}>
-                  {marcas.filter((m) => !tipo || m.tipo === tipo).map((m) => (
+                  {marcasFiltradas.map((m) => (
                     <CartaoDaMarca key={m.id} marca={m} config={config} toque={abrirMarca(m.id)} />
                   ))}
                 </div>
@@ -354,6 +389,68 @@ function CartaoDaMarca({ marca, config, toque }: { marca: MarcaDaVitrine; config
       </span>
       <ChevronRight size={18} className={s.cartaoSeta} />
     </Toque>
+  );
+}
+
+/** O cartão grande do começo da página: a foto que o dono escolheu (ou a capa), logo, nome e "Aberto"/"Fechado". */
+function CartaoGrande({ marca, toque }: { marca: MarcaDaVitrine; toque: Acao }) {
+  const foto = marca.fundo || marca.capa;
+  return (
+    <Toque className={`${s.cartaoGrande} ${marca.aberta ? "" : s.cartaoGrandeFechado}`} {...toque} style={{ background: marca.cor }}>
+      {foto && <img src={foto} alt="" className={s.cartaoGrandeFoto} loading="lazy" />}
+      <span className={s.cartaoGrandeVeu} />
+      <span className={marca.aberta ? s.seloAberto : s.seloFechado}>{marca.aberta ? "Aberto" : "Fechado"}</span>
+      <span className={s.cartaoGrandeRodape}>
+        <LogoDaMarca marca={marca} tamanho={48} />
+        <span className={s.cartaoGrandeInfo}>
+          <strong>{marca.nome}</strong>
+          <span><Nota marca={marca} />{marca.tipo && <> <span className={s.ponto2}>•</span> {marca.tipo}</>}</span>
+        </span>
+      </span>
+    </Toque>
+  );
+}
+
+/**
+ * "Promoções do dia": os itens em promoção hoje (ProdutoDaVitrine.promocao,
+ * a regra do botão Ofertas do cardápio), só das marcas do atalho escolhido.
+ * Sem promoção, a seção some. "Ver todas" abre a lista inteira em grade.
+ */
+function Promocoes({ marcaDe, passa, toque }: {
+  marcaDe: (p: ProdutoDaVitrine) => MarcaDaVitrine | null; passa: (m: MarcaDaVitrine) => boolean; toque: (p: ProdutoDaVitrine) => Acao;
+}) {
+  const { produtos } = useCatalogo();
+  const [todas, setTodas] = useState(false);
+  const lista = produtos.filter((p) => {
+    if (!p.promocao) return false;
+    if (p.marca === MARCA_DOS_EXTRAS) return true;
+    const m = marcaDe(p);
+    return !!m && passa(m);
+  });
+  if (!lista.length) return null;
+  return (
+    <section className={s.secao}>
+      <div className={s.tituloComAcao}>
+        <h2 className={s.tituloSecao}>Promoções do dia</h2>
+        {lista.length > 2 && <button className={s.verTodas} onClick={() => setTodas(!todas)}>{todas ? "Ver menos" : "Ver todas"}</button>}
+      </div>
+      <div className={todas ? s.gradeDePromocoes : s.carrossel}>
+        {lista.map((p) => {
+          const marca = marcaDe(p);
+          const de = p.precoDe && p.precoDe > p.preco ? p.precoDe : null;
+          const desconto = de ? Math.round((1 - p.preco / de) * 100) : 0;
+          return (
+            <Toque key={p.id} className={`${s.miniProduto} ${s.miniPromocao}`} {...toque(p)}>
+              {desconto > 0 && <span className={s.seloDesconto}>-{desconto}%</span>}
+              {p.foto ? <img src={p.foto} alt="" loading="lazy" /> : <span className={s.miniSemFoto} style={marca ? { background: marca.cor, color: textoSobreCor(marca.cor) } : undefined}>{iniciais(p.nome)}</span>}
+              <span className={s.miniMarca}>{marca?.nome ?? "Para acompanhar"}</span>
+              <strong>{p.nome}</strong>
+              <span className={s.miniPreco}>{de && <del className={s.precoDe}>{reais(de)}</del>} {reais(p.preco)}</span>
+            </Toque>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
