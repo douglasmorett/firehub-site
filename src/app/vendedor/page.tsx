@@ -5,6 +5,8 @@ import AmbassadorLoginForm from "@/components/ambassador/AmbassadorLoginForm";
 import PortalDoParceiro from "@/components/parceiro/PortalDoParceiro";
 import MapaDeProspeccao from "@/components/prospeccao/MapaDeProspeccao";
 import { relatorioDoParceiro } from "@/lib/parceiro/relatorio";
+import { projecaoDoMesGuardada } from "@/lib/projecao-do-mes";
+import { recortarProjecao } from "@/lib/parceiro/projecao-do-parceiro";
 import { lojaQueAbreOPortal } from "@/lib/paineis-do-dono";
 import TermoDeComissionamento from "@/components/parceiro/TermoDeComissionamento";
 import { aceitouAVersaoVigente } from "@/lib/parceiro/aceite-do-termo";
@@ -58,11 +60,14 @@ export default async function VendedorPage() {
     return <TermoDeComissionamento nome={vendedor.name} saida="/vendedor" />;
   }
 
-  const [relatorio, ganhoNoMes] = await Promise.all([
+  const [relatorio, ganhoNoMes, projecaoDoMes] = await Promise.all([
     relatorioDoParceiro(vendedor.id),
     idsDaCarteira(vendedor.id).then(ganhoComDisparoNoMes).catch(() => 0),
+    projecaoDoMesGuardada().catch(() => null),
   ]);
   if (!relatorio) return <AmbassadorLoginForm modo="vendedor" />;
+  // Só as lojas DELE saem do servidor (lib/parceiro/projecao-do-parceiro.ts).
+  const projecao = projecaoDoMes ? recortarProjecao(projecaoDoMes, relatorio.lojas) : null;
 
   // Mapa de prospecção por cidade (src/components/prospeccao): só vendedor ativo;
   // a API dele (/api/vendedor/prospeccao) também barra quem não é.
@@ -72,6 +77,7 @@ export default async function VendedorPage() {
       saida="/vendedor"
       disparo={{ pacotes: pacotesDoVendedor(), ganhoNoMes }}
       mapaDeProspeccao={<MapaDeProspeccao />}
+      projecao={projecao}
     />
   );
 }

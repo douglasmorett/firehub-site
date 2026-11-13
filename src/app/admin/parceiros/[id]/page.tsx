@@ -3,6 +3,8 @@ import { notFound, redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import PortalDoParceiro from "@/components/parceiro/PortalDoParceiro";
 import { relatorioDoParceiro } from "@/lib/parceiro/relatorio";
+import { projecaoDoMesGuardada } from "@/lib/projecao-do-mes";
+import { recortarProjecao } from "@/lib/parceiro/projecao-do-parceiro";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Relatório do parceiro - FireHub Admin" };
@@ -28,7 +30,10 @@ export default async function RelatorioDoParceiroNoAdmin({
   const { de } = await searchParams;
   const relatorio = await relatorioDoParceiro(id);
   if (!relatorio) notFound();
+  // A projeção do mês recortada nas lojas dele (lib/parceiro/projecao-do-parceiro.ts), como ele vê no portal.
+  const projecaoDoMes = relatorio.parceiro.isVendedor ? await projecaoDoMesGuardada().catch(() => null) : null;
+  const projecao = projecaoDoMes ? recortarProjecao(projecaoDoMes, relatorio.lojas) : null;
 
   const voltarPara = de === "ambassadors" ? "/admin?aba=ambassadors" : "/admin?aba=vendedores";
-  return <PortalDoParceiro relatorio={relatorio} modo="ADMIN" voltarPara={voltarPara} />;
+  return <PortalDoParceiro relatorio={relatorio} modo="ADMIN" voltarPara={voltarPara} projecao={projecao} />;
 }
