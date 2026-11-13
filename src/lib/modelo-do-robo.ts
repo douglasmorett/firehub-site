@@ -102,3 +102,13 @@ Se nesta conversa o cliente já escolheu algum item (mesmo sem endereço ou paga
 Sem a marca o pedido NÃO entra no sistema da loja. Quando o cliente CONFIRMAR o resumo final, use a marca com "status": "NOVO" e "finalized": true (regra do pedido). Não ponha a marca se o cliente ainda não escolheu nada, se só está perguntando, ou se o pedido já foi enviado à cozinha.
 Quando o cliente escolhe o item, o próximo passo é pedir o que falta (endereço/retirada e pagamento) — não ofereça outro produto no lugar disso.
 Taxa de entrega: NUNCA diga um valor sem o endereço confirmado no mapa — peça a localização pelo 📎.`;
+
+/**
+ * O mesmo lembrete para a loja de cidade pequena (`chatbotConfig.enderecoSoReferencia`):
+ * a linha da taxa mandava pedir a localização, e lá a entrega é só pelo ponto
+ * de referência, sem taxa.
+ */
+export const LEMBRETE_DO_MODELO_BARATO_SO_REFERENCIA = LEMBRETE_DO_MODELO_BARATO.replace(
+  /\nTaxa de entrega:[^\n]*$/,
+  `\nEntrega: peça só um ponto de referência — nunca bairro, rua, número, CEP ou localização — e não fale em taxa: "deliveryFee": 0.`,
+);

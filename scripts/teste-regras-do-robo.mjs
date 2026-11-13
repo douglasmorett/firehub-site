@@ -233,6 +233,24 @@ for (const [nome, c] of Object.entries(cenarios)) {
   }
 }
 
+// ── Cidade pequena (chatbotConfig.enderecoSoReferencia, 13/11/2026) ─────────
+// Quiosque Pizzaria: entrega só com ponto de referência, sem bairro, rua,
+// número, CEP, localização nem taxa. Desligada, o texto é o de sempre.
+console.log("\ncidade pequena: só ponto de referência");
+{
+  const base = cenarios["loja física que anota pedido"].novo;
+  const ligada = regrasDoRobo({ ...base, soReferencia: true });
+  confere("desligada (false) = ausente: o texto das outras lojas não muda", regrasDoRobo({ ...base, soReferencia: false }) === regrasDoRobo(base));
+  temTodos(ligada, ["PONTO DE REFERÊNCIA", "ponto de referência", '"deliveryFee": 0', "Valor Total a pagar", "nunca pergunte bairro, rua, número, CEP nem localização"], "pede só o ponto de referência, entrega sem taxa");
+  naoTem(ligada, [
+    "endereço com rua, número e BAIRRO", "Me passa a rua, o número e o bairro", "Taxa de entrega: R$ X,XX",
+    "localização pelo WhatsApp", "📎 → Localização", '"neighborhood" com o bairro', "PERGUNTE o bairro", "(itens, taxa, total",
+  ], "não pede bairro, rua, número, localização nem fala em taxa");
+  const numeradas = ligada.split("\n").filter((l) => /^\d+\. /.test(l)).length;
+  confere("regras numeradas em sequência", numeradas === 20 && ligada.includes("\n20. "), `${numeradas} regras`);
+  temTodos(ligada, [regraDoMinimo, `${REGRA_DO_PEDIDO}. ANOTAR PEDIDO`], "o pedido mínimo e a regra do pedido continuam");
+}
+
 console.log("\nfonte crua (template com ${...}, sem renderizar)");
 const fonteNova = readFileSync("src/lib/regras-do-robo.ts", "utf8");
 // A função inteira (ramos do pedido, reserva, nota e tudo), não só o return.

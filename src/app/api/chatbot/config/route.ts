@@ -183,6 +183,9 @@ export async function POST(req: NextRequest) {
       // Pausar iFood, site e robô quando a loja fica sem conexão
       // (lib/loja-sem-conexao.ts). Ausente = ligada.
       "protecaoSemConexao",
+      // Cidade pequena: o robô pede só um ponto de referência, sem bairro,
+      // rua, número nem taxa de entrega (lib/chatbot-ai.ts). Ausente = desligada.
+      "enderecoSoReferencia",
     ] as const;
 
     const permitido: Record<string, any> = {};
@@ -220,6 +223,10 @@ export async function POST(req: NextRequest) {
     if ("protecaoSemConexao" in permitido && typeof permitido.protecaoSemConexao !== "boolean") {
       delete permitido.protecaoSemConexao;
       recusados.push("protecaoSemConexao");
+    }
+    if ("enderecoSoReferencia" in permitido && typeof permitido.enderecoSoReferencia !== "boolean") {
+      delete permitido.enderecoSoReferencia;
+      recusados.push("enderecoSoReferencia");
     }
     // A chave vai para o dinheiro do cliente: só entra reconhecida (CPF/CNPJ
     // com dígito certo, celular, e-mail, aleatória) e com o titular. Recusada,

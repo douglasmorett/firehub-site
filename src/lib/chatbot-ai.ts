@@ -52,7 +52,7 @@ import { rotuloDeStatusParaOModelo, rotuloDoTipoDeEntrega, fraseDeStatusDeEmerge
 import { classificarFalhaDaIa, falhaQueManda, mensagemDeIaForaDoAr, mensagemDeInstabilidadePassageira, type FalhaDaIa } from "./falha-da-ia";
 import { ehPerguntaSobreOPedido } from "./problema-no-pedido";
 import { escolhasDoItem, opcoesPagasSemPar, trocoEObservacaoDoPedido } from "./item-do-robo";
-import { escolherModeloDoRobo, LEMBRETE_DO_MODELO_BARATO, MODELO_BARATO, MODELO_DE_PEDIDO } from "./modelo-do-robo";
+import { escolherModeloDoRobo, LEMBRETE_DO_MODELO_BARATO, LEMBRETE_DO_MODELO_BARATO_SO_REFERENCIA, MODELO_BARATO, MODELO_DE_PEDIDO } from "./modelo-do-robo";
 import { chaveDoClaude, lojaNoClaude, MODELO_CLAUDE, respostaDoClaude } from "./robo-no-claude";
 import { regrasDoRobo } from "./regras-do-robo";
 import { cardapioParaORobo } from "./cardapio-para-o-robo";
@@ -568,6 +568,10 @@ export async function processChatbotAI(
 
   const chatbotConfig = (user.chatbotConfig as any) || {};
   const delivConfig = (user.deliveryConfig as any) || {};
+  // Cidade pequena (Quiosque Pizzaria, 13/11/2026): a entrega é só com um ponto
+  // de referência — sem bairro, rua, número, CEP, mapa nem taxa. Chave do
+  // lojista em Chatbot IA; ausente = como sempre.
+  const enderecoSoReferencia = chatbotConfig.enderecoSoReferencia === true;
   // Loja sem mínimo cadastrado NÃO tem mínimo — igual ao cardápio do site. Era
   // `|| 26.00`: o mínimo da Hakim dito como fato (e COBRADO na gravação) em
   // qualquer loja que não tivesse preenchido o campo. lib/fatos-da-loja.ts.
@@ -583,7 +587,8 @@ export async function processChatbotAI(
     minimoRetirada: minimumOrderValuePickup,
     aceitaRetirada,
     // Bairros com mínimo próprio (lib/minimo-do-bairro.ts): o prompt diz, a gravação confere.
-    bairrosComMinimo: bairrosComMinimoProprio(user as any),
+    // Na cidade pequena não se pergunta bairro: vale o mínimo geral (a gravação faz igual).
+    bairrosComMinimo: enderecoSoReferencia ? [] : bairrosComMinimoProprio(user as any),
   };
   // Tempo de entrega: o `time` das zonas, o mesmo que o site mostra. Sem zona
   // com tempo, o robô não promete minutos — era "45 a 60" para todo mundo.
@@ -1197,7 +1202,7 @@ export async function processChatbotAI(
       String(message || ""),
     ]);
   if (
-    aiOrderingEnabled && modoDaAreaDaLoja !== "SEM_AREA" && conversaSemEndereco &&
+    aiOrderingEnabled && !enderecoSoReferencia && modoDaAreaDaLoja !== "SEM_AREA" && conversaSemEndereco &&
     telefoneCanonico(clientPhoneDigits) && !ehNumeroDoDono(user.notificationPhone, user.chatbotConfig, clientPhoneDigits)
   ) {
     try {
@@ -1223,7 +1228,8 @@ export async function processChatbotAI(
     }
   }
 
-  if (modoDaAreaDaLoja !== "SEM_AREA" && (Boolean(enderecoDigitado) || bairroNoTexto || localizacaoDecide || Boolean(enderecoSalvo))) {
+  // Cidade pequena: nada vai ao mapa — sem área, sem taxa, sem pedir bairro ou localização.
+  if (!enderecoSoReferencia && modoDaAreaDaLoja !== "SEM_AREA" && (Boolean(enderecoDigitado) || bairroNoTexto || localizacaoDecide || Boolean(enderecoSalvo))) {
     try {
       // O endereço digitado DEPOIS da localização é conferido contra ela; sem
       // localização, vale o endereço digitado. Rua, número e bairro vão em
@@ -1458,6 +1464,7 @@ ${regrasDoRobo({
   ehRota,
   regraDoPix: regraDoPixNoPrompt(pixDaLoja, aiOrderingEnabled),
   anotaPedido: aiOrderingEnabled,
+  soReferencia: enderecoSoReferencia,
   notaFiscal: regraDaNota.perguntar
     ? { perguntar: true, obrigatorioNaEntrega: regraDaNota.obrigatorioNaEntrega, formas: formasEmTexto(regraDaNota.formas) }
     : null,
@@ -1506,6 +1513,10 @@ ${(() => {
   //    frete grátis em loja que nunca ligou a regra — e o pedido saía com taxa.
   const freeMin = minimoDoFreteGratis(dc) ?? 0;
   const kmDaFaixa = (z: any) => Number(z.km ?? z.radius ?? z.maxKm ?? 0);
+  // Cidade pequena: as faixas e bairros cadastrados não valem para o robô.
+  if (enderecoSoReferencia) {
+    return "- CIDADE PEQUENA: a loja entrega na cidade toda SEM taxa de entrega (no resumo não há linha de taxa; na tag, \"deliveryFee\": 0). Para a entrega, peça só um PONTO DE REFERÊNCIA (\"perto da igreja, casa azul\") e anote em \"address\" como o cliente disse. NUNCA pergunte bairro, rua, número, CEP ou localização, e nunca recuse entrega por endereço.";
+  }
   let taxaText = "";
   if (zones.length > 0 && zoneType === "NEIGHBORHOOD") {
     taxaText = "TIPO DE ENTREGA DA LOJA: POR BAIRRO ESPECÍFICO\n" + zones.map((z: any) => {
@@ -1614,7 +1625,7 @@ Lembre-se: conversa curta e contínua de WhatsApp, sem emoji automático nem rep
        * melhor que a regra no meio do texto (A/B de 03/10/2026).
        */
       const partesDoContexto = (ehOBarato: boolean): any[] => [
-        { text: `${contextoDaConversa}${ehOBarato ? LEMBRETE_DO_MODELO_BARATO : ""}` },
+        { text: `${contextoDaConversa}${ehOBarato ? (enderecoSoReferencia ? LEMBRETE_DO_MODELO_BARATO_SO_REFERENCIA : LEMBRETE_DO_MODELO_BARATO) : ""}` },
       ];
 
       const userParts: any[] = [];
@@ -2191,6 +2202,7 @@ Lembre-se: conversa curta e contínua de WhatsApp, sem emoji automático nem rep
                   agendamento: roboAgenda ? lojaQueAgenda : undefined,
                   loja: user,
                   aceitaRetirada,
+                  enderecoSoReferencia,
                   // O ponto do aparelho do cliente e se o robô já pediu por ele:
                   // decidem entre medir, pedir a localização uma vez, ou segurar
                   // o pedido para a loja (R2/R3).
@@ -2331,7 +2343,10 @@ Lembre-se: conversa curta e contínua de WhatsApp, sem emoji automático nem rep
             cleanText += linhaDoCupom;
           } else if (resultadoDoSync.ehEntrega && taxaGravada != null && taxaDita != null && Math.abs(taxaGravada - taxaDita) >= 0.01) {
             const reais = (n: number) => `R$ ${n.toFixed(2).replace(".", ",")}`;
-            cleanText += resultadoDoSync.freteGratisAcimaDe != null && taxaGravada === 0
+            cleanText += enderecoSoReferencia
+              // Cidade pequena: não há taxa nem mapa — só o total certo.
+              ? `\n\nℹ️ O total certinho fica ${reais(resultadoDoSync.total)}.`
+              : resultadoDoSync.freteGratisAcimaDe != null && taxaGravada === 0
               ? `\n\n🎉 Seu pedido ganhou frete grátis (acima de ${reais(resultadoDoSync.freteGratisAcimaDe)}): o total fica ${reais(resultadoDoSync.total)}.`
               : `\n\nℹ️ Conferi no mapa: a taxa de entrega para o seu endereço é ${reais(taxaGravada)}, então o total fica ${reais(resultadoDoSync.total)}.`;
             console.warn(`[Chatbot AI] 💬 Taxa corrigida na mensagem ao cliente: modelo disse ${taxaDita}, gravado ${taxaGravada} (pedido ${resultadoDoSync.orderId}).`);
@@ -2733,6 +2748,7 @@ async function syncAiOrderToDatabase({
   retiradaPedidaPeloCliente,
   agendamento,
   formasProprias,
+  enderecoSoReferencia,
 }: {
   franchiseeId: string;
   customerPhone: string;
@@ -2789,6 +2805,11 @@ async function syncAiOrderToDatabase({
   agendamento?: LojaQueAgenda;
   /** `User.paymentFees`: as formas próprias liberadas para o robô (lib/formas-proprias.ts). */
   formasProprias?: unknown;
+  /**
+   * Cidade pequena (`chatbotConfig.enderecoSoReferencia`): a entrega fecha com o
+   * ponto de referência, sem conferir área e com taxa zero.
+   */
+  enderecoSoReferencia?: boolean;
 }): Promise<SyncResultado> {
   // ── FORMA DE PAGAMENTO PRÓPRIA (a Macaíba) ─────────────────────────────
   // O robô escreve o nome ("Macaíba", "macaiba"); o pedido grava o texto com a
@@ -3558,7 +3579,9 @@ async function syncAiOrderToDatabase({
       regraDeNegocio: true,
       mensagemParaOCliente: aceitaRetirada
         ? "Antes de mandar pra cozinha, só me confirma: é pra *entrega* ou você vem *retirar* aqui na loja? 😊"
-        : "Pra fechar, me passa o endereço de entrega com rua, número e bairro? 😊",
+        : enderecoSoReferencia
+          ? "Pra fechar, me passa um ponto de referência de onde entregar? 😊"
+          : "Pra fechar, me passa o endereço de entrega com rua, número e bairro? 😊",
     };
   }
 
@@ -3658,7 +3681,9 @@ async function syncAiOrderToDatabase({
   // Sem ponto confiável em KM/ROTA, o robô pede a localização do cliente UMA
   // vez antes de segurar o pedido (R2) ou de fechar com a taxa estimada (R3).
   let vereditoDaArea: VeredictoDeEntrega | null = null;
-  if (isFinal && deliveryType === "DELIVERY" && loja && modoDaArea(loja) !== "SEM_AREA") {
+  // Cidade pequena: não confere área, não pede bairro nem localização e não
+  // segura o pedido — o ponto de referência é o endereço (frete zero, abaixo).
+  if (isFinal && deliveryType === "DELIVERY" && loja && !enderecoSoReferencia && modoDaArea(loja) !== "SEM_AREA") {
     const modoDaLoja = modoDaArea(loja);
     const avaliacao = await avaliarEntregaDoRobo((p) => avaliarEntrega(loja, p), {
       endereco: enderecoDoPedido,
@@ -3837,6 +3862,8 @@ async function syncAiOrderToDatabase({
   // Retirada não tem frete. O modelo às vezes repete na tag o frete que tinha
   // cotado antes de o cliente decidir buscar — e ele entrava no total.
   if (deliveryType === "RETIRADA") deliveryFee = 0;
+  // Cidade pequena: a entrega não tem taxa, diga o modelo o que disser.
+  if (enderecoSoReferencia) deliveryFee = 0;
 
   // ── FRETE GRÁTIS: A MESMA RÉGUA DO SITE, EM TODA ENTREGA ──────────────────
   // Antes só valia dentro da área cadastrada e só no pedido final. O site
@@ -3845,7 +3872,7 @@ async function syncAiOrderToDatabase({
   // custaria (lib/entrega-gratis.ts) para a nota não ficar sem linha de entrega.
   let entregaGratis: EntregaGratis | null = null;
   let freteGratisAcimaDe: number | null = null;
-  if (deliveryType === "DELIVERY") {
+  if (deliveryType === "DELIVERY" && !enderecoSoReferencia) {
     const minimoQueValeu = freteGratisQueVale(loja?.deliveryConfig, totalItemsSum);
     if (minimoQueValeu != null) {
       if (deliveryFee > 0) entregaGratis = { valor: deliveryFee, motivo: porValorMinimo(minimoQueValeu) };

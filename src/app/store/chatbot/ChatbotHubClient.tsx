@@ -2567,6 +2567,49 @@ export default function ChatbotHubClient() {
               </div>
             )}
 
+            {/* CIDADE PEQUENA: SÓ PONTO DE REFERÊNCIA (lib/chatbot-ai.ts).
+                Quiosque Pizzaria (13/11/2026): cidade pequena, o motoboy acha
+                pela referência e a loja não cobra entrega. Ausente = NÃO. */}
+            <div style={{ marginBottom: "1.25rem", padding: "14px", background: "#F0FDF4", borderRadius: "14px", border: "1.5px solid #BBF7D0" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px" }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: "0.9rem", color: "#14532D" }}>
+                    🏡 Cidade pequena: pedir só ponto de referência (sem bairro, rua e taxa de entrega)
+                  </div>
+                  <p style={{ fontSize: "0.76rem", color: "#334155", marginTop: "4px", lineHeight: "1.45" }}>
+                    <strong>SIM:</strong> na entrega, o robô pede só o nome e um ponto de referência (ex.: &quot;perto da igreja, casa azul&quot;).
+                    Não pergunta bairro, rua, número nem localização, não fala em taxa e o pedido entra com entrega grátis.
+                    <br />
+                    <strong>NÃO:</strong> o robô pede o endereço completo e calcula a taxa pela sua área de entrega.
+                  </p>
+                </div>
+                <div style={{ display: "flex", gap: "6px", flexShrink: 0, marginTop: "4px" }}>
+                  <button
+                    onClick={() => handleSaveConfig({ enderecoSoReferencia: true })}
+                    style={{
+                    padding: "8px 16px", borderRadius: "8px", border: "none",
+                    background: config.enderecoSoReferencia === true ? "#15803D" : "#E2E8F0",
+                    color: config.enderecoSoReferencia === true ? "#fff" : "#475569",
+                    fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
+                  }}
+                  >
+                    SIM
+                  </button>
+                  <button
+                    onClick={() => handleSaveConfig({ enderecoSoReferencia: false })}
+                    style={{
+                    padding: "8px 16px", borderRadius: "8px", border: "none",
+                    background: config.enderecoSoReferencia !== true ? "#64748B" : "#E2E8F0",
+                    color: config.enderecoSoReferencia !== true ? "#fff" : "#475569",
+                    fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
+                  }}
+                  >
+                    NÃO
+                  </button>
+                </div>
+              </div>
+            </div>
+
             {/* CHAVE PIX DA LOJA, QUE O ROBÔ MANDA AO CLIENTE */}
             <PixDaLojaNoRobo
               valor={config.pixDaLoja}
