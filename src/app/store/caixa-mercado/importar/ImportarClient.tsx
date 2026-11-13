@@ -125,6 +125,22 @@ export default function ImportarClient() {
     await carregar();
   }
 
+  // Um produto de cada vez: bipa o código (o leitor digita e dá Enter), nome, preço, cadastra.
+  const [novo, setNovo] = useState({ codigo: "", nome: "", preco: "", unidade: "UN" as "UN" | "KG", ncm: "" });
+  async function cadastrarNovo() {
+    const precoCentavos = Math.round(Number(novo.preco.replace(/\./g, "").replace(",", ".")) * 100);
+    const r = await fetch("/api/store/caixa-mercado/produto", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ codigo: novo.codigo, nome: novo.nome, precoCentavos, unidade: novo.unidade, ncm: novo.ncm }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return avisar(false, d?.error || "Não deu para cadastrar.");
+    avisar(true, d.criado ? `${novo.nome} cadastrado. Já pode bipar no caixa.` : `Código ligado ao produto "${novo.nome}" que já existia.`);
+    setNovo({ codigo: "", nome: "", preco: "", unidade: novo.unidade, ncm: "" });
+    (document.getElementById("imp-novo-codigo") as HTMLInputElement | null)?.focus();
+    await carregar();
+  }
+
   const lista = useMemo(() => {
     const t = busca.trim().toLowerCase();
     return produtos.filter((p) => {
@@ -156,6 +172,35 @@ export default function ImportarClient() {
           {resumo.length > 30 && <p style={S.sub}>… e mais {resumo.length - 30} avisos.</p>}
         </div>
       )}
+
+      <div style={S.cartao}>
+        <h2 style={S.h2}>+ Novo produto com código de barras</h2>
+        <p style={S.sub}>Chegou mercadoria nova: bipe o código com o leitor (ou digite), escreva o nome e o preço e cadastre. No caixa, é só bipar. Um código que o caixa não conhece também abre este cadastro na hora (com a senha do gerente).</p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10, alignItems: "end" }}>
+          <label style={S.rotulo}>Código de barras
+            <input id="imp-novo-codigo" style={S.select} value={novo.codigo} placeholder="Bipe aqui" aria-label="Código de barras do produto novo"
+              onChange={(e) => setNovo({ ...novo, codigo: e.target.value })}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); (document.getElementById("imp-novo-nome") as HTMLInputElement | null)?.focus(); } }} />
+          </label>
+          <label style={S.rotulo}>Nome
+            <input id="imp-novo-nome" style={S.select} value={novo.nome} placeholder="Ex.: Café Pilão 500g" aria-label="Nome do produto novo" onChange={(e) => setNovo({ ...novo, nome: e.target.value })} />
+          </label>
+          <label style={S.rotulo}>Preço de venda{novo.unidade === "KG" ? " (kg)" : ""}
+            <input style={S.select} value={novo.preco} placeholder="0,00" inputMode="decimal" aria-label="Preço do produto novo"
+              onChange={(e) => setNovo({ ...novo, preco: e.target.value })}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void cadastrarNovo(); } }} />
+          </label>
+          <label style={S.rotulo}>Vende por
+            <select style={S.select} value={novo.unidade} onChange={(e) => setNovo({ ...novo, unidade: e.target.value === "KG" ? "KG" : "UN" })} aria-label="Unidade do produto novo">
+              <option value="UN">Unidade</option><option value="KG">Quilo (balança)</option>
+            </select>
+          </label>
+          <label style={S.rotulo}>NCM (opcional)
+            <input style={S.select} value={novo.ncm} placeholder="8 números" aria-label="NCM do produto novo" onChange={(e) => setNovo({ ...novo, ncm: e.target.value })} />
+          </label>
+          <button style={S.cta} onClick={() => void cadastrarNovo()}>Cadastrar</button>
+        </div>
+      </div>
 
       <div style={S.cartao}>
         <h2 style={S.h2}>1. Planilha do sistema antigo (CSV ou Excel)</h2>
