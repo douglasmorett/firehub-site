@@ -22,6 +22,7 @@ import { useSession } from "next-auth/react";
 import { comSenhaDoGerente, useSenhaDoGerente } from "@/components/SenhaDoGerente";
 import { ModalDoComprovanteDoFiado, OpcoesDoComprovante, usePreferenciasDoComprovante } from "@/components/ComprovanteDoFiado";
 import { ehFormaPropria, rotuloDaForma, textosNoCanal } from "@/lib/formas-proprias";
+import { CONSUMO_NO_CARD, CONSUMO_PADRAO, lerConsumoNoBalcao, type ConsumoNoBalcao } from "@/lib/balcao-levar-ou-local";
 
 // A mesma lista do pedido de balcão do garçom (lib/balcao-config.ts).
 const PAYMENT_METHODS = FORMAS_DE_PAGAMENTO_DO_BALCAO;
@@ -202,6 +203,8 @@ export default function VendaPresencialPage() {
   /** Bandeira do vale (Banri, Ticket...) quando a loja cadastrou as suas. */
   const [voucherBrand, setVoucherBrand] = useState("");
   const [notes, setNotes] = useState("");
+  /** Dentro do Balcão: o cliente leva ou come aqui (lib/balcao-levar-ou-local.ts). */
+  const [consumo, setConsumo] = useState<ConsumoNoBalcao>(CONSUMO_PADRAO);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
   const [search, setSearch] = useState("");
@@ -688,6 +691,8 @@ export default function VendaPresencialPage() {
       customerCpfCnpj: lerDocumentoDoCliente(documento),
       customerAddress: orderType === "DELIVERY" ? enderecoDaEntrega : orderType === "MESA" ? nomeDaMesa : "Balcão",
       deliveryType: orderType === "BALCAO" ? "RETIRADA" : orderType,
+      // Não é tipo novo: o pedido segue RETIRADA. Só sai no topo da comanda.
+      ...(orderType === "BALCAO" ? { consumoNoBalcao: consumo } : {}),
       // "Voucher/Vale - Banri": a bandeira vai junto, e o texto continua sendo
       // lido como vale pelo caixa e pela nota (lib/pagamento-na-entrega).
       paymentMethod: !dividir && paymentMethod === "Voucher/Vale" && bandeiraEscolhida
@@ -759,7 +764,7 @@ export default function VendaPresencialPage() {
       // pessoa errada ou o CPF de outro impresso na nota é o tipo de erro que
       // ninguém percebe até alguém reclamar. O pager já ficava para trás antes
       // deste campo existir — mesma falha, consertada junto.
-      setCart([]); setCustomerName(""); setCustomerPhone(""); setAddress(""); setBairro(""); setTableNum(""); setNotes(""); setChange(""); setPager(""); setDocumento(""); setVoucherBrand("");
+      setCart([]); setCustomerName(""); setCustomerPhone(""); setAddress(""); setBairro(""); setTableNum(""); setNotes(""); setChange(""); setPager(""); setDocumento(""); setVoucherBrand(""); setConsumo(CONSUMO_PADRAO);
       setTaxaEntrega(""); setTaxaNaMao(false); setTaxaAviso(null); setCotacaoDoBalcao(null);
 
       // ── E A FORMA DE PAGAMENTO TAMBÉM ────────────────────────────────
@@ -823,6 +828,8 @@ export default function VendaPresencialPage() {
       if (salvo.pager) setPager(salvo.pager);
       if (salvo.documento) setDocumento(salvo.documento);
       if (salvo.notes) setNotes(salvo.notes);
+      const consumoSalvo = lerConsumoNoBalcao(salvo.consumo);
+      if (consumoSalvo) setConsumo(consumoSalvo);
     } catch {
       // Navegador com armazenamento bloqueado: a tela funciona como sempre
       // funcionou, sem rascunho. Nada quebra por causa disto.
@@ -855,13 +862,14 @@ export default function VendaPresencialPage() {
           pager,
           documento,
           notes,
+          consumo,
         })
       );
     } catch {
       // Cota estourada ou armazenamento bloqueado: seguir sem rascunho é
       // melhor do que derrubar a tela de venda.
     }
-  }, [cart, orderType, customerName, customerPhone, address, bairro, tableNum, pager, documento, notes]);
+  }, [cart, orderType, customerName, customerPhone, address, bairro, tableNum, pager, documento, notes, consumo]);
 
   const cartQty = cart.reduce((s, i) => s + i.qty, 0);
 
@@ -1115,6 +1123,22 @@ export default function VendaPresencialPage() {
               </button>
             ))}
           </div>
+
+          {/* Dentro do Balcão: para levar ou consumir no local. Não é tipo de
+              pedido — caixa e relatórios seguem como Balcão; a escolha sai
+              grande no topo da comanda (Garagem Burger, 13/11/2026). */}
+          {orderType === "BALCAO" && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: -6, marginBottom: 10 }}>
+              {(["LEVAR", "LOCAL"] as const).map(c => (
+                <button key={c} type="button" onClick={() => setConsumo(c)} aria-pressed={consumo === c}
+                  style={{ padding: "6px 4px", borderRadius: 8, border: `1.5px solid ${consumo === c ? "#1C1917" : "#E2E8F0"}`,
+                    background: consumo === c ? "#F5F5F4" : "#fff", color: consumo === c ? "#1C1917" : "#64748B",
+                    fontWeight: consumo === c ? 800 : 600, fontSize: "0.76rem", cursor: "pointer", fontFamily: "inherit" }}>
+                  {CONSUMO_NO_CARD[c]}
+                </button>
+              ))}
+            </div>
+          )}
 
           {/* Campos por tipo */}
           {orderType === "MESA" && (

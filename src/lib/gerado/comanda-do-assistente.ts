@@ -605,6 +605,8 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
           // O garcom anda com o numero da mesa, no mesmo corpo da linha do
           // canal no layout padrao — nao some porque a loja montou modelo.
           if (linhaDoGarcom) out += linha(linhaDoGarcom, { alinhamento: f.alinhamento || "centro", tamanho: 1.5, negrito: true });
+          // Para levar / consumir no local: e o topo do papel em qualquer modelo.
+          if (linhaDoConsumo) out += linha(linhaDoConsumo, { alinhamento: f.alinhamento || "centro", tamanho: 1.5, negrito: true });
           // A previsao de entrega anda com o numero pelo mesmo motivo: e o
           // topo do papel em qualquer modelo que a loja tenha montado.
           if (linhaDaPrevisao) out += linha(linhaDaPrevisao, { alinhamento: f.alinhamento || "centro", tamanho: 1.5, negrito: true });
@@ -854,6 +856,17 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // A aba Avisos desliga a LINHA do topo; a variavel {previsao} do texto
   // livre continua valendo para quem a usa no modelo.
   const linhaDaPrevisao = previsaoDoPedido && avisoLigado("previsaoEntrega") ? previsaoDoPedido.linha : "";
+  // ── PARA LEVAR OU CONSUMIR NO LOCAL ──────────────────────────────────
+  //
+  // Garagem Burger (aprovado pelo dono em 13/11/2026): no balcao o atendente
+  // marca no PDV se o cliente leva ou come ali, e a cozinha precisa saber
+  // ANTES de montar (embalagem ou prato). Ia na observacao — letra pequena,
+  // no meio do papel. O servidor manda `consumoNoBalcao` pronto ("PARA
+  // LEVAR" / "CONSUMIR NO LOCAL", src/lib/balcao-levar-ou-local.ts) so em
+  // pedido de balcao; aqui ele sai no topo, dobrado, logo abaixo do numero.
+  // Sem o campo, nada: o papel sai como sempre saiu.
+  const linhaDoConsumo = ehConta ? "" : cleanAscii(order.consumoNoBalcao == null ? "" : String(order.consumoNoBalcao))
+    .replace(/\s+/g, " ").trim().toUpperCase().slice(0, 24);
   // "(3) MESA 4". A loja que trocou a palavra do topo ("PEDIDO") ganha a mesa
   // por extenso depois dela — "(3) PEDIDO 4" nao diria que o 4 e a mesa.
   const tagDoTopo = !mesaDoPedido
@@ -979,6 +992,11 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // O garcom logo abaixo da mesa: e a quem a cozinha entrega o prato pronto.
   if (linhaDoGarcom) {
     res += DOUBLE_HEIGHT + BOLD_ON + centerLine(linhaDoGarcom) + BOLD_OFF + DOUBLE_OFF;
+  }
+  // Para levar / consumir no local: logo abaixo do numero, que e onde a
+  // cozinha olha primeiro (o pedido de balcao nao tem numero no app).
+  if (linhaDoConsumo) {
+    res += DOUBLE_HEIGHT + BOLD_ON + centerLine(linhaDoConsumo) + BOLD_OFF + DOUBLE_OFF;
   }
   // Logo abaixo do numero: e por ele que a cozinha decide o que sai primeiro.
   // Altura dobrada, largura normal — "PREVISAO DE RETIRADA: 20:45" tem 27
@@ -1127,7 +1145,10 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
    * ficar sem o recado por causa de um modelo personalizado antigo. */
   function recadoDoCliente() {
     if (!order.notes) return "";
-    const linhas = String(order.notes).split("\n");
+    // A etiqueta "[Balcao: consumir no local]" ja saiu grande no topo
+    // (linhaDoConsumo): repetida aqui, viraria recado do cliente.
+    const linhas = String(order.notes).split("\n")
+      .map((l) => (linhaDoConsumo ? l.replace(/\s*\[\s*Balc[ãa]o:\s*(?:para levar|consumir no local)\s*\]/gi, "") : l));
 
     // O servidor marca o recado do cliente com 📝 (processBrendiEvent e os
     // outros tradutores). Quando a marca existe, ela é a resposta exata —
@@ -1851,7 +1872,7 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
 }
 
 export const VERSAO_DO_ASSISTENTE = "1.2.46";
-export const ASSINATURA_DO_CODIGO = "57d7b48b65bd5d09";
+export const ASSINATURA_DO_CODIGO = "24527b8a690e5fb3";
 
 /** Os bytes ESC/POS da comanda, como o Assistente 1.2.46 manda para a impressora. */
 export function comandaDoAssistente(order, storeName, columns, profile = "safe") {
