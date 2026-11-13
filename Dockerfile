@@ -38,7 +38,10 @@ ARG GIT_SHA=""
 
 # Build Next.js standalone (sem rodar prisma db push)
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN npx next build
+# Teto de memória do Node no build: o padrão (~2 GB) já não cabe a etapa de
+# TypeScript — em 13/11/2026 o run #1109 morreu com "heap out of memory" num
+# commit de 3 linhas. A máquina do GitHub tem 16 GB; 6 GB é só o teto.
+RUN NODE_OPTIONS=--max-old-space-size=6144 npx next build
 
 # Modo Contingência: o supervisor que roda no computador da loja, num arquivo
 # só (contingencia/supervisor, pacote próprio com o driver do Postgres).
