@@ -61,7 +61,7 @@ const NOME_EVENTO: Record<string, string> = {
 
 // Endereço de entrega perto da loja de teste (Ramal Bujari, 122 — Bujari/AC).
 const NOVO_PEDIDO = {
-  cliente: { nome: "Maria Teste", ddd: "22", numero: "998851680" },
+  cliente: { nome: "Maria Teste", ddd: "22", numero: "999990000" },
   endereco: {
     postalCode: "69923000", streetName: "Ramal Bujari", streetNumber: "150", complement: "Casa",
     reference: "", neighborhood: "Bujari", city: "Bujari", state: "AC", country: "BR",

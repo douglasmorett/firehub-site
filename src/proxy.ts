@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { funcionarioAbre, primeiraTelaDoFuncionario } from "@/lib/permissao-da-tela";
+import { cookiesSemSessao, ehCookieDeSessao, sessaoDoParceiroVale } from "@/lib/sessao-do-parceiro";
 
 // ─── CORS: allowed origins (lista fixa aqui, sem import de config) ───
 const ALLOWED_ORIGINS = [
@@ -243,6 +244,29 @@ export async function proxy(request: NextRequest) {
     }
   }
 
+  // ─── Sessão do portal do parceiro só vale no portal (lib/sessao-do-parceiro.ts) ───
+  // As rotas da loja acham a loja por session.user.email sem olhar o role: um
+  // vendedor/embaixador com o e-mail de uma loja via os dados dela. Fora do
+  // portal, a requisição dele segue SEM o cookie da sessão (pública funciona,
+  // a da loja dá 401) e o /store volta para o portal.
+  let cabecalhosSemSessao: Headers | null = null;
+  if (!sessaoDoParceiroVale(pathname) && request.cookies.getAll().some((c) => ehCookieDeSessao(c.name))) {
+    const tokenDoParceiro = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+    if ((tokenDoParceiro as any)?.role === "AMBASSADOR") {
+      if (pathname.startsWith("/store")) return NextResponse.redirect(safeUrl("/embaixador", request.url));
+      cabecalhosSemSessao = new Headers(request.headers);
+      const resto = cookiesSemSessao(request.headers.get("cookie"));
+      if (resto) cabecalhosSemSessao.set("cookie", resto);
+      else cabecalhosSemSessao.delete("cookie");
+    }
+  }
+  if (cabecalhosSemSessao && pathname.startsWith("/api/admin")) {
+    return NextResponse.json(
+      { error: "Não autorizado" },
+      { status: 401, headers: { ...SECURITY_HEADERS, ...getCorsHeaders(request) } }
+    );
+  }
+
   // ─── /api/debug/* : bloqueado em produção ───
   // Eram alcançáveis por qualquer um. /api/debug/env vazava e-mails e nomes de
   // todas as lojas JotaJá, host do banco e merchant IDs.
@@ -325,7 +349,7 @@ export async function proxy(request: NextRequest) {
   }
 
   // ─── Build response with security headers ───
-  const response = NextResponse.next();
+  const response = cabecalhosSemSessao ? NextResponse.next({ request: { headers: cabecalhosSemSessao } }) : NextResponse.next();
 
   // Add security headers to every response
   for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
@@ -333,6 +357,8 @@ export async function proxy(request: NextRequest) {
   }
   // A prévia do tablet abre na moldura da aba Tablet na mesa (o par no next.config).
   if (pathname === "/tablet/previa") response.headers.set("X-Frame-Options", "SAMEORIGIN");
+  // O material de divulgação abre na prévia da tela do material (o par no next.config).
+  if (pathname.startsWith("/material/")) response.headers.set("X-Frame-Options", "SAMEORIGIN");
 
   // Add CORS headers for API routes
   if (pathname.startsWith("/api") && !ROTAS_COM_CORS_PROPRIO.has(pathname)) {

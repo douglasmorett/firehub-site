@@ -193,6 +193,8 @@ export type DesperdicioLancado = {
   valor: number | null;
   /** O valor é o que o funcionário estimou no FireCheck (não casou com nada). */
   estimado: boolean;
+  /** Baixa de etiqueta (lote) já vencida no dia do descarte: é segurança alimentar. */
+  loteVencido?: boolean;
 };
 
 export type DesperdicioDeCancelado = {
@@ -235,6 +237,7 @@ export async function desperdiciosDoPeriodo(lojaId: string, tz: string, de: stri
       select: {
         quantity: true, unitCost: true, notes: true, sourceRef: true, createdAt: true, userId: true,
         stockItem: { select: { name: true, unit: true, unitCost: true } },
+        stockLot: { select: { validoAte: true } },
       },
       orderBy: { createdAt: "desc" },
       take: 3000,
@@ -299,6 +302,7 @@ export async function desperdiciosDoPeriodo(lojaId: string, tz: string, de: stri
       origem: "Perda",
       valor: (t.unitCost ?? t.stockItem.unitCost) != null ? r2(valorDoMovimento(t)) : null,
       estimado: false,
+      loteVencido: Boolean(t.stockLot?.validoAte && t.stockLot.validoAte < t.createdAt),
     })),
   ].sort((a, b) => b.quando.localeCompare(a.quando));
 

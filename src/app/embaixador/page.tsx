@@ -5,6 +5,8 @@ import AmbassadorLoginForm from "@/components/ambassador/AmbassadorLoginForm";
 import PortalDoParceiro from "@/components/parceiro/PortalDoParceiro";
 import MapaDeProspeccao from "@/components/prospeccao/MapaDeProspeccao";
 import { relatorioDoParceiro } from "@/lib/parceiro/relatorio";
+import { projecaoDoMesGuardada } from "@/lib/projecao-do-mes";
+import { recortarProjecao } from "@/lib/parceiro/projecao-do-parceiro";
 import TermoDeComissionamento from "@/components/parceiro/TermoDeComissionamento";
 import { aceitouAVersaoVigente } from "@/lib/parceiro/aceite-do-termo";
 import { lojaQueAbreOPortal } from "@/lib/paineis-do-dono";
@@ -43,6 +45,9 @@ export default async function EmbaixadorPage() {
 
   const relatorio = await relatorioDoParceiro(ambassador.id);
   if (!relatorio) return <AmbassadorLoginForm />;
+  // A projeção do mês das lojas dele — a mesma do /vendedor, só para quem vende.
+  const projecaoDoMes = ambassador.isVendedor ? await projecaoDoMesGuardada().catch(() => null) : null;
+  const projecao = projecaoDoMes ? recortarProjecao(projecaoDoMes, relatorio.lojas) : null;
 
   // O mapa de prospecção é do VENDEDOR: embaixador puro não vê a aba (a API
   // /api/vendedor/prospeccao devolve 401 para ele).
@@ -61,6 +66,7 @@ export default async function EmbaixadorPage() {
       relatorio={relatorio}
       saida="/embaixador"
       mapaDeProspeccao={vendeAtivo ? <MapaDeProspeccao /> : undefined}
+      projecao={projecao}
     />
     </>
   );

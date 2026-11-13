@@ -717,7 +717,6 @@ export async function POST(req: Request) {
     let discount = 0;
     // A parte de `discount` que é a taxa de entrega zerada pelo cupom de frete
     // grátis — fica fora da base do desconto do pagamento pelo site.
-    let descontoNaTaxa = 0;
     // O cupom de PRIMEIRO PEDIDO entrou? A indicação não soma com ele (lib/indicacao.ts).
     let comCupomDePrimeiroPedido = false;
     // Entrou um cupom? O clube que não soma com cupom fica de fora (lib/clube/regras.ts).
@@ -743,8 +742,8 @@ export async function POST(req: Request) {
         comCupomDePrimeiroPedido = coupon.primeiroPedido === true;
         cupomNoPedido = true;
         if (veredito.zeraTaxa) {
-          discount = fee;
-          descontoNaTaxa = fee;
+          // Só zera a taxa: pôr o frete também em `discount` tirava o valor
+          // duas vezes do total (o site mostrava certo, o pedido gravava a menos).
           if (fee > 0) entregaGratis = { valor: fee, motivo: `Cupom ${coupon.code}` };
           fee = 0;
         } else {
@@ -823,7 +822,7 @@ export async function POST(req: Request) {
           storeLoyalty: franchisee.storeLoyalty,
           telefone: customerPhone,
           canal: "site",
-          produtosAPagar: Math.max(0, totalAmount - (discount - descontoNaTaxa)),
+          produtosAPagar: Math.max(0, totalAmount - discount),
         });
         if (efeito) {
           discount += efeito.descontoExtra;
@@ -861,7 +860,7 @@ export async function POST(req: Request) {
           telefone: customerPhone,
           referencia: body.codigoDeIndicacao,
           produtos: totalAmount,
-          produtosAPagar: Math.max(0, totalAmount - (discount - descontoNaTaxa)),
+          produtosAPagar: Math.max(0, totalAmount - discount),
           comCupomDePrimeiroPedido,
         });
         if (veredicto?.ok) {
@@ -908,7 +907,7 @@ export async function POST(req: Request) {
             acumulaComCupom: clube.config.acumulaComCupom,
           });
           if (veredicto.ok && assinante) {
-            const valor = descontoDoClube(clube.config, Math.max(0, totalAmount - (discount - descontoNaTaxa)));
+            const valor = descontoDoClube(clube.config, Math.max(0, totalAmount - discount));
             if (valor > 0) {
               discount += valor;
               descontoClube = { valor, percentual: clube.config.percentual, chave: clube.chave, assinaturaId: assinante.id };
@@ -938,7 +937,7 @@ export async function POST(req: Request) {
         cartao: conectadaAoAsaas && franchisee.cartaoOnlineAtivo === true,
       },
       // Item marcado "Não vale cupom nem desconto" fica fora da base.
-      base: totalAmount - (discount - descontoNaTaxa) - (totalAmount - totalComCupom),
+      base: totalAmount - discount - (totalAmount - totalComCupom),
     });
     if (descontoOnline) discount += descontoOnline.valor;
 

@@ -10,6 +10,7 @@
  *   Mapa          mapa de prospecção — LUGAR PREVISTO: aparece quando a página passar `mapaDeProspeccao`
  *   Contatos      o funil do CRM, sem o texto das conversas    ┐ só vendedor
  *   Agenda        a agenda compartilhada da equipe            ┘
+ *   Material de apoio de vendas  vídeo, apresentação/folder com o QR dele e criativos (MateriaisDeDivulgacao) — os dois, em destaque
  *
  * As CONVERSAS (caixa de atendimento do número do FireHub) saíram do portal em
  * 18/10/2026 — Douglas: "o meu vendedor não precisa ter esse painel de
@@ -17,22 +18,27 @@
  * podeVerConversas).
  */
 import { useEffect, useState } from "react";
-import { ArrowLeft, Briefcase, CalendarClock, ChartNoAxesColumn, Handshake, LogOut, Map as IconeDoMapa, Network, Sparkles, Target } from "lucide-react";
+import { ArrowLeft, Briefcase, CalendarClock, ChartNoAxesColumn, Handshake, LogOut, Map as IconeDoMapa, Megaphone, Network, Sparkles, Target } from "lucide-react";
 import type { ReactNode } from "react";
 import SairDaConta from "@/components/SairDaConta";
 import { AtalhoDoOutroPainel } from "@/components/paineis/TrocarDePainel";
 import FunilDoCrm from "@/components/crm/FunilDoCrm";
 import AgendaDaEquipe from "@/components/crm/AgendaDaEquipe";
 import RelatorioDoParceiro from "@/components/parceiro/RelatorioDoParceiro";
+import ProjecaoDoParceiro from "@/components/parceiro/ProjecaoDoParceiro";
 import RelatorioDaCarteira from "@/components/perfil-da-loja/RelatorioDaCarteira";
 import ComoVoceGanha from "@/components/perfil-da-loja/ComoVoceGanha";
+import MateriaisDeDivulgacao from "@/components/materiais/MateriaisDeDivulgacao";
 import { OcultarValoresProvider, OlhoDosValores } from "@/components/parceiro/ValoresOcultos";
 import { indicacaoDeEmbaixador, type Papel } from "@/lib/parceiro/regras";
 import type { RelatorioDoParceiro as Relatorio } from "@/lib/parceiro/relatorio";
+import type { ProjecaoDoParceiro as Projecao } from "@/lib/parceiro/projecao-do-parceiro";
 
-type Aba = "numeros" | "carteira" | "mapa" | "contatos" | "agenda";
+type Aba = "numeros" | "carteira" | "mapa" | "contatos" | "agenda" | "materiais";
 const ABAS: { chave: Aba; rotulo: string; Icone: typeof Handshake; soVendedor: boolean }[] = [
   { chave: "numeros", rotulo: "Meus números", Icone: ChartNoAxesColumn, soVendedor: false },
+  // Em destaque (Douglas, 12/11/2026): o material com o QR de cada um e os criativos.
+  { chave: "materiais", rotulo: "Material de apoio de vendas", Icone: Megaphone, soVendedor: false },
   // O perfil das lojas e o que oferecer (lib/perfil-da-loja) — o admin também abre, pela carteira deste vendedor.
   { chave: "carteira", rotulo: "Carteira e oportunidades", Icone: Sparkles, soVendedor: true },
   // Mapa de prospecção (outra sessão faz src/components/prospeccao/*): só aparece com a prop `mapaDeProspeccao`.
@@ -54,6 +60,7 @@ export default function PortalDoParceiro({
   voltarPara = "/admin?aba=vendedores",
   disparo,
   mapaDeProspeccao,
+  projecao,
 }: {
   relatorio: Relatorio;
   modo?: "PARCEIRO" | "ADMIN";
@@ -65,6 +72,8 @@ export default function PortalDoParceiro({
   disparo?: { pacotes: { mensagens: number; ganho: number }[]; ganhoNoMes: number } | null;
   /** LUGAR PREVISTO: o mapa de prospecção (src/components/prospeccao). Sem ele, a aba não aparece. */
   mapaDeProspeccao?: ReactNode;
+  /** A projeção do mês SÓ das lojas dele (lib/parceiro/projecao-do-parceiro.ts), já recortada no servidor. */
+  projecao?: Projecao | null;
 }) {
   const p = relatorio.parceiro;
   const temCrm = modo === "PARCEIRO" && p.isVendedor;
@@ -131,7 +140,7 @@ export default function PortalDoParceiro({
         <nav className="pp-abas" aria-label="Seções do portal">
           <div className="pp-abas-dentro">
             {abas.map((a) => (
-              <button key={a.chave} type="button" className={`pp-aba ${aba === a.chave ? "on" : ""}`} onClick={() => setAba(a.chave)} aria-current={aba === a.chave ? "page" : undefined}>
+              <button key={a.chave} type="button" className={`pp-aba ${aba === a.chave ? "on" : ""} ${a.chave === "materiais" ? "destaque" : ""}`} onClick={() => setAba(a.chave)} aria-current={aba === a.chave ? "page" : undefined}>
                 <a.Icone size={16} aria-hidden /> {a.rotulo}
               </button>
             ))}
@@ -163,6 +172,7 @@ export default function PortalDoParceiro({
               />
             </div>
           )}
+          {projecao && <ProjecaoDoParceiro projecao={projecao} modo={modo} />}
           <RelatorioDoParceiro relatorio={relatorio} modo={modo} podeMarcarAtendimento={modo === "PARCEIRO" && p.isVendedor && p.ativo} />
         </main>
       )}
@@ -179,6 +189,15 @@ export default function PortalDoParceiro({
       )}
       {aba === "agenda" && (
         <main className="pp-largo">{p.ativo ? <AgendaDaEquipe modo="VENDEDOR" /> : pausado}</main>
+      )}
+      {aba === "materiais" && (
+        <main className="pp-wrap">
+          {/* O QR leva ao mesmo link do "Seu link de indicação" (RelatorioDoParceiro): quem se cadastra fica marcado para ele. */}
+          <MateriaisDeDivulgacao
+            criativos
+            quem={{ tipo: "parceiro", codigo: p.codigo, nome: p.nome, whatsapp: p.telefone, linkDeCadastro: `https://firehubfood.com.br/cadastro?ref=${p.codigo}` }}
+          />
+        </main>
       )}
     </div>
     </OcultarValoresProvider>
@@ -232,6 +251,8 @@ const ESTILO_DO_PORTAL = `
 .pp-aba { background: none; border: none; border-bottom: 3px solid transparent; padding: 12px 14px 11px; font: inherit; font-weight: 700; font-size: 0.86rem; color: var(--pp-cinza); cursor: pointer; white-space: nowrap; display: inline-flex; align-items: center; gap: 7px; }
 .pp-aba:hover { color: var(--pp-tinta); }
 .pp-aba.on { color: var(--pp-tinta); border-bottom-color: var(--pp-laranja); }
+.pp-aba.destaque { background: var(--pp-laranja); color: #fff; border-radius: 10px; border-bottom: none; margin: 6px 6px; padding: 9px 16px; font-size: 0.92rem; font-weight: 800; box-shadow: 0 4px 12px -6px rgba(232,54,12,.7); }
+.pp-aba.destaque:hover { background: var(--pp-laranja-escuro); color: #fff; }
 
 .pp-wrap { max-width: 1240px; margin: 0 auto; padding: 20px 16px 64px; }
 .pp-largo { max-width: 1500px; margin: 0 auto; padding: 16px 16px 40px; }
@@ -448,5 +469,7 @@ const ESTILO_DO_PORTAL = `
 .pp-linha-cabeca { background: #EDE5D7; color: var(--pp-tinta-2); }
 .pp-razao-linha, .pp-rede li { border-color: var(--pp-linha-forte); }
 @media (max-width: 640px) { .pp-painel-cabeca { padding: 12px 14px 10px; } .pp-aba { padding: 12px 12px 10px; } }
+.pp-aba.destaque, .pp-aba.destaque.on { color: #fff; padding: 9px 16px; border-bottom: none; }
+.pp-aba.destaque.on { background: var(--pp-laranja-escuro); box-shadow: inset 0 -3px 0 rgba(0,0,0,.25); }
 @media (prefers-reduced-motion: reduce) { .pp * { transition: none !important; scroll-behavior: auto !important; } }
 `;

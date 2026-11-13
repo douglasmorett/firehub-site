@@ -801,7 +801,7 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
       <div style={{ fontSize: "0.82rem", color: "#92400E", lineHeight: 1.5 }}>
         Não é nada do seu lado — falta uma credencial da Meta na instalação do FireHub. Conectar o
         Facebook não vai funcionar até isso ser resolvido.{" "}
-        <a href="https://wa.me/5522998851680?text=Oi%20o%20trafego%20pago%20aparece%20como%20nao%20configurado%20no%20meu%20firehub" target="_blank" rel="noopener noreferrer" style={{ color: "#92400E", fontWeight: 800 }}>
+        <a href="https://wa.me/5522981118514?text=Oi%20o%20trafego%20pago%20aparece%20como%20nao%20configurado%20no%20meu%20firehub" target="_blank" rel="noopener noreferrer" style={{ color: "#92400E", fontWeight: 800 }}>
           Avisar o suporte
         </a>
       </div>
@@ -846,7 +846,7 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
             Ver meu painel
           </button>
         )}
-        <button onClick={() => window.open("https://wa.me/5522998851680?text=Oi%20nao%20consigo%20abrir%20o%20painel%20de%20trafego%20pago%20e%20preciso%20pausar%20minha%20campanha", "_blank")}
+        <button onClick={() => window.open("https://wa.me/5522981118514?text=Oi%20nao%20consigo%20abrir%20o%20painel%20de%20trafego%20pago%20e%20preciso%20pausar%20minha%20campanha", "_blank")}
           style={{ background: "#fff", border: "1.5px solid #E2E8F0", padding: "12px 22px", borderRadius: 12, fontSize: "0.95rem", fontWeight: 700, cursor: "pointer", color: "#334155", display: "inline-flex", alignItems: "center", gap: 8 }}>
           💬 Preciso pausar agora <ExternalLink size={14} />
         </button>
@@ -1135,7 +1135,7 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
       `}</style>
       <div className="fh-metodos" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "2rem" }}>
         {[
-          { title: "Configuração Acompanhada", desc: "Um especialista FireHub configura com você via WhatsApp", href: "https://wa.me/5522998851680?text=Oi%20quero%20ajuda%20para%20configurar%20o%20trafego%20pago%20do%20firehub%20na%20minha%20loja" },
+          { title: "Configuração Acompanhada", desc: "Um especialista FireHub configura com você via WhatsApp", href: "https://wa.me/5522981118514?text=Oi%20quero%20ajuda%20para%20configurar%20o%20trafego%20pago%20do%20firehub%20na%20minha%20loja" },
           { title: "Configurar Sozinho", desc: "Configure no seu ritmo, passo a passo em menos de 5 minutos", action: () => setStep("invest") },
         ].map((opt, i) => (
           <div key={i} role="button" tabIndex={0} className="fh-opcao"
@@ -2114,7 +2114,7 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
       </div>
 
       <div style={{ marginTop: "1rem", display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
-        <button onClick={() => window.open("https://wa.me/5522998851680?text=Oi%20quero%20ajuda%20para%20configurar%20o%20trafego%20pago%20do%20firehub%20na%20minha%20loja", "_blank")}
+        <button onClick={() => window.open("https://wa.me/5522981118514?text=Oi%20quero%20ajuda%20para%20configurar%20o%20trafego%20pago%20do%20firehub%20na%20minha%20loja", "_blank")}
           style={{ background: "none", border: "1px solid #E2E8F0", borderRadius: 10, padding: "10px 20px", fontSize: "0.85rem", fontWeight: 600, cursor: "pointer", color: "#475569", display: "inline-flex", alignItems: "center", gap: 8 }}>
           💬 Falar com especialista <ExternalLink size={14} />
         </button>

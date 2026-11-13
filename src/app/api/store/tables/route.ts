@@ -6,6 +6,7 @@ import { contaPedidaEm } from "@/lib/mesa-em-fechamento";
 import { chamadosDaLoja } from "@/lib/tablet-da-mesa/tablets";
 import { TIPO_COMANDA, faixaDeComandas } from "@/lib/comanda";
 import { saldoDaMesaDoQuadro, contextoPagoDaMesa } from "@/lib/saldo-da-mesa";
+import { contaSemTaxa } from "@/lib/taxa-da-mesa";
 
 export async function GET(req: NextRequest) {
   try {
@@ -81,6 +82,8 @@ export async function GET(req: NextRequest) {
           orderCount: vivos.length,
           // Conta pedida e nada lançado depois: a mesa fica roxa na grade.
           contaPedidaEm: contaPedidaEm(contaImpressaPorSessao.get(activeSession.id), activeSession.orders),
+          // O cliente pediu sem taxa de serviço (lib/taxa-da-mesa.ts): o fechamento já abre sem ela.
+          semTaxa: contaSemTaxa(activeSession),
         };
       }
 

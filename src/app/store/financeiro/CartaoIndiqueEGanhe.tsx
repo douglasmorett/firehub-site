@@ -11,8 +11,9 @@ import { useEffect, useState } from "react";
 import { TEXTO_DA_SITUACAO, type SituacaoDaIndicacao } from "@/lib/indique-e-ganhe";
 import { fmtR } from "./ui";
 
-type Dados = {
+export type DadosDoIndiqueEGanhe = {
   link: string;
+  material: { codigo: string; nome: string | null; whatsapp: string | null };
   mensagem: string;
   valorDoCredito: number;
   indicadosParaIsencao: number;
@@ -31,17 +32,19 @@ const COR_DA_SITUACAO: Record<SituacaoDaIndicacao, { fundo: string; texto: strin
   NAO_VALEU: { fundo: "#FEF2F2", texto: "#B91C1C" },
 };
 
-export default function CartaoIndiqueEGanhe() {
-  const [dados, setDados] = useState<Dados | null>(null);
+/** `aoCarregar`: devolve os dados a quem usa o cartão (o Indique e ganhe monta o material de divulgação com eles). */
+export default function CartaoIndiqueEGanhe({ aoCarregar }: { aoCarregar?: (dados: DadosDoIndiqueEGanhe) => void } = {}) {
+  const [dados, setDados] = useState<DadosDoIndiqueEGanhe | null>(null);
   const [copiado, setCopiado] = useState(false);
 
   useEffect(() => {
     let vivo = true;
     fetch("/api/store/indique-e-ganhe", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((j) => vivo && j && setDados(j))
+      .then((j) => { if (vivo && j) { setDados(j); aoCarregar?.(j); } })
       .catch(() => {});
     return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!dados) return null;

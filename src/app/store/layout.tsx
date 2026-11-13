@@ -400,7 +400,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
                 <a href="/store" style={{ color: "#0F766E", fontSize: "0.85rem", fontWeight: 700, textDecoration: "underline" }}>
                   Já paguei — conferir de novo
                 </a>
-                <a href="https://wa.me/5522998851680?text=Preciso+de+ajuda+com+minha+conta+bloqueada" target="_blank" rel="noopener noreferrer" style={{ color: "#64748B", fontSize: "0.85rem", textDecoration: "underline" }}>
+                <a href="https://wa.me/5522981118514?text=Preciso+de+ajuda+com+minha+conta+bloqueada" target="_blank" rel="noopener noreferrer" style={{ color: "#64748B", fontSize: "0.85rem", textDecoration: "underline" }}>
                   Falar com suporte via WhatsApp
                 </a>
                 <SairDaConta style={{ color: "#94A3B8", fontSize: "0.8rem", textDecoration: "underline", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>

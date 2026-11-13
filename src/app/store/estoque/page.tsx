@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import EstoqueClient from "@/components/customer/EstoqueClient";
 import { temEstruturaDeLotes } from "@/lib/garantir-colunas";
+import { PERMISSAO_DADOS_SENSIVEIS, temPermissao } from "@/lib/cmv/acesso";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "FireHub — Controle de Estoque" };
@@ -27,7 +28,7 @@ export default async function EstoquePage() {
   // Obter detalhes do lojista
   const user = await prisma.user.findUnique({
     where: { email },
-    select: { id: true, name: true, storeName: true },
+    select: { id: true, name: true, storeName: true, permissions: true },
   });
 
   if (!user && role !== "ADMIN") {
@@ -64,8 +65,12 @@ export default async function EstoquePage() {
     fluxo = { criadas: 0, recebidos: 0, baixas: 0, disponivel: false };
   }
 
+  // A aba Controláveis é custo em R$: só quem vê dados sensíveis (lib/cmv/acesso.ts).
+  const veControlaveis = role !== "STAFF" || temPermissao(user?.permissions, PERMISSAO_DADOS_SENSIVEIS);
+
   return (
     <EstoqueClient 
+      veControlaveis={veControlaveis}
       fluxo={fluxo}
       userName={user?.name || session.user?.name || "Administrador"} 
       storeName={user?.storeName || "Minha Loja"} 

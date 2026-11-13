@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
   if (!loja) return NextResponse.json({ error: "Loja não encontrada." }, { status: 404 });
   const principal = await prisma.user.findUnique({
     where: { id: contaDaLoja(loja) },
-    select: { id: true, slug: true, storeName: true },
+    select: { id: true, slug: true, storeName: true, storePhone: true },
   });
   if (!principal) return NextResponse.json({ error: "Loja não encontrada." }, { status: 404 });
 
@@ -42,6 +42,8 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     link,
     mensagem: mensagemDeWhatsApp(link),
+    /** Para o material de divulgação personalizado (/material/*?indicacao=): o código do link, o nome e o WhatsApp da loja principal. */
+    material: { codigo: principal.slug || principal.id, nome: principal.storeName, whatsapp: principal.storePhone },
     valorDoCredito: VALOR_DO_CREDITO,
     indicadosParaIsencao: INDICADOS_PARA_ISENCAO,
     /** Na filial: o nome da loja principal, onde o crédito e a isenção valem. */

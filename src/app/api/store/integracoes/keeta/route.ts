@@ -90,10 +90,12 @@ export async function POST(req: NextRequest) {
   }
   const corpo = await req.json().catch(() => ({}));
   const urlBase = urlBaseDoFireHub(req.headers.get("host"));
+  // Recusa da Keeta volta como 422, não 502: no 502 o Cloudflare troca o JSON
+  // pela página dele e a tela só dizia "A Keeta não respondeu".
 
   if (corpo?.acao === "conectar") {
     const r = await linkDeAutorizacao(`${urlBase}/api/store/integracoes/keeta/retorno`);
-    if (!r.ok) return NextResponse.json({ error: `A Keeta não gerou o link de autorização: ${r.erro}` }, { status: 502 });
+    if (!r.ok) return NextResponse.json({ error: `A Keeta não gerou o link de autorização: ${r.erro}` }, { status: 422 });
     const res = NextResponse.json({ url: r.dados });
     res.cookies.set(COOKIE_DA_CONEXAO, assinarConexao(s.lojaId!), { httpOnly: true, sameSite: "lax", secure: urlBase.startsWith("https"), path: "/", maxAge: 30 * 60 });
     return res;
@@ -106,7 +108,7 @@ export async function POST(req: NextRequest) {
     const authId = String(corpo?.authId || "");
     const escolhida = Number(corpo?.keetaMerchantId);
     const r = await lojasDaAutorizacao(authId);
-    if (!r.ok) return NextResponse.json({ error: `A Keeta não confirmou a autorização: ${r.erro}` }, { status: 502 });
+    if (!r.ok) return NextResponse.json({ error: `A Keeta não confirmou a autorização: ${r.erro}` }, { status: 422 });
     // Só loja que ESTA autorização trouxe — nunca um número digitado.
     const loja = r.lojas.find((l) => l.id === escolhida);
     if (!loja) return NextResponse.json({ error: "Essa loja não está entre as que você autorizou na Keeta." }, { status: 400 });
@@ -131,7 +133,7 @@ export async function POST(req: NextRequest) {
   if (acao) {
     const r = await acao();
     console.log(`[Keeta] 🏪 ${corpo.acao} da loja ${s.lojaId} por ${s.email}: ${r.ok ? "ok" : r.erro}`);
-    if (!r.ok) return NextResponse.json({ error: `A Keeta recusou: ${r.erro}` }, { status: 502 });
+    if (!r.ok) return NextResponse.json({ error: `A Keeta recusou: ${r.erro}` }, { status: 422 });
     return NextResponse.json({ ok: true });
   }
 

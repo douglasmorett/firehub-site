@@ -90,6 +90,28 @@ export type Painel = {
   pendencias: Pendencia[];
 };
 
+/**
+ * A venda líquida de cada dia operacional: a régua única (lib/relatorios/
+ * regua-da-venda.ts), sem a taxa de entrega e sem reposição. Também do
+ * relatório dos Controláveis (lib/cmv/controlaveis-no-banco.ts).
+ */
+export async function vendasLiquidasPorDia(lojaId: string, tz: string, de: string, ate: string): Promise<Map<string, number>> {
+  const { inicio: t0, fim: t1 } = janelaDeDatas(de, ate, tz);
+  const pedidos = await prisma.customerOrder.findMany({
+    // Reposição (faltou item / troca) não é venda (lib/relatorios/sem-reposicao.ts).
+    where: { franchiseeId: lojaId, createdAt: { gte: t0, lt: t1 }, status: { notIn: [...STATUS_FORA_DA_VENDA] }, ...SEM_REPOSICAO },
+    select: { createdAt: true, status: true, totalAmount: true, deliveryFee: true, items: { select: { quantity: true, price: true } } },
+  });
+  const vendasPorDia = new Map<string, number>();
+  for (const p of pedidos) {
+    if (!entraNaVenda(p)) continue;
+    const dia = naLoja(p.createdAt, tz).dia;
+    const valor = (Number(p.totalAmount) || 0) - (Number(p.deliveryFee) || 0);
+    vendasPorDia.set(dia, (vendasPorDia.get(dia) || 0) + valor);
+  }
+  return vendasPorDia;
+}
+
 export async function montarPainel(e: { lojaId: string; nomeDaLoja: string; tz: string; goals: unknown; hoje: string; de: string; ate: string }): Promise<Painel> {
   const { lojaId, tz, de, ate } = e;
   const metaCmv = lerMeta(e.goals, "cmvPct", META_PADRAO_DO_CMV);
@@ -141,18 +163,7 @@ export async function montarPainel(e: { lojaId: string; nomeDaLoja: string; tz: 
 
   // ── Vendas (régua única, sem taxa de entrega) ──────────────────────────
   const { inicio: t0, fim: t1 } = janelaDeDatas(inicio, fim, tz);
-  const pedidos = await prisma.customerOrder.findMany({
-    // Reposição (faltou item / troca) não é venda (lib/relatorios/sem-reposicao.ts).
-    where: { franchiseeId: lojaId, createdAt: { gte: t0, lt: t1 }, status: { notIn: [...STATUS_FORA_DA_VENDA] }, ...SEM_REPOSICAO },
-    select: { createdAt: true, status: true, totalAmount: true, deliveryFee: true, items: { select: { quantity: true, price: true } } },
-  });
-  const vendasPorDia = new Map<string, number>();
-  for (const p of pedidos) {
-    if (!entraNaVenda(p)) continue;
-    const dia = naLoja(p.createdAt, tz).dia;
-    const valor = (Number(p.totalAmount) || 0) - (Number(p.deliveryFee) || 0);
-    vendasPorDia.set(dia, (vendasPorDia.get(dia) || 0) + valor);
-  }
+  const vendasPorDia = await vendasLiquidasPorDia(lojaId, tz, inicio, fim);
 
   const dias: DiaDoCmv[] = [];
   for (let d = inicio, guarda = 0; d <= fim && guarda < 800; d = somarDias(d, 1), guarda++) {
