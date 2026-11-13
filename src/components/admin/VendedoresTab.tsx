@@ -26,6 +26,12 @@ type Membro = {
   termoAceitoEm?: string | null;
   termoVersao?: string | null;
   termoVigente?: boolean;
+  /** Projeção do mês corrente só nas lojas dele (lib/parceiro/projecao-do-parceiro.ts): boleto previsto e comissão. */
+  projecao?: {
+    mes: string; boletos: number;
+    mensalidade: { garantido: number; aposta: number; seTodas: number };
+    comissao: { garantido: number; aposta: number; seTodas: number };
+  } | null;
 };
 type Embaixador = { id: string; name: string; email: string; asaasWalletId: string | null };
 
@@ -195,18 +201,18 @@ export default function VendedoresTab({ onVerCarteira }: { onVerCarteira: (vende
           <table className="fha-table">
             <thead>
               <tr>
-                <th>Vendedor</th><th>Clientes</th><th>Atendidos</th><th>Sem atendimento</th><th>Parados</th><th>Garantido / previsto</th><th>Mês atual</th><th>Asaas</th><th>Termo aceito em</th><th>Situação</th><th>Ações</th>
+                <th>Vendedor</th><th>Clientes</th><th>Atendidos</th><th>Sem atendimento</th><th>Parados</th><th>Garantido / previsto</th><th>Mês atual</th><th>Projeção do mês</th><th>Asaas</th><th>Termo aceito em</th><th>Situação</th><th>Ações</th>
               </tr>
             </thead>
             <tbody>
               {carregando && (
-                <tr><td colSpan={11} style={{ textAlign: "center", padding: 28, color: "#64748B" }}>Carregando a equipe...</td></tr>
+                <tr><td colSpan={12} style={{ textAlign: "center", padding: 28, color: "#64748B" }}>Carregando a equipe...</td></tr>
               )}
               {!carregando && erro && (
-                <tr><td colSpan={11} style={{ textAlign: "center", padding: 28, color: "#B91C1C" }}>{erro}</td></tr>
+                <tr><td colSpan={12} style={{ textAlign: "center", padding: 28, color: "#B91C1C" }}>{erro}</td></tr>
               )}
               {!carregando && !erro && equipe.length === 0 && (
-                <tr><td colSpan={11} style={{ textAlign: "center", padding: 32, color: "#64748B" }}>
+                <tr><td colSpan={12} style={{ textAlign: "center", padding: 32, color: "#64748B" }}>
                   Nenhum vendedor ainda. Cadastre o primeiro em <strong>+ Cadastrar vendedor</strong>.
                 </td></tr>
               )}
@@ -255,6 +261,17 @@ export default function VendedoresTab({ onVerCarteira }: { onVerCarteira: (vende
                         vendedor {brl(m.comissaoMes)}{(m.previsao?.comoEmbaixador ?? 0) > 0 && <> · embaixador {brl(m.previsao!.comoEmbaixador)}</>}
                       </div>
                       <div className="fha-sub">{m.linkPercent ?? "—"}% link · {m.sellerPercent}% atribuídas</div>
+                    </td>
+                    <td title="A projeção da aba Projeção, só nas lojas dele (carteira + indicação). Aposta = cada boleto pesado pela chance de ser pago. Abre loja a loja no Relatório.">
+                      {m.projecao ? (
+                        <>
+                          <div style={{ fontWeight: 800, color: "#15803D" }}>{brl(m.projecao.comissao.aposta)} <span className="fha-sub">comissão</span></div>
+                          <div className="fha-sub">até {brl(m.projecao.comissao.seTodas)} se todas pagarem</div>
+                          <div className="fha-sub">
+                            {m.projecao.boletos} boletos · mensalidade {brl(m.projecao.mensalidade.aposta)} (até {brl(m.projecao.mensalidade.seTodas)})
+                          </div>
+                        </>
+                      ) : "—"}
                     </td>
                     <td>
                       {m.asaasWalletId

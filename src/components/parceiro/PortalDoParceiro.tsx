@@ -25,12 +25,14 @@ import { AtalhoDoOutroPainel } from "@/components/paineis/TrocarDePainel";
 import FunilDoCrm from "@/components/crm/FunilDoCrm";
 import AgendaDaEquipe from "@/components/crm/AgendaDaEquipe";
 import RelatorioDoParceiro from "@/components/parceiro/RelatorioDoParceiro";
+import ProjecaoDoParceiro from "@/components/parceiro/ProjecaoDoParceiro";
 import RelatorioDaCarteira from "@/components/perfil-da-loja/RelatorioDaCarteira";
 import ComoVoceGanha from "@/components/perfil-da-loja/ComoVoceGanha";
 import MateriaisDeDivulgacao from "@/components/materiais/MateriaisDeDivulgacao";
 import { OcultarValoresProvider, OlhoDosValores } from "@/components/parceiro/ValoresOcultos";
 import { indicacaoDeEmbaixador, type Papel } from "@/lib/parceiro/regras";
 import type { RelatorioDoParceiro as Relatorio } from "@/lib/parceiro/relatorio";
+import type { ProjecaoDoParceiro as Projecao } from "@/lib/parceiro/projecao-do-parceiro";
 
 type Aba = "numeros" | "carteira" | "mapa" | "contatos" | "agenda" | "materiais";
 const ABAS: { chave: Aba; rotulo: string; Icone: typeof Handshake; soVendedor: boolean }[] = [
@@ -58,6 +60,7 @@ export default function PortalDoParceiro({
   voltarPara = "/admin?aba=vendedores",
   disparo,
   mapaDeProspeccao,
+  projecao,
 }: {
   relatorio: Relatorio;
   modo?: "PARCEIRO" | "ADMIN";
@@ -69,6 +72,8 @@ export default function PortalDoParceiro({
   disparo?: { pacotes: { mensagens: number; ganho: number }[]; ganhoNoMes: number } | null;
   /** LUGAR PREVISTO: o mapa de prospecção (src/components/prospeccao). Sem ele, a aba não aparece. */
   mapaDeProspeccao?: ReactNode;
+  /** A projeção do mês SÓ das lojas dele (lib/parceiro/projecao-do-parceiro.ts), já recortada no servidor. */
+  projecao?: Projecao | null;
 }) {
   const p = relatorio.parceiro;
   const temCrm = modo === "PARCEIRO" && p.isVendedor;
@@ -167,6 +172,7 @@ export default function PortalDoParceiro({
               />
             </div>
           )}
+          {projecao && <ProjecaoDoParceiro projecao={projecao} modo={modo} />}
           <RelatorioDoParceiro relatorio={relatorio} modo={modo} podeMarcarAtendimento={modo === "PARCEIRO" && p.isVendedor && p.ativo} />
         </main>
       )}

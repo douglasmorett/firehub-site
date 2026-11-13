@@ -392,6 +392,25 @@ export async function montarProjecao(agora = new Date()) {
 
 export type ProjecaoDoMes = Awaited<ReturnType<typeof montarProjecao>>;
 
+/**
+ * A mesma projeção, guardada 5 minutos na memória — para o portal do parceiro
+ * e a aba Vendedores (lib/parceiro/projecao-do-parceiro.ts recorta por
+ * parceiro), que abrem bem mais que a aba Projeção e não precisam refazer a
+ * leitura da plataforma inteira a cada abertura.
+ */
+const PROJECAO_GUARDADA_MS = 5 * 60_000;
+let projecaoGuardada: { em: number; valor: Promise<ProjecaoDoMes> } | null = null;
+export function projecaoDoMesGuardada(): Promise<ProjecaoDoMes> {
+  const agora = Date.now();
+  if (!projecaoGuardada || agora - projecaoGuardada.em > PROJECAO_GUARDADA_MS) {
+    const valor = montarProjecao();
+    projecaoGuardada = { em: agora, valor };
+    // Falhou: a próxima chamada tenta de novo em vez de guardar o erro.
+    valor.catch(() => { if (projecaoGuardada?.valor === valor) projecaoGuardada = null; });
+  }
+  return projecaoGuardada.valor;
+}
+
 /** Meia-noite de um "AAAA-MM-DD" em Brasília, como instante. */
 function intervaloDoDia(dia: string): Date {
   return new Date(`${dia}T00:00:00-03:00`);

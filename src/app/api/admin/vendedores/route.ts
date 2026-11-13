@@ -7,6 +7,8 @@ import { atividadeDasLojas } from "@/lib/atividade-da-loja";
 import { ultimosAceites } from "@/lib/parceiro/aceite-do-termo";
 import { VERSAO_DO_TERMO_DE_COMISSIONAMENTO } from "@/lib/parceiro/termo-de-comissionamento";
 import { relatorioDoParceiro } from "@/lib/parceiro/relatorio";
+import { projecaoDoMesGuardada } from "@/lib/projecao-do-mes";
+import { recortarProjecao } from "@/lib/parceiro/projecao-do-parceiro";
 import { gerarCodigoUnico, gerarSenhaTemporaria, percentualDoVendedor } from "@/lib/vendedores";
 
 async function ehAdmin() {
@@ -39,11 +41,19 @@ export async function GET() {
   // O termo de comissionamento que cada um aceitou (lib/parceiro/aceite-do-termo.ts).
   const aceites = await ultimosAceites(vendedores.map((v) => v.id)).catch(() => new Map());
 
+  // A projeção do mês (a da aba Projeção), uma leitura para a equipe toda;
+  // cada um recebe o recorte das lojas dele (lib/parceiro/projecao-do-parceiro.ts).
+  const projecaoDoMes = await projecaoDoMesGuardada().catch((e) => {
+    console.error("[admin/vendedores] projeção do mês:", e?.message);
+    return null;
+  });
+
   const equipe = await Promise.all(
     vendedores.map(async (v) => {
       // A MESMA conta do portal dele (lib/parceiro/relatorio.ts): loja que ele
       // indicou conta como indicação, não soma os 3% de vendedor.
       const rel = await relatorioDoParceiro(v.id);
+      const proj = rel && projecaoDoMes ? recortarProjecao(projecaoDoMes, rel.lojas) : null;
       return {
         id: v.id,
         name: v.name,
@@ -79,6 +89,10 @@ export async function GET() {
               previsto: Math.round((rel.resumo.mesAnterior.recebido + rel.resumo.mesAnterior.aVencer + rel.resumo.mesAnterior.atrasado) * 100) / 100,
               comoEmbaixador: Math.round((rel.resumo.mesAtual.porPapel.EMBAIXADOR.comissao + rel.resumo.mesAtual.porPapel.REDE.comissao) * 100) / 100,
             }
+          : null,
+        // Projeção do mês corrente nas lojas dele (carteira + indicação): o boleto previsto e a comissão.
+        projecao: proj
+          ? { mes: proj.mes, boletos: proj.boletos, mensalidade: proj.mensalidade, comissao: proj.comissao }
           : null,
       };
     })

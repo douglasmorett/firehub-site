@@ -7,6 +7,7 @@ import { etapaValida, origemValida } from "@/lib/crm/etapas";
 import { mensagensDoContato } from "@/lib/crm/mensagens";
 import { contatoCompleto, mensagemParaTela, reuniaoParaTela } from "@/lib/crm/serializar";
 import { estadoDaLojaParaSuporte } from "@/lib/atendimento/estado-da-loja";
+import { lojaEstaNaCarteira } from "@/lib/perfil-da-loja/no-banco";
 
 export const dynamic = "force-dynamic";
 
@@ -43,11 +44,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ contato: contatoCompleto({ ...contato, naoLidas: 0 }, nomes), mensagens: novas.map(mensagemParaTela) });
   }
 
+  // O raio-x da loja (fatura em aberto, pedidos) só sai para o vendedor se a
+  // loja é da carteira/indicação DELE — contato dele ligado a loja de outro não abre.
+  const veALoja = !!contato.userId && (quem.tipo === "ADMIN" || (await lojaEstaNaCarteira(quem.id, contato.userId)));
   const [mensagens, eventos, reunioes, loja] = await Promise.all([
     veConversas ? mensagensDoContato(id, 300) : Promise.resolve([] as Awaited<ReturnType<typeof mensagensDoContato>>),
     prisma.crmEvento.findMany({ where: { contatoId: id }, orderBy: { criadoEm: "desc" }, take: 60 }),
     prisma.agendaReuniao.findMany({ where: { contatoId: id }, orderBy: { inicio: "desc" }, take: 20, include: { contato: true } }),
-    contato.userId ? estadoDaLojaParaSuporte(contato.userId, { aoVivo: req.nextUrl.searchParams.get("aoVivo") === "1" }).catch(() => null) : Promise.resolve(null),
+    veALoja ? estadoDaLojaParaSuporte(contato.userId!, { aoVivo: req.nextUrl.searchParams.get("aoVivo") === "1" }).catch(() => null) : Promise.resolve(null),
   ]);
   if (veConversas && contato.naoLidas > 0) await prisma.crmContato.update({ where: { id }, data: { naoLidas: 0 } });
 
