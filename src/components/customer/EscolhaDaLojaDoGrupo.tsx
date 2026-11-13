@@ -103,6 +103,27 @@ export default function EscolhaDaLojaDoGrupo({
   }, [vitrine.lojas]);
   const porId = useMemo(() => new Map(lojas.map((l) => [l.id, l])), [lojas]);
 
+  // O link do anúncio passa adiante: /lojas/x?cupom=FRETE (e os utm_*) leva o
+  // cupom ao cardápio da unidade escolhida, que o aplica sozinho (?cupom= em
+  // CustomerStorePage). Pizzaria 17, 13/11/2026: anúncio com cupom só para
+  // quem clica, com as duas unidades. No clique e não no href: a página vem
+  // do cache sem a query, e trocar o href depois da hidratação não pega.
+  useEffect(() => {
+    const repassar = new URLSearchParams();
+    new URLSearchParams(window.location.search).forEach((v, k) => {
+      if (k === "cupom" || k.startsWith("utm_") || k === "fbclid" || k === "gclid") repassar.set(k, v);
+    });
+    if (![...repassar.keys()].length) return;
+    const aoClicar = (e: MouseEvent) => {
+      const a = (e.target as HTMLElement | null)?.closest?.("a");
+      const href = a?.getAttribute("href") || "";
+      if (!a || !href.startsWith("/loja/") || href.includes("?")) return;
+      a.setAttribute("href", `${href}?${repassar.toString()}`);
+    };
+    document.addEventListener("click", aoClicar, true);
+    return () => document.removeEventListener("click", aoClicar, true);
+  }, []);
+
   useEffect(() => {
     try {
       const id = localStorage.getItem(CHAVE_ULTIMA(slug));
