@@ -40,6 +40,7 @@ import { FireHubLocal } from "./firehub-local";
 import { FALHAS_DA_SUBIDA_ATE_DESISTIR, passoDaVolta, subirSaida } from "./subida";
 import { abrirPortaDaLoja, paginaDaEntrada, type DecisaoDaPorta } from "./porta-da-loja";
 import { garantirAtalho, origensDaNuvem } from "./atalho";
+import { pastaDasFotos, rodadaDeFotos } from "./fotos";
 import {
   chaveRecusada,
   decidirRota,
@@ -110,6 +111,9 @@ async function principal(): Promise<void> {
   // foto de clientes no primeiro ciclo (achado foto-1).
   let ultimaFotoDeClientes = Date.parse(estado.fotoEm || "") || 0;
   let tique = 0;
+  /** Fotos do cardápio (fotos.ts): uma rodada de cada vez, e as que a nuvem não tem esperam. */
+  let baixandoFotos = false;
+  const fotoQueFaltou = new Map<string, number>();
   let ultimoErro = "";
   /** Falha ao ligar o FireHub local: fica até ele subir (o ciclo apaga o ultimoErro a cada volta). */
   let erroDoLocal = "";
@@ -412,6 +416,14 @@ async function principal(): Promise<void> {
               }
             }
             if (tique % 2 === 0) await espelhar();
+            // As fotos do cardápio (fotos.ts): uma rodada por minuto, por fora do
+            // ciclo — download lento não pode atrasar o espelho nem a queda.
+            if (tique % 20 === 0 && !baixandoFotos) {
+              baixandoFotos = true;
+              void rodadaDeFotos(pool, { nuvem: cfg.nuvem, pasta: pastaDasFotos(cfg.pasta), faltouNaNuvem: fotoQueFaltou, registro })
+                .catch((e) => registro(`Fotos do cardápio: ${String(e?.message || e)}`))
+                .finally(() => { baixandoFotos = false; });
+            }
             if (Date.now() - ultimaFotoDeClientes > 60 * 60_000) {
               await fazerFoto(pool, nuvem, registro, (t) => t === "StoreCustomer");
               ultimaFotoDeClientes = Date.now();
