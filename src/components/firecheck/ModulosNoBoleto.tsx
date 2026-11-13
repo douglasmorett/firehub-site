@@ -233,6 +233,11 @@ function Termo({ plano, modulos, preco, combo, diasDeTeste, comTeste, criaConta,
         {criaConta && (
           <div style={{ margin: "10px 20px 0", fontSize: 13.5, color: "#334155", lineHeight: 1.5 }}>
             Esta loja ainda não tem FireCheck: ao concordar, a conta é criada já conectada a ela, e a senha aparece na tela uma vez.
+            {/* Pizzaria 17 (13/11): quem já tinha FireCheck concordou aqui, ganhou uma conta nova e
+                seguiu entrando na antiga, vencida — pagava uma e usava a outra. */}
+            <div style={{ marginTop: 8, padding: "8px 10px", background: "#FFF7ED", border: "1px solid #FED7AA", borderRadius: 8, color: "#7C2D12", fontWeight: 600 }}>
+              Já tem uma conta do FireCheck? Feche esta janela e conecte ela no quadro <b>&quot;Já usa o FireCheck? Conecte à loja&quot;</b>, no fim da página. Assim o plano entra na conta que você já usa, com os seus dados.
+            </div>
           </div>
         )}
         <ol style={{ margin: "14px 20px 0", paddingLeft: 20, fontSize: 13.5, color: "#334155", lineHeight: 1.55, display: "grid", gap: 6 }}>
