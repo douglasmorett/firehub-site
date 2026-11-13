@@ -871,6 +871,14 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       taxasExtras += balanca;
       linhasExtras.push(`Balança R$${balanca.toFixed(2)}`);
     }
+    // Caixa de mercado: R$ 97 por computador de caixa em uso no mês, fora do
+    // teste (lib/caixa-mercado/assinatura.ts), à parte da mensalidade.
+    const { cobrancaDoCaixaNoMes } = await import("@/lib/caixa-mercado/assinatura");
+    const caixaDeMercado = await cobrancaDoCaixaNoMes(franchiseeId, monthStart, monthEnd);
+    if (caixaDeMercado > 0) {
+      taxasExtras += caixaDeMercado;
+      linhasExtras.push(`Caixa de mercado R$${caixaDeMercado.toFixed(2)}`);
+    }
     // Cotação automática: R$ 97 À PARTE da mensalidade; ativo em algum dia do
     // mês fora do teste = o mês inteiro (lib/cotacao/assinatura.ts).
     const { cobrancaDaCotacaoNoMes } = await import("@/lib/cotacao/assinatura");
@@ -1306,13 +1314,16 @@ export async function getCurrentCycleView(franchiseeId: string) {
   // Balança — a mesma conta do fechamento.
   const { cobrancaDaBalancaNoMes } = await import("@/lib/balanca/assinatura");
   const balanca = cobraServicos ? await cobrancaDaBalancaNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd) : 0;
+  // Caixa de mercado — a mesma conta do fechamento.
+  const { cobrancaDoCaixaNoMes } = await import("@/lib/caixa-mercado/assinatura");
+  const caixaDeMercado = cobraServicos ? await cobrancaDoCaixaNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd) : 0;
   // Cotação automática — a mesma conta do fechamento.
   const { cobrancaDaCotacaoNoMes } = await import("@/lib/cotacao/assinatura");
   const cotacao = cobraServicos ? await cobrancaDaCotacaoNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd) : 0;
   // FireCheck — a mesma conta do fechamento.
   const { cobrancaDoFirecheckNoMes } = await import("@/lib/firecheck-modulos/assinatura");
   const firecheck = cobraServicos ? await cobrancaDoFirecheckNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd) : 0;
-  const taxasDoCiclo = trafegoPago + totem + lojasExtras.valor + assessor + aplicativo + multimarcas + tabletNaMesa + balanca + cotacao + firecheck;
+  const taxasDoCiclo = trafegoPago + totem + lojasExtras.valor + assessor + aplicativo + multimarcas + tabletNaMesa + balanca + caixaDeMercado + cotacao + firecheck;
 
   const calculada = emTeste ? 0 : Math.max(cycle.amountDue, devidoAgora);
   const indique = emTeste ? SEM_INDIQUE : await indiqueDoMes(Math.max(0, calculada - cycle.amountOffset));
@@ -1332,7 +1343,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
     // Discriminado para o painel poder mostrar a linha em vez de só inflar o
     // total — "por que subiu R$ 200?" tem que ter resposta na tela.
     mensalidadePrevista,
-    taxas: { trafegoPago, totem, lojasExtras: lojasExtras.valor, assessor, aplicativo, multimarcas, tabletNaMesa, balanca, cotacao, firecheck },
+    taxas: { trafegoPago, totem, lojasExtras: lojasExtras.valor, assessor, aplicativo, multimarcas, tabletNaMesa, balanca, caixaDeMercado, cotacao, firecheck },
     lojasExtras,
     status: cycle.status,
     isExempt: false,
@@ -1388,6 +1399,7 @@ export async function previsaoDoFechamento(franchiseeId: string, yearMonth: stri
     + (await cobrancaDoAppNoMes(franchiseeId, monthStart, monthEnd))
     + (await cobrancaDoMultimarcasNoMes(franchiseeId, monthStart, monthEnd))
     + (await (await import("@/lib/tablet-da-mesa/assinatura")).cobrancaDoTabletNoMes(franchiseeId, monthStart, monthEnd))
+    + (await (await import("@/lib/caixa-mercado/assinatura")).cobrancaDoCaixaNoMes(franchiseeId, monthStart, monthEnd))
     + (await (await import("@/lib/firecheck-modulos/assinatura")).cobrancaDoFirecheckNoMes(franchiseeId, monthStart, monthEnd));
   const agg = await prisma.customerOrder.aggregate({
     where: { franchiseeId, ...VENDAS_QUE_CONTAM, createdAt: { gte: inicio, lt: monthEnd } },

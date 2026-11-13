@@ -315,7 +315,16 @@ export async function registrarResultadoTef(
   if (pedido.status === "CANCELADO") {
     return DESFAZER(409, "PEDIDO_CANCELADO", "Este pedido foi cancelado. A transação do pinpad será desfeita.");
   }
-  const esperado = Math.round((pedido.totalAmount || 0) * 100);
+  // CAIXA DE MERCADO (lib/caixa-mercado/venda.ts): o pinpad cobra só a parte
+  // do cartão (o resto pode ter sido em dinheiro ou Pix) e quem conclui a
+  // venda é o caixa — ENTREGUE na hora, sem cozinha nem KDS. A regra de
+  // dinheiro é a mesma: CONFIRMAR só com a venda gravada.
+  const caixaDeMercado = await import("@/lib/caixa-mercado/venda");
+  const parteDoCaixa = await caixaDeMercado.parteTefDaVendaDoCaixa(pedido.id);
+  const confirmar = parteDoCaixa != null
+    ? caixaDeMercado.concluirVendaComTef
+    : (await import("@/lib/order-payment-confirm")).confirmOrderPayment;
+  const esperado = parteDoCaixa ?? Math.round((pedido.totalAmount || 0) * 100);
   if (dados.valorCentavos !== esperado) {
     console.error(`[TEF] Pedido ${pedido.id}: esperado ${esperado} centavos, o pinpad aprovou ${dados.valorCentavos}. Mandando desfazer.`);
     return DESFAZER(409, "VALOR_DIVERGENTE", "O valor aprovado no pinpad não é o valor do pedido.");
@@ -338,15 +347,13 @@ export async function registrarResultadoTef(
     const agora = await prisma.customerOrder.findUnique({ where: { id: pedido.id }, select: SELECAO });
     if (agora && transacaoGravada(agora) === transacaoId && agora.status !== "CANCELADO") {
       // A mesma transação chegou duas vezes ao mesmo tempo: a outra cuidou.
-      const { confirmOrderPayment } = await import("@/lib/order-payment-confirm");
-      const c = await confirmOrderPayment(pedido.id);
+      const c = await confirmar(pedido.id);
       return { status: 200, corpo: { acao: "CONFIRMAR", podeConfirmar: true, jaConfirmado: true, numero: c?.dailyOrderNumber ?? null } };
     }
     return DESFAZER(409, agora?.status === "CANCELADO" ? "PEDIDO_CANCELADO" : "JA_PAGO", "Este pedido já tem outro pagamento.");
   }
 
-  const { confirmOrderPayment } = await import("@/lib/order-payment-confirm");
-  const confirmado = await confirmOrderPayment(pedido.id);
+  const confirmado = await confirmar(pedido.id);
   if (!confirmado || confirmado.status === "CANCELADO" || !confirmado.paymentPaidAt) {
     // Cancelaram o pedido entre a leitura e a confirmação: a venda NÃO existe,
     // então o cartão tem que voltar. Tira o carimbo de recebido.
