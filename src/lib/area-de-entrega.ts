@@ -211,6 +211,12 @@ export type VeredictoDeEntrega = {
    * (lib/entrega-do-robo.ts `avaliarEntregaDoRobo`).
    */
   faltaBairro?: boolean;
+  /**
+   * Com `faltaBairro`: o pedaço do endereço que PARECIA bairro e não casou com
+   * a lista (palpite do texto, não o cliente dizendo "bairro X"). Pode ser nome
+   * antigo de rua ou referência: quem lê decide pela conversa.
+   */
+  bairroNaoReconhecido?: string;
 };
 
 export function normalizarTexto(texto: unknown): string {

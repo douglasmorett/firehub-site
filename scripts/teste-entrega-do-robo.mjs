@@ -309,7 +309,14 @@ console.log("\n12) Loja por bairro, endereço sem bairro: pergunta o bairro, nã
   const comBairro = (await pelaConversa("W 5 travessa Francisca casa 12 Lagomar")).veredito;
   conferir("com 'Lagomar' no fim: ATENDE com a taxa do bairro", comBairro.resultado === "ATENDE" && comBairro.taxa === 3 && !comBairro.faltaBairro, comBairro);
   const outroBairro = (await pelaConversa("W 5 travessa Francisca casa 12 Imboassica")).veredito;
-  conferir("bairro dito e fora da lista: continua FORA", outroBairro.resultado === "FORA" && !outroBairro.faltaBairro, outroBairro);
+  // Palpite do texto (sem "bairro X"): pergunta o bairro, com o palpite junto para o robô julgar (13/11).
+  conferir("pedaço que parece bairro e não está na lista: pergunta, com o palpite", outroBairro.resultado === "DESCONHECIDO" && outroBairro.faltaBairro === true && outroBairro.bairroNaoReconhecido === "Imboassica", outroBairro);
+  for (const t of ["Avenida W 24, 150, sentido praia", "Rua W 26 número 40, casa do muro amarelo", "Travessa da W 28, 12, depois da pracinha"]) {
+    const v = (await pelaConversa(t)).veredito;
+    conferir(`nome antigo de rua "${t}": pergunta o bairro, nunca FORA`, v.resultado === "DESCONHECIDO" && v.faltaBairro === true, v);
+    const comLagomar = (await pelaConversa(`${t}, Lagomar`)).veredito;
+    conferir(`"${t}" + Lagomar: ATENDE por R$ 3`, comLagomar.resultado === "ATENDE" && comLagomar.taxa === 3, comLagomar);
+  }
   const peloCampo = (await avaliarEntregaDoRobo(avaliar, { endereco: "Rua A, 10", bairro: "Imboassica", gps: null })).veredito;
   conferir("bairro no campo da tag e fora da lista: FORA", peloCampo.resultado === "FORA", peloCampo);
   const explicito = (await pelaConversa("Rua A, 10, bairro Imboassica")).veredito;
