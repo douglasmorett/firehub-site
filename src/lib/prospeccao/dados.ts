@@ -187,7 +187,7 @@ export async function lojasDoMapa(cidade: string, caixa: CaixaDaCidade | null): 
     prisma.user.findMany({
       where: { role: "FRANCHISEE", ownerId: null },
       select: {
-        id: true, name: true, storeName: true, email: true, city: true, storeAddress: true,
+        id: true, name: true, storeName: true, city: true, storeAddress: true,
         storeLatLng: true, slug: true, vendedor: { select: { name: true } },
       },
     }),
@@ -202,7 +202,8 @@ export async function lojasDoMapa(cidade: string, caixa: CaixaDaCidade | null): 
     if (!pelaCidade && !peloPonto) continue;
     saida.push({
       id: l.id,
-      nome: l.storeName || l.name || l.email,
+      // Sem o e-mail da loja: o mapa abre para o vendedor, e a loja pode não ser da carteira dele.
+      nome: l.storeName || l.name || "Loja do FireHub",
       lat: ponto?.lat ?? null,
       lng: ponto?.lng ?? null,
       endereco: l.storeAddress || null,
