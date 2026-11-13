@@ -57,6 +57,28 @@ async function main() {
   confere(!/semEspelho\.length > 0 \? semEspelho : /.test(fonte), "a linha 'semEspelho.length > 0 ? semEspelho : menuProducts' saiu");
   confere(/origemIntegracao: true/.test(fonte), "o select do cardápio público traz origemIntegracao");
 
+  console.log("\n[6] Código PDV só conecta quando o nome confirma (Ragnar, 12/11)");
+  const { nomesCompativeis } = await import("../src/lib/espelho-de-integracao");
+  const errados: [string, string][] = [
+    ["Combo Promo - Hel Burger + Fritas + Bebida 350ml Grátis", "Picles"],
+    ["Ubbe Milkshake de Morango 300ml", "Lua de Valhalla"],
+    ["Combo Promo - Ragnarok Burger + Fritas + Bebida 350ml Grátis", "Chopp de Cerveja"],
+    ["Hel Burger - ( Burguer Artesanal )", "Pizza Mussarela Gd 35cm"],
+    ["Tyr Burger - ( Burguer Artesanal )", "Sprite Lata 350ml"],
+    ["Coca-Cola Sem Açúcar 350ml", "Combo Cnut"],
+    ["Combo Promo - Odin Burger + Fritas + Bebida 350ml Grátis", "Salada"],
+  ];
+  for (const [item, produto] of errados) confere(!nomesCompativeis(item, produto), `"${item}" NÃO liga em "${produto}"`);
+  const certos: [string, string][] = [
+    ["Hel Burger - ( Burguer Artesanal )", "Hel Burger"],
+    ["X-Burger", "X Burger"],
+    ["Coca-Cola Lata 350ml", "Coca Cola lata"],
+    ["Pizza Calabresa Grande", "Calabresa"],
+    ["Milkshake de Morango 300ml", "Milk Shake Morango"],
+  ];
+  for (const [item, produto] of certos) confere(nomesCompativeis(item, produto), `"${item}" liga em "${produto}"`);
+  confere(nomesCompativeis("", "Qualquer"), "sem nome do item, vale o código");
+
   console.log(`\n${ok} ok, ${falhas} falha(s)`);
   process.exit(falhas > 0 ? 1 : 0);
 }

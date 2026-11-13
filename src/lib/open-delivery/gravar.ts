@@ -63,7 +63,7 @@ export async function gravarPedidoOpenDelivery(traducao: TraducaoOD, rotulo: str
   // por item, na mesma ordem.
   await Promise.all(
     traducao.espelhos.map(async (e, idx) => {
-      const real = await produtoRealDoItem({ franchiseeId: lojaId, codigoExterno: e.codigoExterno, idDoEspelho: e.id });
+      const real = await produtoRealDoItem({ franchiseeId: lojaId, codigoExterno: e.codigoExterno, idDoEspelho: e.id, nomeDoItem: e.nome });
       if (real && traducao.items[idx]) traducao.items[idx].menuProduct = { connect: { id: real } };
       else await corrigirNomeDoEspelho(e.id, e.nome, lojaId, rotulo);
     }),
