@@ -136,6 +136,16 @@ class GarcomActivity : AppCompatActivity() {
      * cobrar já some sozinho para quem não pode.
      */
     private var podeFecharConta: Boolean = true
+
+    /** "Pode tirar a taxa de serviço" do cadastro (/api/garcom/me). O servidor barra igual. */
+    private var podeTirarTaxa: Boolean = true
+
+    /**
+     * Contas que o cliente pediu sem taxa de serviço, por sessão. Quem guarda é
+     * o servidor (POST .../conta, lib/taxa-da-mesa.ts); isto só evita buscar a
+     * conta duas vezes ao abrir a mesa.
+     */
+    private val semTaxaPorSessao = HashMap<String, Boolean>()
     private var jaConferiuOAcesso = false
     private var cardapio: CardapioDoSalao? = null
     private val carrinhos = HashMap<String, MutableList<ItemDoCarrinho>>()
@@ -249,6 +259,7 @@ class GarcomActivity : AppCompatActivity() {
                     val garcom = (r as? ApiDoGarcom.Resposta.Ok)?.json?.optJSONObject("garcom") ?: return@post
                     CofreDoGarcom.atualizarNome(this, texto(garcom, "name"))
                     if (garcom.has("podeFecharConta")) podeFecharConta = garcom.optBoolean("podeFecharConta", true)
+                    if (garcom.has("podeTirarTaxa")) podeTirarTaxa = garcom.optBoolean("podeTirarTaxa", true)
                     txtQuemEsta.text = CofreDoGarcom.nome(this)?.let { getString(R.string.garcom_logado_como, it) } ?: ""
                 }
             }
@@ -530,6 +541,7 @@ class GarcomActivity : AppCompatActivity() {
                 is ApiDoGarcom.Entrada.Ok -> {
                     CofreDoGarcom.guardar(this, r.cookie, r.nome, slug, login)
                     podeFecharConta = true
+                    podeTirarTaxa = true
                     conferirAcesso()
                     carrinhos.clear()
                     cardapio = null
@@ -701,6 +713,8 @@ class GarcomActivity : AppCompatActivity() {
         val total: Double,
         val pago: Double,
         val cobrancaViva: JSONObject?,
+        /** O cliente pediu sem taxa de serviço. Nulo: o servidor ainda não sabe guardar isso (antes do deploy). */
+        val semTaxa: Boolean?,
     ) {
         val falta: Long get() = maxOf(0L, Dinheiro.centavos(total) - Dinheiro.centavos(pago))
     }
@@ -709,11 +723,19 @@ class GarcomActivity : AppCompatActivity() {
         val mesa = tela.mesa
         titulo(nomeDaMesa(mesa))
 
-        val taxa = taxaDaLoja
+        val taxaDaLojaAgora = taxaDaLoja
+        val achavaSemTaxa = semTaxaPorSessao[mesa.sessaoId] == true
         chamar(getString(R.string.garcom_carregando_conta), { c ->
             val base = "/api/store/table-sessions/" + ApiDoGarcom.codificar(mesa.sessaoId)
-            val conta = ApiDoGarcom.get("$base/conta?taxa=$taxa", c)
+            var conta = ApiDoGarcom.get("$base/conta?taxa=" + (if (achavaSemTaxa) 0.0 else taxaDaLojaAgora), c)
             if (conta !is ApiDoGarcom.Resposta.Ok) return@chamar conta
+            // A escolha da taxa mora na conta, no servidor: outro garçom ou o
+            // caixa pode ter mudado. Se não é a que a tela supôs, busca de novo.
+            val semTaxa = conta.json?.takeIf { it.has("semTaxa") }?.optBoolean("semTaxa")
+            if (semTaxa != null && semTaxa != achavaSemTaxa) {
+                conta = ApiDoGarcom.get("$base/conta?taxa=" + (if (semTaxa) 0.0 else taxaDaLojaAgora), c)
+                if (conta !is ApiDoGarcom.Resposta.Ok) return@chamar conta
+            }
             val pagamentos = ApiDoGarcom.get("$base/pagamentos", c)
             // Sem o "já pago", o "falta pagar" viraria o total e cobraria a mais.
             if (pagamentos !is ApiDoGarcom.Resposta.Ok) return@chamar pagamentos
@@ -736,6 +758,7 @@ class GarcomActivity : AppCompatActivity() {
             }
         }) { ok ->
             val conta = lerConta(ok.json ?: JSONObject())
+            conta.semTaxa?.let { semTaxaPorSessao[mesa.sessaoId] = it }
             desenharMesa(tela, conta)
         }
     }
@@ -771,6 +794,7 @@ class GarcomActivity : AppCompatActivity() {
             total = numero(c, "total") ?: 0.0,
             pago = juntos.optJSONObject("pagamentos")?.let { numero(it, "totalPago") } ?: 0.0,
             cobrancaViva = viva,
+            semTaxa = if (c.has("semTaxa")) c.optBoolean("semTaxa") else null,
         )
     }
 
@@ -826,6 +850,10 @@ class GarcomActivity : AppCompatActivity() {
         )
         conteudo.addView(resumo)
 
+        // O cliente pode pagar sem a taxa de serviço. Só aparece com o
+        // servidor que guarda a escolha (conta.semTaxa) e loja que cobra taxa.
+        if (conta.semTaxa != null && taxaDaLoja > 0.0) conteudo.addView(escolhaDaTaxa(tela, conta, conta.semTaxa))
+
         val carrinho = carrinhos[mesa.sessaoId].orEmpty()
         if (carrinho.isNotEmpty()) {
             val caixa = pecas.cartao(destaque = true)
@@ -863,6 +891,47 @@ class GarcomActivity : AppCompatActivity() {
         pecas.habilitar(cobrar, conta.falta >= VALOR_MINIMO && podeFecharConta)
         if (!podeFecharConta) cobrar.text = getString(R.string.garcom_sem_permissao_de_cobrar)
         noRodape(lancar, cobrar)
+    }
+
+    /** "Taxa de serviço (10%): [Incluir] [Tirar]" — o escolhido fica destacado. */
+    private fun escolhaDaTaxa(tela: Tela.Mesa, conta: ContaDaMesa, semTaxa: Boolean): View {
+        val caixa = pecas.cartao()
+        caixa.addView(pecas.texto(getString(R.string.garcom_taxa, formatarPct(taxaDaLoja)), 17f, negrito = true))
+        val botoes = pecas.linha().apply { setPadding(0, pecas.dp(8), 0, 0) }
+        fun opcao(rotulo: String, tirar: Boolean, primeiro: Boolean) =
+            pecas.botao(rotulo, principal = tirar == semTaxa, alturaDp = 56, margemTopo = 0) {
+                mudarTaxa(tela, conta, tirar)
+            }.apply {
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    if (!primeiro) marginStart = pecas.dp(8)
+                }
+            }
+        botoes.addView(opcao(getString(R.string.garcom_taxa_incluir), tirar = false, primeiro = true))
+        val tirar = opcao(getString(R.string.garcom_taxa_tirar), tirar = true, primeiro = false)
+        botoes.addView(tirar)
+        caixa.addView(botoes)
+        if (!podeTirarTaxa && !semTaxa) {
+            pecas.habilitar(tirar, false)
+            caixa.addView(pecas.texto(getString(R.string.garcom_taxa_so_caixa), 15f, R.color.texto_fraco, margemTopo = 6))
+        }
+        return caixa
+    }
+
+    /** Grava no servidor (POST .../conta) e recarrega a mesa: total, falta pagar e conta impressa mudam juntos. */
+    private fun mudarTaxa(tela: Tela.Mesa, conta: ContaDaMesa, tirar: Boolean) {
+        if (conta.semTaxa == tirar) return
+        // A cobrança que está na maquininha foi calculada com a outra escolha.
+        if (conta.cobrancaViva != null) {
+            avisar(getString(R.string.garcom_taxa_com_cobranca))
+            return
+        }
+        val caminho = "/api/store/table-sessions/" + ApiDoGarcom.codificar(tela.mesa.sessaoId) + "/conta"
+        val corpo = JSONObject().put("semTaxa", tirar)
+        chamar(getString(R.string.garcom_mudando_taxa), { c -> ApiDoGarcom.post(caminho, corpo, c) }) {
+            semTaxaPorSessao[tela.mesa.sessaoId] = tirar
+            mostrar(tela)
+            informar(getString(if (tirar) R.string.garcom_taxa_tirada else R.string.garcom_taxa_incluida))
+        }
     }
 
     private fun formatarPct(pct: Double): String =
@@ -918,10 +987,10 @@ class GarcomActivity : AppCompatActivity() {
         }
     }
 
-    /** A conta em texto para a bobina de 58 mm (~32 colunas). */
+    /** A conta em texto para a bobina de 58 mm (~32 colunas), com margem dos dois lados. */
     private fun contaParaImprimir(mesa: MesaAberta, conta: ContaDaMesa): String {
         val l = ArrayList<String>()
-        val traco = "-".repeat(COLUNAS_DA_BOBINA)
+        val traco = "-".repeat(LARGURA_DA_CONTA)
         CofreDoToken.lojaNome(this)?.let { loja -> quebrar(loja.uppercase()).forEach { l += centralizar(it) } }
         l += centralizar(getString(R.string.garcom_conta_impressa_titulo))
         l += traco
@@ -944,16 +1013,18 @@ class GarcomActivity : AppCompatActivity() {
         l += colunas(getString(R.string.garcom_falta_pagar).uppercase(), Dinheiro.formatar(conta.falta))
         l += traco
         l += centralizar(getString(R.string.garcom_nao_e_fiscal))
-        // Linhas em branco no fim: o papel sai da impressora até o corte.
-        return l.joinToString("\n") + "\n\n\n"
+        // Margem à esquerda em toda linha com texto. Linhas em branco no fim:
+        // o papel sai da impressora até o corte.
+        val margem = " ".repeat(MARGEM_DA_CONTA)
+        return l.joinToString("\n") { if (it.isBlank()) it else margem + it } + "\n\n\n"
     }
 
     /** Rótulo à esquerda e valor à direita; rótulo comprido quebra e o valor fica na última linha. */
     private fun colunas(esquerda: String, direita: String): List<String> {
         val partes = quebrar(esquerda)
-        val espaco = COLUNAS_DA_BOBINA - partes.last().length - direita.length
+        val espaco = LARGURA_DA_CONTA - partes.last().length - direita.length
         return if (espaco >= 1) partes.dropLast(1) + (partes.last() + " ".repeat(espaco) + direita)
-        else partes + direita.padStart(COLUNAS_DA_BOBINA)
+        else partes + direita.padStart(LARGURA_DA_CONTA)
     }
 
     /** Quebra por palavra na largura da bobina; palavra maior que a linha é cortada. */
@@ -962,18 +1033,18 @@ class GarcomActivity : AppCompatActivity() {
         var atual = ""
         for (palavra in texto.trim().split(Regex("\\s+"))) {
             var resto = palavra
-            while (resto.length > COLUNAS_DA_BOBINA) {
+            while (resto.length > LARGURA_DA_CONTA) {
                 if (atual.isNotEmpty()) {
                     linhas += atual
                     atual = ""
                 }
-                linhas += resto.take(COLUNAS_DA_BOBINA)
-                resto = resto.drop(COLUNAS_DA_BOBINA)
+                linhas += resto.take(LARGURA_DA_CONTA)
+                resto = resto.drop(LARGURA_DA_CONTA)
             }
             if (resto.isEmpty()) continue
             atual = when {
                 atual.isEmpty() -> resto
-                atual.length + 1 + resto.length <= COLUNAS_DA_BOBINA -> "$atual $resto"
+                atual.length + 1 + resto.length <= LARGURA_DA_CONTA -> "$atual $resto"
                 else -> {
                     linhas += atual
                     resto
@@ -985,7 +1056,7 @@ class GarcomActivity : AppCompatActivity() {
     }
 
     private fun centralizar(texto: String): String =
-        " ".repeat(maxOf(0, (COLUNAS_DA_BOBINA - texto.length) / 2)) + texto
+        " ".repeat(maxOf(0, (LARGURA_DA_CONTA - texto.length) / 2)) + texto
 
     // ============================================================ CARDÁPIO
 
@@ -1643,6 +1714,16 @@ class GarcomActivity : AppCompatActivity() {
         const val COLUNAS_DE_MESA = 3
         /** Bobina de 58 mm. */
         const val COLUNAS_DA_BOBINA = 32
+
+        /**
+         * Margem em espaços à esquerda da conta impressa. Colada na borda, a
+         * conta da 1.0.9 saiu deslocada e esbarrando na escrita da lateral
+         * (teste na Cielo DX8000, 12/11/2026); a da direita é o que sobra.
+         */
+        const val MARGEM_DA_CONTA = 2
+
+        /** Área útil: o cabeçalho centraliza nela e os valores encostam à direita dela. */
+        const val LARGURA_DA_CONTA = COLUNAS_DA_BOBINA - 2 * MARGEM_DA_CONTA
         const val VALOR_MINIMO = 100L
         const val INTERVALO_DE_CONSULTA_MS = 2_000L
         const val MOSTRAR_APROVADO_MS = 2_500L
