@@ -141,6 +141,13 @@
     <string name="garcom_consumo">Consumo</string>
     <string name="garcom_desconto">Desconto</string>
     <string name="garcom_taxa">Taxa de serviço (%1$s%%)</string>
+    <string name="garcom_taxa_incluir">Incluir</string>
+    <string name="garcom_taxa_tirar">Tirar</string>
+    <string name="garcom_mudando_taxa">Mudando a taxa…</string>
+    <string name="garcom_taxa_tirada">Conta sem taxa de serviço.</string>
+    <string name="garcom_taxa_incluida">Taxa de serviço incluída.</string>
+    <string name="garcom_taxa_so_caixa">Só o caixa tira a taxa de serviço.</string>
+    <string name="garcom_taxa_com_cobranca">Tem cobrança desta mesa na maquininha. Espere terminar para mudar a taxa.</string>
     <string name="garcom_gorjeta">Gorjeta</string>
     <string name="garcom_total">Total</string>
     <string name="garcom_ja_pago">Já pago</string>
