@@ -44,7 +44,7 @@ const bate = (oQue: string, a: number, b: number, tol = 0.01) => {
 async function main() {
   const { prisma } = await import("../src/lib/prisma");
   const { dadosDoPeriodoDoFinanceiro } = await import("../src/lib/financeiro/periodo-do-financeiro");
-  const { calcularDRE, lerComissoesDosApps, periodoDoFinanceiro } = await import("../src/lib/financeiro/dre");
+  const { calcularDRE, lerComissoesDosApps, lerTaxasDosApps, periodoDoFinanceiro } = await import("../src/lib/financeiro/dre");
   const { getCurrentCycleView, lojaIsenta, intervaloDoMes, getCurrentYearMonth } = await import("../src/lib/billing");
   const { hojeNaLoja } = await import("../src/lib/relatorios/base");
   const { janelaDoPeriodo, COLUNAS_DOS_FILTROS } = await import("../src/lib/relatorios/servidor");
@@ -79,7 +79,7 @@ async function main() {
       const t0 = Date.now();
       const dados = await dadosDoPeriodoDoFinanceiro({ lojaId: id, tz, hoje, de: p.de, ate: p.ate, isenta });
       const ms = Date.now() - t0;
-      const dre = calcularDRE({ dados, custosFixos, despesas, comissoes: lerComissoesDosApps(dono.financialGoals), paymentFees: dono.paymentFees });
+      const dre = calcularDRE({ dados, custosFixos, despesas, comissoes: lerComissoesDosApps(dono.financialGoals), taxasDosApps: lerTaxasDosApps(dono.financialGoals), paymentFees: dono.paymentFees });
 
       // A régua dos Relatórios, montada por fora: os pedidos da janela (todos
       // os status, como a rota do Vendas por período) e resumoDeVendas.

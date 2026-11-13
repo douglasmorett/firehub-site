@@ -99,7 +99,18 @@ confere("valor vendido igual aos Relatórios", dre.includes("Valor vendido") && 
 confere("frete da corrida do app em linha própria", dre.includes("Taxa de entrega que fica com o app"));
 confere("desconto dado no fechamento da mesa sai da receita", dre.includes("Desconto dado no fechamento das mesas"));
 confere("cupom pago pelo app entra", dre.includes("Cupom pago pelo app"));
-confere("comissão do iFood pelo percentual da loja", dre.includes("iFood — 20% sobre os itens"));
+confere("comissão do iFood pelo percentual da loja", dre.includes("iFood — comissão de 20% sobre os itens"));
+confere("percentual único antigo: o DRE diz que dá para separar", dre.includes("percentual único (comissão + taxas juntas)"));
+// Taxas separadas (Frangoso, 13/11/2026): comissão + pagamento online + o pago na entrega no cartão.
+const dadosSeparados: DadosDoPeriodo = { ...dados, pedidos: [...dados.pedidos,
+  pedido({ criadoEm: "2026-10-07T23:00:00Z", totalAmount: 55, deliveryFee: 5, canal: "IFOOD", marketplace: true, itens: 50, pagamentos: [{ forma: "CREDITO", valor: 55 }], paymentMethod: "Crédito (Cobrar na Entrega)" }),
+  pedido({ criadoEm: "2026-10-08T23:00:00Z", totalAmount: 30, canal: "IFOOD", marketplace: true, itens: 30, pagamentos: [{ forma: "DINHEIRO", valor: 30 }], paymentMethod: "Dinheiro (Cobrar na Entrega)" }),
+] };
+const dreSeparado = tela("dre", { dadosIniciais: dadosSeparados, comissoesIniciais: { IFOOD: 23 }, taxasIniciais: { IFOOD: { pagamentoOnline: 3.2, outras: 0 } } });
+confere("DRE separado: comissão, pagamento online e o pago na entrega por app",
+  dreSeparado.includes("iFood — comissão de 23% sobre os itens") && dreSeparado.includes("Pagamento online no app — 3,20%") && dreSeparado.includes("1 pedido pago dentro do app") &&
+  dreSeparado.includes("Pagos na entrega — taxa da sua maquininha") && dreSeparado.includes("em dinheiro ou Pix") && !dreSeparado.includes("percentual único (comissão + taxas juntas)"),
+  dreSeparado.match(/iFood — comissão[^<]*/)?.[0]);
 confere("entregadores pela conta do fechamento", dre.includes("a mesma conta do Motoboys → Relatório"));
 confere("mensalidade pelo ciclo (mês corrente projetado), rateada", dre.includes("out/2026 (projeção do mês): R$ 500,00 × 7/31 dias"));
 confere("taxa de serviço do app sai da receita", dre.includes("Taxa de serviço do app (fica com o app)"));
@@ -143,6 +154,10 @@ confere("Relatório: o pago no site aparece (era R$ 0 para todos)", relatorio.in
 // ── Configurações e custos fixos ─────────────────────────────────────────
 const config = tela("configuracoes");
 confere("Configurações: comissão por app", config.includes("Comissão e taxas dos apps") && config.includes("99Food"));
+confere("Configurações: três campos por app e o exemplo do iFood", config.includes("Comissão da plataforma") && config.includes("Pagamento online no app") && config.includes("Outras taxas / antecipação") && config.includes("iFood plano Entrega: 23% comissão + 3,2% pagamento online"));
+confere("Configurações: a maquininha fica em Minha Loja › Pagamentos", config.includes("/store/minha-loja#pagamento"));
+confere("Configurações: percentual único antigo avisa que dá para separar", config.includes("Agora dá para separar"));
+confere("Configurações: já separado não mostra o aviso", !tela("configuracoes", { taxasIniciais: { IFOOD: { pagamentoOnline: 3.2, outras: 0 } } }).includes("Agora dá para separar"));
 confere("Configurações: repasse sem o formulário falso", !config.includes("Salvar Conta de Repasse") && config.includes("ainda não está ativo"));
 const fixos = tela("custosfix");
 confere("Custos fixos: sem prometer 'quanto precisa vender' com dado faltando", fixos.includes("aparece aqui quando o custo dos produtos e a comissão dos apps estiverem cadastrados"));

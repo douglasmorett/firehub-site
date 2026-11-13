@@ -5,7 +5,7 @@ import DREClient from "./DREClient";
 import { garantirEstruturaDeDespesas } from "@/lib/garantir-colunas";
 import { contextoDoFinanceiro } from "@/lib/financeiro/contexto";
 import { dadosDoPeriodoDoFinanceiro } from "@/lib/financeiro/periodo-do-financeiro";
-import { lerComissoesDosApps, lerPeriodo, MAX_DIAS_DO_FINANCEIRO, type DadosDoPeriodo } from "@/lib/financeiro/dre";
+import { lerComissoesDosApps, lerPeriodo, lerTaxasDosApps, MAX_DIAS_DO_FINANCEIRO, type DadosDoPeriodo } from "@/lib/financeiro/dre";
 import { getCurrentCycleView, type VisaoDoCiclo } from "@/lib/billing";
 import { dataDaLoja } from "@/lib/fuso";
 import { somarDias } from "@/lib/relatorios/base";
@@ -127,6 +127,7 @@ export default async function StoreFinanceiroPage({ searchParams }: { searchPara
       storeName={ctx.dono.storeName || "Minha Loja"}
       initialFixedCosts={fixedCosts}
       comissoesIniciais={lerComissoesDosApps(ctx.dono.financialGoals)}
+      taxasIniciais={lerTaxasDosApps(ctx.dono.financialGoals)}
       initialRepasseConfig={(ctx.dono.repasseConfig as any) || {}}
       payables={payablesSerialized}
       initialDespesas={despesas}

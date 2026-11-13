@@ -14,7 +14,7 @@
  * A prova nos dados reais (só leitura) é scripts/conferir-dre-no-banco.ts.
  */
 import {
-  ATALHOS_DO_FINANCEIRO, atalhoDoFinanceiro, calcularDRE, economiaNosCanaisProprios, entraNoDRE, lerComissoesDosApps,
+  ATALHOS_DO_FINANCEIRO, atalhoDoFinanceiro, calcularDRE, economiaNosCanaisProprios, entraNoDRE, lerComissoesDosApps, lerTaxasDosApps,
   lerPeriodo, mesesDoPeriodo, periodoDoFinanceiro, pontoDeEquilibrio, projetarMensalidadeDoMes, recebimentosDoPeriodo, taxaDaForma,
   type CicloNoPeriodo, type CmvDoServidor, type CmvRealDoPeriodo, type DadosDoPeriodo, type PedidoDoFinanceiro,
 } from "../src/lib/financeiro/dre";
@@ -467,6 +467,75 @@ async function main() {
   const soFaltou = semanaHakim([venda("2026-10-13", { itensComCusto: 100, custo: 32, itensPelaFicha: 100, custoPelaFicha: 32 })],
     cmvDo({ real: real({ trecho: null, falta: "NENHUMA_CONTAGEM", contagens: 0, abertura: null, ultimaCompleta: null }), desperdicioPorDia: { "2026-10-13": { ...zeroDesp, reposicoes: 0, trocas: 0, faltou: 4 } } }));
   confere("só faltou item: o CMV não muda (o item já estava na venda; o prejuízo é a corrida, em Entregadores)", [soFaltou.cmv, soFaltou.cmvDetalhe.desperdicio.reposicoes.faltou, soFaltou.cmvDetalhe.desperdicio.reposicoes.noCmv], [32, 4, 0]);
+
+  // ── 12. TAXAS DE CADA APP (Frangoso, 13/11/2026) ─────────────────────────
+  // Comissão sobre os itens em todo pedido; pagamento online só no pago
+  // dentro do app; o pago na entrega no cartão paga a maquininha da loja (em
+  // "Taxas de pagamento", não somada de novo); dinheiro/Pix sem taxa de cartão.
+  console.log("\n— Comissão, pagamento online e cartão na entrega, por app —");
+  const doIfood = (p: Partial<PedidoDoFinanceiro> & { criadoEm: string; totalAmount: number }) => pedido({ canal: "IFOOD", marketplace: true, itensComCusto: 0, ...p });
+  const pedidosDoApp: PedidoDoFinanceiro[] = [
+    // Pago dentro do app (o caixa lê "ONLINE").
+    doIfood({ criadoEm: "2026-10-06T23:00:00Z", totalAmount: 108, deliveryFee: 8, itens: 100, pagamentos: [{ forma: "ONLINE", valor: 108 }], paymentMethod: "Pago Online" }),
+    // Pago na entrega no crédito (maquininha da loja, 3,25% pela média das bandeiras).
+    doIfood({ criadoEm: "2026-10-07T23:00:00Z", totalAmount: 55, deliveryFee: 5, itens: 50, pagamentos: [{ forma: "CREDITO", valor: 55 }], paymentMethod: "Crédito (Cobrar na Entrega)" }),
+    // Pago na entrega em dinheiro e em Pix: sem taxa de cartão.
+    doIfood({ criadoEm: "2026-10-08T23:00:00Z", totalAmount: 33, deliveryFee: 3, itens: 30, pagamentos: [{ forma: "DINHEIRO", valor: 33 }], paymentMethod: "Dinheiro (Cobrar na Entrega)" }),
+    doIfood({ criadoEm: "2026-10-09T23:00:00Z", totalAmount: 22, itens: 22, pagamentos: [{ forma: "PIX", valor: 22 }], paymentMethod: "Pix (Cobrar na Entrega)" }),
+    // Keeta pago no app, sem nada cadastrado além da comissão.
+    pedido({ criadoEm: "2026-10-10T23:00:00Z", totalAmount: 80, canal: "KEETA", marketplace: true, itens: 80, pagamentos: [{ forma: "ONLINE", valor: 80 }], paymentMethod: "Pix (Pago Online)" }),
+  ];
+  const dadosDoApp: DadosDoPeriodo = { ...dados, pedidos: pedidosDoApp, mesas: { ...dados.mesas, pagamentos: [], descontoNoFechamento: 0 } };
+  const linha = (r: ReturnType<typeof calcularDRE>, canal: string) => r.comissoes.find((c) => c.canal === canal)!;
+
+  // Loja que cadastrou o percentual ÚNICO antes (26,2 = 23 + 3,2): nada muda.
+  const antigo = calcularDRE({ dados: dadosDoApp, custosFixos, despesas, comissoes: { IFOOD: 26.2, KEETA: 15 }, paymentFees: feesPorBandeira });
+  const antigoLido = calcularDRE({
+    dados: dadosDoApp, custosFixos, despesas,
+    comissoes: lerComissoesDosApps({ comissaoDosApps: { IFOOD: 26.2, KEETA: 15 } }),
+    taxasDosApps: lerTaxasDosApps({ comissaoDosApps: { IFOOD: 26.2, KEETA: 15 } }),
+    paymentFees: feesPorBandeira,
+  });
+  confere("percentual único antigo: 26,2% de TODOS os itens do iFood (a conta de antes)", [linha(antigo, "IFOOD").valor, linha(antigo, "IFOOD").comissao, linha(antigo, "IFOOD").online.valor], [Math.round(20200 * 26.2 / 100) / 100, 52.92, 0]);
+  confere("percentual único antigo: gravado sem taxas separadas dá o MESMO DRE (comissões, taxas, resultado)",
+    [antigoLido.totalComissoes, antigoLido.totalTaxas, antigoLido.resultado], [antigo.totalComissoes, antigo.totalTaxas, antigo.resultado]);
+  confere("percentual único antigo: marcado para a tela avisar que dá para separar", [linha(antigoLido, "IFOOD").percentualUnico, linha(antigoLido, "KEETA").percentualUnico], [true, true]);
+  confere("separado com online e outras em 0 = a mesma conta, sem o aviso",
+    (() => { const r = calcularDRE({ dados: dadosDoApp, custosFixos, despesas, comissoes: { IFOOD: 26.2, KEETA: 15 }, taxasDosApps: { IFOOD: { pagamentoOnline: 0, outras: 0 } }, paymentFees: feesPorBandeira }); return [r.totalComissoes, r.resultado, linha(r, "IFOOD").percentualUnico]; })(),
+    [antigo.totalComissoes, antigo.resultado, false]);
+
+  // Separado: iFood plano Entrega 23% + 3,2% online + 0,5% de antecipação.
+  const separado = calcularDRE({
+    dados: dadosDoApp, custosFixos, despesas, comissoes: { IFOOD: 23, KEETA: 15 },
+    taxasDosApps: { IFOOD: { pagamentoOnline: 3.2, outras: 0.5 } }, paymentFees: feesPorBandeira,
+  });
+  const ifood = linha(separado, "IFOOD");
+  confere("comissão de 23% sobre os itens de TODO pedido do iFood (R$ 202)", [ifood.base, ifood.pedidos, ifood.pct, ifood.comissao], [202, 4, 23, 46.46]);
+  confere("pagamento online 3,2% só no pedido pago no app (R$ 108 pagos online)", ifood.online, { pct: 3.2, pedidos: 1, base: 108, valor: 3.46 });
+  confere("outras taxas / antecipação sobre os itens", ifood.outras, { pct: 0.5, valor: 1.01 });
+  confere("linha do iFood = comissão + online + outras", ifood.valor, 50.93);
+  confere("Keeta sem taxas separadas: só a comissão", [linha(separado, "KEETA").valor, linha(separado, "KEETA").online.pedidos, linha(separado, "KEETA").online.valor], [12, 1, 0]);
+  confere("total de Comissão e taxas dos apps", separado.totalComissoes, 62.93);
+
+  // Pago na entrega: o cartão paga a maquininha DA LOJA, não o online do app.
+  confere("pago na entrega no cartão: a taxa da maquininha da loja (3,25% de R$ 55), por app", ifood.naEntrega.cartao, { pedidos: 1, base: 55, taxa: 1.79, taxaConfigurada: true });
+  confere("e ela já está em Taxas de pagamento (não somada duas vezes)", [separado.totalTaxas, separado.taxas.find((t) => t.chave === "CREDITO")?.valor], [1.79, 1.79]);
+  confere("o pago no app não paga maquininha", separado.taxas.some((t) => (t.chave as string) === "ONLINE"), false);
+  // Dinheiro e Pix na entrega: sem taxa de cartão.
+  confere("dinheiro e Pix na entrega: sem taxa de cartão", [ifood.naEntrega.semCartao, separado.taxas.find((t) => t.chave === "DINHEIRO")?.valor, separado.taxas.find((t) => t.chave === "PIX")?.valor], [{ pedidos: 2, base: 55 }, 0, 0]);
+  confere("o cartão na entrega sem taxa cadastrada: avisado na linha do app",
+    linha(calcularDRE({ dados: dadosDoApp, custosFixos, despesas, comissoes: { IFOOD: 23 }, taxasDosApps: { IFOOD: { pagamentoOnline: 3.2, outras: 0 } }, paymentFees: {} }), "IFOOD").naEntrega.cartao.taxaConfigurada, false);
+  confere("resultado = a cadeia com as taxas separadas", separado.resultado,
+    Math.round((separado.margemDeContribuicao - separado.mensalidade.total - separado.despesas.total - separado.custosFixos.total) * 100) / 100);
+  confere("margem de contribuição desconta o total dos apps", separado.margemDeContribuicao,
+    Math.round((separado.lucroBruto - 62.93 - 1.79 - separado.entregadores.total) * 100) / 100);
+
+  // Leitura do que está gravado.
+  confere("taxas gravadas são lidas; inválido vira 0; canal que não é app fica de fora",
+    lerTaxasDosApps({ taxasDosApps: { IFOOD: { pagamentoOnline: 3.2, outras: "x" }, "99FOOD": { pagamentoOnline: 140 }, SITE: { pagamentoOnline: 1 } } }),
+    { IFOOD: { pagamentoOnline: 3.2, outras: 0 }, "99FOOD": { pagamentoOnline: 0, outras: 0 } });
+  confere("economia nos canais próprios: 23 + 3,2 separado = 26,2 do percentual único",
+    [economiaNosCanaisProprios(dre, { IFOOD: 23 }, { IFOOD: { pagamentoOnline: 3.2, outras: 0 } }).percentual, economiaNosCanaisProprios(dre, { IFOOD: 26.2 }).percentual], [26.2, 26.2]);
 
   console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
   process.exit(falhas === 0 ? 0 : 1);

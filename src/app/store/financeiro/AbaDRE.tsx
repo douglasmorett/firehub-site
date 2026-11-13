@@ -4,14 +4,14 @@
  * o lucro de verdade. A conta é toda de lib/financeiro/dre.ts — aqui só se
  * desenha.
  */
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { BarChart2, DollarSign, Package, ShoppingBag, TrendingUp, Truck, Users } from "lucide-react";
 import AjudaModulo from "@/components/AjudaModulo";
 import DespesasLancadas, { type DespesaDTO } from "./DespesasLancadas";
 import { DRERow, KPICard, TituloDaSecao, fmtNum, fmtPct, fmtR } from "./ui";
 import {
   COBERTURA_MINIMA, diaCurto, economiaNosCanaisProprios, nomeDoMes,
-  type ComissoesDosApps, type FaltaDoCmv, type ResultadoDoDRE,
+  type ComissoesDosApps, type FaltaDoCmv, type ResultadoDoDRE, type TaxasDosApps,
 } from "@/lib/financeiro/dre";
 
 /** Um botão por lugar de resolver (duas faltas podem levar à mesma tela). */
@@ -35,19 +35,20 @@ const ROTULO_DA_SITUACAO: Record<string, string> = {
 };
 
 export default function AbaDRE({
-  dre, de, ate, comissoes, despesas, onDespesas, irPara,
+  dre, de, ate, comissoes, taxasDosApps, despesas, onDespesas, irPara,
 }: {
   dre: ResultadoDoDRE;
   de: string;
   ate: string;
   comissoes: ComissoesDosApps;
+  taxasDosApps: TaxasDosApps;
   despesas: DespesaDTO[];
   onDespesas: (d: DespesaDTO[]) => void;
   irPara: (aba: "configuracoes" | "custosfix") => void;
 }) {
   const [verTodosSemCusto, setVerTodosSemCusto] = useState(false);
   const despesasDoPeriodo = despesas.filter((d) => d.dia >= de && d.dia <= ate);
-  const economia = economiaNosCanaisProprios(dre, comissoes);
+  const economia = economiaNosCanaisProprios(dre, comissoes, taxasDosApps);
   const porTipo = dre.porTipo.filter((t) => t.vendas > 0).map((t) => `${t.rotulo} ${fmtNum(t.vendas)}`).join(" · ");
   const percentualDoCmv = dre.valorDosItens > 0 ? (dre.cmv / dre.valorDosItens) * 100 : 0;
   const c = dre.cmvDetalhe;
@@ -243,15 +244,40 @@ export default function AbaDRE({
         <TituloDaSecao cor="#E11D48" fundo="#FFF1F2">CUSTOS QUE ANDAM COM A VENDA</TituloDaSecao>
         <DRERow label="(-) Comissão e taxas dos apps" value={-dre.totalComissoes} color={vermelho}
           detalhe={dre.comissoes.length === 0 ? "nenhuma venda de app no período" : undefined} />
+        {/* Por app: comissão (todo pedido, sobre os itens), pagamento online
+            (só o pago dentro do app), outras taxas, e o cartão dos pedidos
+            pagos na entrega — este só para enxergar: a taxa da maquininha
+            já está em "Taxas de pagamento" (lib/financeiro/dre.ts, COMISSÃO
+            DOS APPS). */}
         {dre.comissoes.map((c) => (
-          <DRERow key={c.canal} indent={1}
-            label={c.pct === null ? `${c.nome} — comissão não configurada` : `${c.nome} — ${fmtPct(c.pct, c.pct % 1 ? 2 : 0)} sobre os itens`}
-            value={c.pct === null ? <span style={{ color: "#B45309", fontWeight: 700 }}>falta configurar</span> : -c.valor}
-            color={vermelho}
-            detalhe={`${fmtNum(c.pedidos)} pedidos · itens de ${fmtR(c.base)}`} />
+          <Fragment key={c.canal}>
+            <DRERow indent={1}
+              label={c.pct === null ? `${c.nome} — comissão não configurada` : `${c.nome} — comissão de ${fmtPct(c.pct, c.pct % 1 ? 2 : 0)} sobre os itens`}
+              value={c.pct === null ? <span style={{ color: "#B45309", fontWeight: 700 }}>falta configurar</span> : -c.comissao}
+              color={vermelho}
+              detalhe={`${fmtNum(c.pedidos)} pedidos · itens de ${fmtR(c.base)}${c.percentualUnico ? " · percentual único (comissão + taxas juntas); dá para separar em Configurações" : ""}`} />
+            {c.online.pct > 0 && (
+              <DRERow indent={2} label={`Pagamento online no app — ${fmtPct(c.online.pct, 2)}`} value={-c.online.valor} color={vermelho}
+                detalhe={`${fmtNum(c.online.pedidos)} ${c.online.pedidos === 1 ? "pedido pago" : "pedidos pagos"} dentro do app · ${fmtR(c.online.base)} pagos online`} />
+            )}
+            {c.outras.pct > 0 && (
+              <DRERow indent={2} label={`Outras taxas / antecipação — ${fmtPct(c.outras.pct, 2)}`} value={-c.outras.valor} color={vermelho}
+                detalhe={`sobre os itens (${fmtR(c.base)})`} />
+            )}
+            {(c.naEntrega.cartao.pedidos > 0 || c.naEntrega.semCartao.pedidos > 0) && (
+              <DRERow indent={2} label="Pagos na entrega — taxa da sua maquininha"
+                value={<span style={{ color: "#64748B", fontWeight: 600 }}>
+                  {c.naEntrega.cartao.pedidos === 0 ? "sem cartão" : c.naEntrega.cartao.taxaConfigurada ? `${fmtR(c.naEntrega.cartao.taxa)} em Taxas de pagamento` : "taxa não cadastrada"}
+                </span>}
+                detalhe={[
+                  c.naEntrega.cartao.pedidos > 0 ? `${fmtNum(c.naEntrega.cartao.pedidos)} no cartão (${fmtR(c.naEntrega.cartao.base)}): sem a taxa de pagamento online do app; paga a taxa da sua maquininha, já somada em Taxas de pagamento` : "",
+                  c.naEntrega.semCartao.pedidos > 0 ? `${fmtNum(c.naEntrega.semCartao.pedidos)} em dinheiro ou Pix (${fmtR(c.naEntrega.semCartao.base)}): sem taxa de cartão` : "",
+                ].filter(Boolean).join(" · ")} />
+            )}
+          </Fragment>
         ))}
         <DRERow label="(-) Taxas de pagamento" value={-dre.totalTaxas} color={vermelho}
-          detalhe="pela forma de pagamento do caixa; pedido pago no app não tem taxa aqui — ela está na comissão do app" />
+          detalhe="pela forma de pagamento do caixa, com a taxa da sua maquininha (Minha Loja › Pagamentos) — inclusive no pedido de app pago na entrega no cartão; o pedido pago dentro do app não tem taxa aqui: ela está em Comissão e taxas dos apps" />
         {dre.taxas.map((t) => (
           <DRERow key={t.chave} indent={1}
             label={t.configurada ? `${t.rotulo} — ${fmtPct(t.pct ?? 0, 2)}` : `${t.rotulo} — taxa não cadastrada`}
