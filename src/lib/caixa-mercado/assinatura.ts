@@ -19,6 +19,7 @@ import { garantirEstruturaDoCaixa, MENSAGEM_SEM_ESTRUTURA } from "./estrutura";
 import { DIAS_DE_TESTE_DO_CAIXA, PRECO_POR_COMPUTADOR } from "./preco";
 import { VERSAO_DO_TERMO_DO_CAIXA } from "./termo";
 import { ETIQUETA_PADRAO, lerFormatoDaEtiqueta, type FormatoDaEtiqueta } from "./etiqueta";
+import { lerPixDaLoja, type PixDaLoja } from "@/lib/pix-da-loja";
 
 export { PRECO_POR_COMPUTADOR, DIAS_DE_TESTE_DO_CAIXA };
 const DIA_MS = 24 * 60 * 60 * 1000;
@@ -168,6 +169,32 @@ export async function salvarConfigDoCaixa(lojaId: string, config: ConfigDoCaixa)
      ON CONFLICT ("franchiseeId") DO UPDATE SET "config" = $2::jsonb, "atualizadoEm" = NOW()`,
     lojaId, JSON.stringify(config),
   );
+}
+
+/**
+ * A chave Pix que o caixa usa: a da loja (`chatbotConfig.pixDaLoja`, a mesma do
+ * robô), com uma CÓPIA em CaixaMercadoAssinatura.config.pixDaLoja. O
+ * chatbotConfig não desce para o computador da loja no Modo Contingência (tem
+ * chaves do robô); a chave Pix não é segredo, e com a cópia o Pix na tela
+ * funciona sem internet. A cópia só é regravada quando muda.
+ */
+export async function pixDoCaixa(lojaId: string, chatbotConfig: unknown): Promise<PixDaLoja | null> {
+  const pix = lerPixDaLoja(chatbotConfig);
+  try {
+    if (!(await garantirEstruturaDoCaixa())) return pix;
+    if (pix) {
+      const bruto = JSON.stringify((chatbotConfig as any)?.pixDaLoja ?? null);
+      await prisma.$executeRawUnsafe(
+        `UPDATE "CaixaMercadoAssinatura" SET "config" = jsonb_set(COALESCE("config", '{}'::jsonb), '{pixDaLoja}', $2::jsonb)
+          WHERE "franchiseeId" = $1 AND ("config"->'pixDaLoja') IS DISTINCT FROM $2::jsonb`,
+        lojaId, bruto,
+      );
+      return pix;
+    }
+    return lerPixDaLoja({ pixDaLoja: ((await lerLinha(lojaId))?.config as any)?.pixDaLoja });
+  } catch {
+    return pix;
+  }
 }
 
 export class TermoNaoAceitoError extends Error {}

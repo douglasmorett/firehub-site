@@ -7,7 +7,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { contextoDoCaixa, ehResposta } from "@/lib/caixa-mercado/rota";
-import { lerPixDaLoja } from "@/lib/pix-da-loja";
+import { pixDoCaixa } from "@/lib/caixa-mercado/assinatura";
 import { cidadeDoCadastro, montarBrCode, novoTxid } from "@/lib/caixa-mercado/pix-brcode";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +21,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Valor do Pix inválido." }, { status: 400 });
   }
   const loja = await prisma.user.findUnique({ where: { id: ctx.quem.lojaId }, select: { chatbotConfig: true, storeName: true, city: true } });
-  const pix = lerPixDaLoja(loja?.chatbotConfig);
+  const pix = await pixDoCaixa(ctx.quem.lojaId, loja?.chatbotConfig);
   if (!pix) {
     return NextResponse.json({ error: "A loja não tem chave Pix cadastrada. Cadastre em Chatbot IA › Chave Pix da loja.", codigo: "SEM_CHAVE_PIX" }, { status: 409 });
   }

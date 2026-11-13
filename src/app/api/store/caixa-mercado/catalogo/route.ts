@@ -7,8 +7,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { contextoDoCaixa, ehResposta } from "@/lib/caixa-mercado/rota";
 import { catalogoDoCaixa } from "@/lib/caixa-mercado/catalogo";
-import { configDoCaixa } from "@/lib/caixa-mercado/assinatura";
-import { lerPixDaLoja } from "@/lib/pix-da-loja";
+import { configDoCaixa, pixDoCaixa } from "@/lib/caixa-mercado/assinatura";
 import { normalizarConfigFiscal } from "@/lib/fiscal-config";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +17,7 @@ export async function GET(req: Request) {
   const ctx = await contextoDoCaixa(todos ? { tela: "/store/caixa-mercado/importar" } : {});
   if (ehResposta(ctx)) return ctx;
   const loja = await prisma.user.findUnique({ where: { id: ctx.quem.lojaId }, select: { chatbotConfig: true, fiscalConfig: true, storeName: true } });
-  const pix = lerPixDaLoja(loja?.chatbotConfig);
+  const pix = await pixDoCaixa(ctx.quem.lojaId, loja?.chatbotConfig);
   return NextResponse.json({
     produtos: await catalogoDoCaixa(ctx.quem.lojaId, { incluirInativos: todos }),
     config: await configDoCaixa(ctx.quem.lojaId),

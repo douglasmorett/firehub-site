@@ -271,6 +271,38 @@ export const TABELAS_DA_COPIA: TabelaDaCopia[] = [
   { nome: "CashbackAjuste", loja: { tipo: "coluna", coluna: "lojaId" }, chave: ["id"] },
   { nome: "TransferenciaDoPedido", loja: { tipo: "coluna", coluna: "deLojaId", tambem: "paraLojaId" }, chave: ["id"] },
   { nome: "LancheDaEquipe", loja: { tipo: "coluna", coluna: "lojaId" }, chave: ["id"] },
+  // Caixa de mercado (lib/caixa-mercado/estrutura.ts): o mercado vende sem
+  // internet. Pedido (CustomerOrder), produto (MenuProduct) e o caixa da loja
+  // (CashSession) já estão aqui.
+  {
+    nome: "CaixaMercadoAssinatura",
+    loja: { tipo: "coluna", coluna: "franchiseeId" },
+    chave: ["franchiseeId"],
+    // Ligado, teste e trechos são a cobrança: descem (o caixa confere se está
+    // ligado), mas a contingência não liga nem estica teste. `config` sobe
+    // (etiqueta da balança, NFC-e, a cópia da chave Pix).
+    naoSobem: ["ativo", "testeAte", "trechos"],
+    semLinhaNova: true,
+  },
+  {
+    nome: "CaixaMercadoTerminal",
+    loja: { tipo: "coluna", coluna: "lojaId" },
+    chave: ["id"],
+    // O hash do cookie do computador do caixa (não é a senha): sem ele o caixa
+    // não se reconhece no FireHub do computador. Desce, nunca sobe.
+    permitirColunas: ["tokenHash"],
+    naoSobem: ["tokenHash", "lojaId", "numero", "criadoEm", "criadoPor", "desativadoEm"],
+    // Registrar computador de caixa é com internet (e cobra): a contingência não cria.
+    semLinhaNova: true,
+    ignorarMudancaDe: ["ultimoSinal"],
+  },
+  { nome: "CaixaMercadoUso", loja: { tipo: "coluna", coluna: "lojaId" }, chave: ["terminalId", "dia"], foto: `t."lojaId" = $1 AND t."em" >= now() - ${HISTORIA}` },
+  { nome: "CaixaMercadoProduto", loja: { tipo: "coluna", coluna: "lojaId" }, chave: ["menuProductId"] },
+  { nome: "CaixaMercadoCodigo", loja: { tipo: "coluna", coluna: "lojaId" }, chave: ["lojaId", "tipo", "codigo"] },
+  { nome: "CaixaMercadoRegraNcm", loja: { tipo: "coluna", coluna: "lojaId" }, chave: ["lojaId", "ncm"] },
+  { nome: "CaixaMercadoTurno", loja: { tipo: "coluna", coluna: "lojaId" }, chave: ["id"], foto: `t."lojaId" = $1 AND (t."fechadoEm" IS NULL OR t."abertoEm" >= now() - ${HISTORIA})` },
+  { nome: "CaixaMercadoMovimento", loja: { tipo: "coluna", coluna: "lojaId" }, chave: ["id"], foto: `t."lojaId" = $1 AND t."em" >= now() - ${HISTORIA}` },
+  { nome: "CaixaMercadoVenda", loja: { tipo: "coluna", coluna: "lojaId" }, chave: ["orderId"], foto: `t."lojaId" = $1 AND t."criadoEm" >= now() - ${HISTORIA}` },
   // Cadastro do cliente é global (o telefone é único no sistema todo): entra
   // o de quem já pediu na loja, e a foto é refeita de tempos em tempos.
   {
