@@ -14,6 +14,10 @@
  * Abas: Escala (dia/semana/mês), Pessoas, Link de inscrição e, só para o
  * dono, Pagamentos (Douglas, 12/11/2026: o controle do que pagou e do que
  * falta pagar a cada um — ./Pagamentos.tsx).
+ *
+ * 13/11/2026 (Lucas de novo): "💲 Valores da diária" por função e por dia
+ * (./ValoresDaDiaria.tsx, só o dono) e o aceite pelo WhatsApp de cada pessoa
+ * escalada (selo em cada turno, "pedir aceite" no detalhe, e no papel).
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -26,6 +30,7 @@ import Pessoas from "./Pessoas";
 import LinkDeInscricao from "./LinkDeInscricao";
 import Impressao, { type O_QUE_IMPRIMIR } from "./Impressao";
 import Pagamentos from "./Pagamentos";
+import ValoresDaDiaria from "./ValoresDaDiaria";
 
 type Aba = "escala" | "pessoas" | "link" | "pagamentos";
 const CHAVE_DA_VISAO = "escala:visao";
@@ -44,6 +49,7 @@ export default function EscalaClient() {
   const [aberto, setAberto] = useState<string | null>(null);
   const [imprimir, setImprimir] = useState<O_QUE_IMPRIMIR | null>(null);
   const [copiando, setCopiando] = useState(false);
+  const [valoresAbertos, setValoresAbertos] = useState(false);
   // A lista de pessoas ao lado (arrastar para o turno) — lembrada por navegador.
   const [lado, setLado] = useState(true);
 
@@ -250,6 +256,9 @@ export default function EscalaClient() {
               </a>
             )}
             <button type="button" style={S.botaoLeve} onClick={() => setImprimir("escala")}>🖨️ Imprimir</button>
+            {dados.ehDono && (
+              <button type="button" style={S.botaoLeve} onClick={() => setValoresAbertos(true)} title="Quanto cada função ganha por turno, e os dias que pagam diferente">💲 Valores da diária</button>
+            )}
           </div>
 
           <div className="esc-resumo">
@@ -259,7 +268,7 @@ export default function EscalaClient() {
             <Numero rotulo="Faltam" valor={String(resumo.faltam)} cor={resumo.faltam > 0 ? "#DC2626" : "#047857"} />
             {dados.custo && (
               <Numero rotulo="Custo previsto (diárias)" valor={reais(dados.custo.total)} cor={COR}
-                dica={dados.custo.semValor ? `${dados.custo.semValor} inscrição(ões) sem diária combinada fora da conta` : "Soma das diárias combinadas de quem está inscrito"} />
+                dica={dados.custo.semValor ? `${dados.custo.semValor} inscrição(ões) sem valor (nem da função, nem da pessoa) fora da conta` : "Soma das diárias de quem está inscrito (valor do dia, da pessoa ou da função)"} />
             )}
           </div>
 
@@ -296,7 +305,7 @@ export default function EscalaClient() {
                   ))}
                 </tbody>
               </table>
-              {dados.custo.semValor > 0 && <p style={{ ...S.texto, fontSize: 12.5, marginTop: 6 }}>{dados.custo.semValor} inscrição(ões) de quem não tem diária combinada não entram na soma — cadastre a diária na aba Pessoas.</p>}
+              {dados.custo.semValor > 0 && <p style={{ ...S.texto, fontSize: 12.5, marginTop: 6 }}>{dados.custo.semValor} inscrição(ões) sem valor não entram na soma — ponha o valor da função em “💲 Valores da diária” ou a diária da pessoa na aba Pessoas.</p>}
             </details>
           )}
         </>
@@ -324,6 +333,9 @@ export default function EscalaClient() {
         <DetalheDoTurno turno={turnoAberto} pessoas={dados.pessoas} ehDono={dados.ehDono} hoje={dados.hoje} avisar={avisar} confirmar={setConfirmacao}
           onFechar={() => setAberto(null)} onMudou={carregar} onEditar={() => setForm({ turno: turnoAberto, data: turnoAberto.data })}
           onApagar={() => apagar(turnoAberto)} />
+      )}
+      {valoresAbertos && dados.ehDono && (
+        <ValoresDaDiaria valores={dados.valores ?? []} funcoesUsadas={funcoesUsadas} hoje={dados.hoje} avisar={avisar} onFechar={() => setValoresAbertos(false)} onMudou={carregar} />
       )}
       <JanelaDeConfirmacao c={confirmacao} onFechar={() => setConfirmacao(null)} />
       {imprimir && (

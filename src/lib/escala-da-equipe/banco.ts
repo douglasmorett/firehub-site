@@ -36,10 +36,10 @@ import { prisma } from "@/lib/prisma";
 import { executarDDL } from "@/lib/ddl-do-boot";
 import { acertosDoPeriodo } from "@/lib/acerto-pago";
 import {
-  CONFIG_PADRAO, acertoQueCobre, acharPeloTelefone, chaveDaPessoa, chaveDoTelefone, diaDoExpedienteDoTurno, diaEMes, dividirValor, lerChavePix,
-  lerConfigDaEscala, normalizarFuncao, numeroDoDia, ordenarTurnos, turnosSeSobrepoem,
+  CONFIG_PADRAO, acertoQueCobre, acharPeloTelefone, chaveDaFuncao, chaveDaPessoa, chaveDoTelefone, dataValida, diaDoExpedienteDoTurno, diaEMes, diariaDoTurno,
+  dividirValor, lerChavePix, lerConfigDaEscala, lerValorEmReais, normalizarFuncao, numeroDoDia, ordenarTurnos, termosDoTurno, turnosSeSobrepoem,
   type ConfigDaEscala, type DadosDoTurno, type FormaDePagamento, type ItemDePagamento, type OrigemDaInscricao, type PagamentoFeito,
-  type TipoDePessoa, type TipoDePix,
+  type StatusDoAviso, type TipoDePessoa, type TipoDePix, type TurnoDaPessoa, type ValorDaDiaria,
 } from "./regras";
 
 /** Erro com a frase para a tela e o status HTTP. */
@@ -148,6 +148,52 @@ const DDL = [
   `CREATE INDEX IF NOT EXISTS "EscalaPagamento_lojaId_data_idx" ON "EscalaPagamento"("lojaId", "data")`,
   // A despesa do Financeiro que o pagamento do FREELANCER gerou (12/11/2026).
   `ALTER TABLE "EscalaPagamento" ADD COLUMN IF NOT EXISTS "despesaId" TEXT`,
+  // ── 13/11/2026 (Lucas/Frangoso) ──────────────────────────────────────────
+  // O aceite pelo WhatsApp: na inscrição fica a situação ATUAL (aceito quando,
+  // a mensagem saiu quando e como); a prova completa vai para EscalaAceite.
+  `ALTER TABLE "EscalaInscricao" ADD COLUMN IF NOT EXISTS "aceitoEm" TIMESTAMP(3)`,
+  `ALTER TABLE "EscalaInscricao" ADD COLUMN IF NOT EXISTS "avisoEm" TIMESTAMP(3)`,
+  `ALTER TABLE "EscalaInscricao" ADD COLUMN IF NOT EXISTS "avisoStatus" TEXT`,
+  // A prova do aceite — só se insere, nunca se apaga nem se altera: o que a
+  // pessoa aceitou (dia, horário, função, valor, escritos por extenso), quando,
+  // de qual telefone, IP e aparelho. Sem chave estrangeira de propósito: a
+  // prova fica mesmo que o turno seja apagado ou mude depois.
+  `CREATE TABLE IF NOT EXISTS "EscalaAceite" (
+    "id" TEXT NOT NULL,
+    "lojaId" TEXT NOT NULL,
+    "inscricaoId" TEXT NOT NULL,
+    "turnoId" TEXT NOT NULL,
+    "pessoaTipo" TEXT NOT NULL,
+    "pessoaId" TEXT NOT NULL,
+    "nome" TEXT NOT NULL,
+    "data" DATE NOT NULL,
+    "inicio" TEXT NOT NULL,
+    "fim" TEXT NOT NULL,
+    "funcao" TEXT NOT NULL,
+    "valor" DOUBLE PRECISION,
+    "termos" TEXT NOT NULL,
+    "telefone" TEXT,
+    "ip" TEXT,
+    "agente" TEXT,
+    "aceitoEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "EscalaAceite_pkey" PRIMARY KEY ("id")
+  )`,
+  `CREATE INDEX IF NOT EXISTS "EscalaAceite_lojaId_pessoa_idx" ON "EscalaAceite"("lojaId", "pessoaTipo", "pessoaId")`,
+  `CREATE INDEX IF NOT EXISTS "EscalaAceite_inscricaoId_idx" ON "EscalaAceite"("inscricaoId")`,
+  // O valor da diária por função (data nula) e por dia da função.
+  `CREATE TABLE IF NOT EXISTS "EscalaValor" (
+    "id" TEXT NOT NULL,
+    "lojaId" TEXT NOT NULL,
+    "funcao" TEXT NOT NULL,
+    "funcaoChave" TEXT NOT NULL,
+    "data" DATE,
+    "valor" DOUBLE PRECISION NOT NULL,
+    "atualizadoPor" TEXT,
+    "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT "EscalaValor_pkey" PRIMARY KEY ("id")
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "EscalaValor_funcao_key" ON "EscalaValor"("lojaId", "funcaoChave") WHERE "data" IS NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "EscalaValor_funcao_dia_key" ON "EscalaValor"("lojaId", "funcaoChave", "data") WHERE "data" IS NOT NULL`,
 ];
 
 /** "Agora" para coluna TIMESTAMP sem fuso: sempre em UTC, qualquer que seja o fuso da sessão do banco. */
@@ -425,10 +471,16 @@ export async function aparelhoDaPessoa(lojaId: string, pessoa: { tipo: string; i
 
 // ── Turnos ──────────────────────────────────────────────────────────────────
 
-export type InscritoDoTurno = { id: string; pessoaTipo: TipoDePessoa; pessoaId: string; nome: string; origem: OrigemDaInscricao; createdAt: string };
+export type InscritoDoTurno = {
+  id: string; pessoaTipo: TipoDePessoa; pessoaId: string; nome: string; origem: OrigemDaInscricao; createdAt: string;
+  /** O aceite pelo WhatsApp (13/11/2026): quando aceitou, quando a mensagem saiu e como. */
+  aceitoEm: string | null; avisoEm: string | null; avisoStatus: StatusDoAviso | null;
+};
 export type TurnoDaEscala = DadosDoTurno & { id: string; inscritos: InscritoDoTurno[] };
 
 type LinhaDoTurno = { id: string; data: string; inicio: string; fim: string; funcao: string; vagas: number; obs: string | null };
+/** TIMESTAMP sem fuso lido pelo Prisma vem como Date em UTC: vira texto ISO (ou nulo). */
+const emIso = (d: Date | string | null | undefined) => (d ? new Date(d).toISOString() : null);
 const SELECT_DO_TURNO = Prisma.sql`"id", to_char("data", 'YYYY-MM-DD') AS "data", "inicio", "fim", "funcao", "vagas", "obs"`;
 
 export async function turnosDoPeriodo(lojaId: string, de: string, ate: string): Promise<TurnoDaEscala[]> {
@@ -438,13 +490,16 @@ export async function turnosDoPeriodo(lojaId: string, de: string, ate: string): 
     WHERE "lojaId" = ${lojaId} AND "data" BETWEEN ${de}::date AND ${ate}::date`);
   if (!turnos.length) return [];
   const ids = turnos.map((t) => t.id);
-  const inscricoes = await prisma.$queryRaw<(InscritoDoTurno & { turnoId: string; criado: Date })[]>(Prisma.sql`
-    SELECT "id", "turnoId", "pessoaTipo", "pessoaId", "nome", "origem", "createdAt" AS "criado"
+  const inscricoes = await prisma.$queryRaw<(Omit<InscritoDoTurno, "aceitoEm" | "avisoEm"> & { turnoId: string; criado: Date; aceito: Date | null; aviso: Date | null })[]>(Prisma.sql`
+    SELECT "id", "turnoId", "pessoaTipo", "pessoaId", "nome", "origem", "createdAt" AS "criado", "aceitoEm" AS "aceito", "avisoEm" AS "aviso", "avisoStatus"
     FROM "EscalaInscricao" WHERE "turnoId" = ANY(${ids}) ORDER BY "createdAt"`);
   const por = new Map<string, InscritoDoTurno[]>();
   for (const i of inscricoes) {
     const lista = por.get(i.turnoId) || [];
-    lista.push({ id: i.id, pessoaTipo: i.pessoaTipo, pessoaId: i.pessoaId, nome: i.nome, origem: i.origem === "link" ? "link" : "painel", createdAt: new Date(i.criado).toISOString() });
+    lista.push({
+      id: i.id, pessoaTipo: i.pessoaTipo, pessoaId: i.pessoaId, nome: i.nome, origem: i.origem === "link" ? "link" : "painel", createdAt: new Date(i.criado).toISOString(),
+      aceitoEm: emIso(i.aceito), avisoEm: emIso(i.aviso), avisoStatus: i.avisoStatus,
+    });
     por.set(i.turnoId, lista);
   }
   return ordenarTurnos(turnos.map((t) => ({ ...t, vagas: Number(t.vagas), inscritos: por.get(t.id) || [] })));
@@ -463,12 +518,21 @@ export async function criarTurnos(lojaId: string, turnos: DadosDoTurno[], quem: 
 /** Mudar o DIA de um turno com gente já paga desencontraria o pagamento do dia trabalhado: recusa. */
 export async function editarTurno(lojaId: string, id: string, t: DadosDoTurno): Promise<void> {
   await garantirTabelasDaEscala();
+  const [antes] = await prisma.$queryRaw<LinhaDoTurno[]>(Prisma.sql`SELECT ${SELECT_DO_TURNO} FROM "EscalaTurno" WHERE "id" = ${id} AND "lojaId" = ${lojaId}`);
   const r = await prisma.$executeRaw(Prisma.sql`
     UPDATE "EscalaTurno" SET "data" = ${t.data}::date, "inicio" = ${t.inicio}, "fim" = ${t.fim}, "funcao" = ${t.funcao},
       "vagas" = ${t.vagas}, "obs" = ${t.obs}, "updatedAt" = now()
     WHERE "id" = ${id} AND "lojaId" = ${lojaId}
       AND ("data" = ${t.data}::date OR NOT EXISTS (SELECT 1 FROM "EscalaPagamento" p WHERE p."turnoId" = ${id} AND p."desfeitoEm" IS NULL))`);
-  if (r) return;
+  if (r) {
+    // Mudou o dia, o horário ou a função: o que a pessoa aceitou não é mais
+    // este turno — volta a "aguardando" (a prova antiga fica em EscalaAceite,
+    // com os termos de antes). Vagas e observação não mexem no combinado.
+    if (antes && termosDoTurno(antes) !== termosDoTurno(t)) {
+      await prisma.$executeRaw(Prisma.sql`UPDATE "EscalaInscricao" SET "aceitoEm" = NULL WHERE "turnoId" = ${id} AND "lojaId" = ${lojaId}`);
+    }
+    return;
+  }
   const [existe] = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT "id" FROM "EscalaTurno" WHERE "id" = ${id} AND "lojaId" = ${lojaId}`);
   if (!existe) throw new ErroDaEscala("Turno não encontrado.", 404);
   throw new ErroDaEscala("Este turno já tem gente paga. Para mudar o dia, desfaça os pagamentos antes (ou crie outro turno).", 409, "TEM_PAGAMENTO");
@@ -597,10 +661,10 @@ export async function desistirPeloLink(lojaId: string, inscricaoId: string, chav
 }
 
 /** As inscrições futuras de uma pessoa (o "Minhas inscrições" do link). */
-export async function inscricoesDaPessoa(lojaId: string, pessoa: { tipo: string; id: string }, desde: string): Promise<Array<LinhaDoTurno & { inscricaoId: string }>> {
+export async function inscricoesDaPessoa(lojaId: string, pessoa: { tipo: string; id: string }, desde: string): Promise<Array<LinhaDoTurno & { inscricaoId: string; aceitoEm: Date | null }>> {
   await garantirTabelasDaEscala();
-  return prisma.$queryRaw<Array<LinhaDoTurno & { inscricaoId: string }>>(Prisma.sql`
-    SELECT i."id" AS "inscricaoId", t."id", to_char(t."data", 'YYYY-MM-DD') AS "data", t."inicio", t."fim", t."funcao", t."vagas", t."obs"
+  return prisma.$queryRaw<Array<LinhaDoTurno & { inscricaoId: string; aceitoEm: Date | null }>>(Prisma.sql`
+    SELECT i."id" AS "inscricaoId", t."id", to_char(t."data", 'YYYY-MM-DD') AS "data", t."inicio", t."fim", t."funcao", t."vagas", t."obs", i."aceitoEm"
     FROM "EscalaInscricao" i JOIN "EscalaTurno" t ON t."id" = i."turnoId"
     WHERE i."lojaId" = ${lojaId} AND i."pessoaTipo" = ${pessoa.tipo} AND i."pessoaId" = ${pessoa.id} AND t."data" >= (${desde}::date - 1)
     ORDER BY t."data", t."inicio"`);
@@ -640,11 +704,12 @@ export async function itensDePagamento(lojaId: string, turnos: TurnoDaEscala[], 
   const pago = new Map(linhas.map((l) => [l.inscricaoId, doPagamento(l)]));
   const acertos = await acertosDosMotoboys(lojaId, pares.filter((p) => p.i.pessoaTipo === "motoboy").map((p) => ({ pessoaId: p.i.pessoaId, data: p.t.data, inicio: p.t.inicio })));
   const diaria = new Map(pessoas.map((p) => [chaveDaPessoa(p.tipo, p.id), p.diaria]));
+  const valores = await valoresDaLoja(lojaId);
   return pares.map(({ t, i }) => {
     const a = i.pessoaTipo === "motoboy" ? acertoQueCobre(acertos.get(i.pessoaId), t) : null;
     return {
       inscricaoId: i.id, turnoId: t.id, data: t.data, inicio: t.inicio, fim: t.fim, funcao: t.funcao,
-      pessoaTipo: i.pessoaTipo, pessoaId: i.pessoaId, nome: i.nome, diaria: diaria.get(chaveDaPessoa(i.pessoaTipo, i.pessoaId)) ?? null,
+      pessoaTipo: i.pessoaTipo, pessoaId: i.pessoaId, nome: i.nome, diaria: diariaDoTurno(t, diaria.get(chaveDaPessoa(i.pessoaTipo, i.pessoaId)), valores).valor,
       pagamento: pago.get(i.id) ?? null,
       acerto: a ? { id: a.id, em: a.em, dia: diaDoExpedienteDoTurno(t) } : null,
     };
@@ -670,9 +735,9 @@ export async function marcarPago(lojaId: string, pedido: PedidoDePagamento, quem
   await garantirTabelasDaEscala();
   const ids = [...new Set(pedido.inscricaoIds.filter((x) => typeof x === "string" && x))].slice(0, 200);
   if (!ids.length) throw new ErroDaEscala("Escolha o turno a pagar.");
-  type Linha = { id: string; turnoId: string; pessoaTipo: TipoDePessoa; pessoaId: string; nome: string; data: string; inicio: string };
+  type Linha = { id: string; turnoId: string; pessoaTipo: TipoDePessoa; pessoaId: string; nome: string; data: string; inicio: string; funcao: string };
   const ler = (db: Transacao, travar: boolean) => db.$queryRaw<Linha[]>(Prisma.sql`
-    SELECT i."id", i."turnoId", i."pessoaTipo", i."pessoaId", i."nome", to_char(t."data", 'YYYY-MM-DD') AS "data", t."inicio"
+    SELECT i."id", i."turnoId", i."pessoaTipo", i."pessoaId", i."nome", to_char(t."data", 'YYYY-MM-DD') AS "data", t."inicio", t."funcao"
     FROM "EscalaInscricao" i JOIN "EscalaTurno" t ON t."id" = i."turnoId"
     WHERE i."lojaId" = ${lojaId} AND i."id" = ANY(${ids}) ORDER BY i."id" ${travar ? Prisma.sql`FOR UPDATE OF i` : Prisma.empty}`);
 
@@ -688,7 +753,9 @@ export async function marcarPago(lojaId: string, pedido: PedidoDePagamento, quem
     throw new ErroDaEscala(`${noAcerto.nome} já recebeu o dia ${diaEMes(diaDoExpedienteDoTurno(noAcerto))} no acerto do motoboy. Para mudar, desfaça o acerto no relatório dos motoboys.`, 409, "NO_ACERTO");
   }
   const diaria = new Map((await pessoasDaLoja(lojaId, { inativos: true })).map((p) => [chaveDaPessoa(p.tipo, p.id), p.diaria]));
-  const diarias = antes.map((l) => diaria.get(chaveDaPessoa(l.pessoaTipo, l.pessoaId)) ?? null);
+  // A diária do turno: a do dia/da pessoa/da função (regras.ts, diariaDoTurno) — a mesma do custo previsto.
+  const tabela = await valoresDaLoja(lojaId);
+  const diarias = antes.map((l) => diariaDoTurno(l, diaria.get(chaveDaPessoa(l.pessoaTipo, l.pessoaId)), tabela).valor);
   let valores: number[];
   if (pedido.valor != null) {
     if (!(pedido.valor > 0) || pedido.valor > 1_000_000) throw new ErroDaEscala("Digite o valor pago.", 400, "SEM_VALOR");
@@ -791,4 +858,125 @@ export async function escalaDosMotoboys(lojaId: string, de: string, ate: string)
   }
   for (const m of Object.values(r)) m.dias.sort();
   return r;
+}
+
+// ── Valor da diária por função e por dia (13/11/2026) ───────────────────────
+
+/** Os valores que o dono pôs: o normal de cada função (data nula) e os dias com valor próprio. */
+export async function valoresDaLoja(lojaId: string): Promise<ValorDaDiaria[]> {
+  await garantirTabelasDaEscala();
+  const linhas = await prisma.$queryRaw<{ funcao: string; data: string | null; valor: number }[]>(Prisma.sql`
+    SELECT "funcao", to_char("data", 'YYYY-MM-DD') AS "data", "valor" FROM "EscalaValor" WHERE "lojaId" = ${lojaId}
+    ORDER BY "funcaoChave", "data" NULLS FIRST`);
+  return linhas.map((l) => ({ funcao: l.funcao, data: l.data, valor: Number(l.valor) }));
+}
+
+/**
+ * Grava (ou apaga, com valor vazio) o valor de uma função — o normal, ou o de
+ * um dia. Só o dono chama (a rota confere): o funcionário não vê o que se paga.
+ */
+export async function salvarValor(lojaId: string, e: Record<string, unknown>, quem: string): Promise<void> {
+  await garantirTabelasDaEscala();
+  const funcao = normalizarFuncao(String(e.funcao ?? ""));
+  if (!funcao) throw new ErroDaEscala("Escolha a função.");
+  const data = e.data == null || e.data === "" ? null : e.data;
+  if (data !== null && !dataValida(data)) throw new ErroDaEscala("Data inválida.");
+  const valor = lerValorEmReais(e.valor);
+  const chave = chaveDaFuncao(funcao);
+  const doDia = data === null ? Prisma.sql`"data" IS NULL` : Prisma.sql`"data" = ${data}::date`;
+  if (valor === null) {
+    await prisma.$executeRaw(Prisma.sql`DELETE FROM "EscalaValor" WHERE "lojaId" = ${lojaId} AND "funcaoChave" = ${chave} AND ${doDia}`);
+    return;
+  }
+  // Apaga e grava na mesma transação: os dois índices únicos são parciais
+  // (com e sem data), e um ON CONFLICT só alcança um deles.
+  await prisma.$transaction([
+    prisma.$executeRaw(Prisma.sql`DELETE FROM "EscalaValor" WHERE "lojaId" = ${lojaId} AND "funcaoChave" = ${chave} AND ${doDia}`),
+    prisma.$executeRaw(Prisma.sql`
+      INSERT INTO "EscalaValor" ("id", "lojaId", "funcao", "funcaoChave", "data", "valor", "atualizadoPor")
+      VALUES (${randomUUID()}, ${lojaId}, ${funcao}, ${chave}, ${data}::date, ${valor}, ${quem.slice(0, 120)})`),
+  ]);
+}
+
+// ── Aceite pelo WhatsApp (13/11/2026) ───────────────────────────────────────
+
+type LinhaDaPessoal = { inscricaoId: string; data: string; inicio: string; fim: string; funcao: string; aceitoEm: Date | null; avisoStatus: string | null; avisoEm: Date | null };
+
+/**
+ * Os turnos de UMA pessoa de `de` a `ate`, com a diária de cada um e a
+ * situação do aceite — a página pessoal, o PDF e a mensagem do WhatsApp.
+ */
+export async function escalaDaPessoa(lojaId: string, pessoa: { tipo: string; id: string }, de: string, ate: string): Promise<Array<TurnoDaPessoa & { avisoEm: string | null }>> {
+  await garantirTabelasDaEscala();
+  const [linhas, pessoas, valores] = await Promise.all([
+    prisma.$queryRaw<LinhaDaPessoal[]>(Prisma.sql`
+      SELECT i."id" AS "inscricaoId", to_char(t."data", 'YYYY-MM-DD') AS "data", t."inicio", t."fim", t."funcao", i."aceitoEm", i."avisoStatus", i."avisoEm"
+      FROM "EscalaInscricao" i JOIN "EscalaTurno" t ON t."id" = i."turnoId"
+      WHERE i."lojaId" = ${lojaId} AND i."pessoaTipo" = ${pessoa.tipo} AND i."pessoaId" = ${pessoa.id}
+        AND t."data" BETWEEN ${de}::date AND ${ate}::date
+      ORDER BY t."data", t."inicio"`),
+    pessoasDaLoja(lojaId, { inativos: true }),
+    valoresDaLoja(lojaId),
+  ]);
+  const daPessoa = pessoas.find((p) => p.tipo === pessoa.tipo && p.id === pessoa.id)?.diaria ?? null;
+  return linhas.map((l) => ({
+    inscricaoId: l.inscricaoId, data: l.data, inicio: l.inicio, fim: l.fim, funcao: l.funcao,
+    valor: diariaDoTurno(l, daPessoa, valores).valor,
+    aceitoEm: emIso(l.aceitoEm), avisoStatus: l.avisoStatus, avisoEm: emIso(l.avisoEm),
+  }));
+}
+
+/** A prova que o aceite grava: o telefone para onde a mensagem foi, o IP e o aparelho (user-agent). */
+export type ProvaDoAceite = { telefone: string | null; ip: string | null; agente: string | null };
+
+/**
+ * A pessoa tocou em "Aceito". Aceita SÓ as inscrições dela, desta loja, que
+ * ainda não foram aceitas — aceitar de novo não grava outra prova (a linha é
+ * travada e o UPDATE só pega quem está com `aceitoEm` vazio). Devolve quantos
+ * turnos foram aceitos agora.
+ */
+export async function aceitarTurnos(lojaId: string, pessoa: { tipo: string; id: string; nome: string; diaria: number | null }, inscricaoIds: string[], prova: ProvaDoAceite): Promise<number> {
+  await garantirTabelasDaEscala();
+  const ids = [...new Set(inscricaoIds.filter((x) => typeof x === "string" && x))].slice(0, 200);
+  if (!ids.length) return 0;
+  const valores = await valoresDaLoja(lojaId);
+  return prisma.$transaction(async (tx) => {
+    const pendentes = await tx.$queryRaw<{ id: string; turnoId: string; data: string; inicio: string; fim: string; funcao: string }[]>(Prisma.sql`
+      SELECT i."id", i."turnoId", to_char(t."data", 'YYYY-MM-DD') AS "data", t."inicio", t."fim", t."funcao"
+      FROM "EscalaInscricao" i JOIN "EscalaTurno" t ON t."id" = i."turnoId"
+      WHERE i."lojaId" = ${lojaId} AND i."pessoaTipo" = ${pessoa.tipo} AND i."pessoaId" = ${pessoa.id}
+        AND i."id" = ANY(${ids}) AND i."aceitoEm" IS NULL
+      ORDER BY i."id" FOR UPDATE OF i`);
+    if (!pendentes.length) return 0;
+    const agora = agoraEmUtc();
+    await tx.$executeRaw(Prisma.sql`UPDATE "EscalaInscricao" SET "aceitoEm" = ${agora} WHERE "id" = ANY(${pendentes.map((p) => p.id)}) AND "aceitoEm" IS NULL`);
+    const linhas = pendentes.map((p) => {
+      const valor = diariaDoTurno(p, pessoa.diaria, valores).valor;
+      return Prisma.sql`(${randomUUID()}, ${lojaId}, ${p.id}, ${p.turnoId}, ${pessoa.tipo}, ${pessoa.id}, ${pessoa.nome.slice(0, 80)}, ${p.data}::date,
+        ${p.inicio}, ${p.fim}, ${p.funcao}, ${valor}, ${termosDoTurno(p)}, ${prova.telefone?.slice(0, 30) ?? null}, ${prova.ip?.slice(0, 80) ?? null},
+        ${prova.agente?.slice(0, 400) ?? null}, ${agora})`;
+    });
+    await tx.$executeRaw(Prisma.sql`
+      INSERT INTO "EscalaAceite" ("id", "lojaId", "inscricaoId", "turnoId", "pessoaTipo", "pessoaId", "nome", "data", "inicio", "fim", "funcao", "valor", "termos", "telefone", "ip", "agente", "aceitoEm")
+      VALUES ${Prisma.join(linhas)}`);
+    return pendentes.length;
+  });
+}
+
+/** Quando foi a última mensagem que SAIU para a pessoa e o último aceite dela (para não mandar mensagem em série). */
+export async function ultimoAvisoEAceite(lojaId: string, pessoa: { tipo: string; id: string }): Promise<{ ultimoAviso: Date | null; ultimoAceite: Date | null }> {
+  await garantirTabelasDaEscala();
+  const [l] = await prisma.$queryRaw<{ aviso: Date | null; aceite: Date | null }[]>(Prisma.sql`
+    SELECT max("avisoEm") FILTER (WHERE "avisoStatus" = 'enviado') AS "aviso", max("aceitoEm") AS "aceite"
+    FROM "EscalaInscricao" WHERE "lojaId" = ${lojaId} AND "pessoaTipo" = ${pessoa.tipo} AND "pessoaId" = ${pessoa.id}`);
+  return { ultimoAviso: l?.aviso ? new Date(l.aviso) : null, ultimoAceite: l?.aceite ? new Date(l.aceite) : null };
+}
+
+/** Marca nas inscrições como foi a mensagem (enviada, junto com a anterior, falhou, sem WhatsApp). */
+export async function registrarAviso(lojaId: string, inscricaoIds: string[], status: StatusDoAviso): Promise<void> {
+  if (!inscricaoIds.length) return;
+  await garantirTabelasDaEscala();
+  await prisma.$executeRaw(Prisma.sql`
+    UPDATE "EscalaInscricao" SET "avisoEm" = ${agoraEmUtc()}, "avisoStatus" = ${status}
+    WHERE "lojaId" = ${lojaId} AND "id" = ANY(${inscricaoIds}) AND "aceitoEm" IS NULL`);
 }

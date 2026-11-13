@@ -7,6 +7,9 @@
  *                   motoboys, freelancers) ou cadastrar um freelancer na hora.
  *                   O dono também marca/desfaz o pagamento de cada pessoa
  *                   (turno de hoje para trás) e copia o Pix dela.
+ *                   E o aceite (13/11/2026): cada pessoa mostra se aceitou
+ *                   pelo WhatsApp (e quando); quem não aceitou tem o
+ *                   "📲 pedir aceite", que manda de novo pelo WhatsApp da loja.
  */
 
 import { useMemo, useState } from "react";
@@ -16,7 +19,7 @@ import {
 } from "@/lib/escala-da-equipe/regras";
 import { PilulaDasVagas } from "./Calendario";
 import {
-  BotaoCopiarPix, COR, COR_CLARA, ErroDaApi, Janela, LINK_DO_ACERTO, S, SELO_DO_TIPO, SeloDoLink, SeloDoPagamento, SeloDoTipo, pedir, reais,
+  BotaoCopiarPix, COR, COR_CLARA, ErroDaApi, Janela, LINK_DO_ACERTO, S, SELO_DO_TIPO, SeloDoAceite, SeloDoLink, SeloDoPagamento, SeloDoTipo, pedir, reais,
   type Aviso, type Confirmacao, type Inscrito, type Pessoa, type Turno,
 } from "./ui";
 import { JanelaDePagar } from "./Pagamentos";
@@ -224,6 +227,21 @@ export function DetalheDoTurno({ turno, pessoas, ehDono, hoje, onFechar, onMudou
     }
   }
 
+  /** "Pedir aceite": o WhatsApp da loja manda à pessoa os turnos que faltam aceitar, com o link dela. */
+  async function pedirAceite(i: Inscrito) {
+    setOcupado(true);
+    try {
+      const r = await pedir<{ mensagem: string }>("/api/store/escala/aceite", "POST", { pessoaTipo: i.pessoaTipo, pessoaId: i.pessoaId });
+      avisar({ tipo: "ok", titulo: `Aceite pedido a ${i.nome}`, detalhe: r.mensagem });
+      onMudou();
+    } catch (e: any) {
+      avisar({ tipo: "erro", titulo: "Não deu para pedir o aceite", detalhe: e.message });
+      onMudou();
+    } finally {
+      setOcupado(false);
+    }
+  }
+
   async function tirar(id: string, nomeDaPessoa: string) {
     setOcupado(true);
     try {
@@ -267,6 +285,13 @@ export function DetalheDoTurno({ turno, pessoas, ehDono, hoje, onFechar, onMudou
                   <button type="button" disabled={ocupado || !!i.pagamento} aria-label={`Tirar ${i.nome}`}
                     title={i.pagamento ? "Já foi pago por este turno: desfaça o pagamento antes de tirar" : "Tirar do turno"} onClick={() => tirar(i.id, i.nome)}
                     style={{ border: 0, background: "#FEF2F2", color: "#DC2626", borderRadius: 8, width: 30, height: 30, cursor: i.pagamento ? "not-allowed" : "pointer", fontSize: 16, opacity: i.pagamento ? 0.4 : 1 }}>×</button>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+                  <SeloDoAceite inscrito={i} />
+                  {!i.aceitoEm && (
+                    <button type="button" disabled={ocupado} onClick={() => pedirAceite(i)} title="Manda pelo WhatsApp da loja os turnos e o link para a pessoa tocar em Aceito"
+                      style={{ ...S.botaoPequeno, height: 26, padding: "0 9px", fontSize: 12, borderColor: "#BBF7D0", color: "#15803D" }}>📲 pedir aceite</button>
+                  )}
                 </div>
                 {sit !== "futuro" && (
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 6, fontSize: 12.5, color: "#475569" }}>

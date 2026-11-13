@@ -21,6 +21,15 @@
  *          troca fica marcada para o dono conferir antes de pagar.
  * POST { acao: "desistir", inscricaoId, chave }
  *        — só com a chave e dentro do prazo da loja.
+ * POST { acao: "meu-link", telefone, chaves: [...] }
+ *        — o link pessoal (aceite + PDF do mês, lib/escala-da-equipe/aviso.ts).
+ *          Mostra a diária, então só sai para o aparelho que fez uma inscrição
+ *          da pessoa (a mesma prova de trocar o Pix); senão, o link vai pelo
+ *          WhatsApp dela.
+ *
+ * Inscreveu pelo link: o WhatsApp DA LOJA manda à pessoa o turno e o link
+ * para tocar em "Aceito" (Lucas/Frangoso, 13/11/2026: a prova de que ela
+ * escolheu os dias).
  *
  * Limite por IP: o telefone identifica, então tentar telefones em série para
  * descobrir quem trabalha na loja tem de ser lento.
@@ -38,6 +47,7 @@ import {
   primeiroNome, situacaoDasVagas, somarDias, telefoneUtilizavel, tipoDaChave, turnoJaTerminou,
 } from "@/lib/escala-da-equipe/regras";
 import { lerCorpo, respostaDoErro } from "@/lib/escala-da-equipe/sessao";
+import { avisarDepois, caminhoDoLinkPessoal } from "@/lib/escala-da-equipe/aviso";
 
 export const dynamic = "force-dynamic";
 
@@ -122,7 +132,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ codigo:
         pix: pixVisivel(pessoa),
         inscricoes: minhas
           .filter((t) => !turnoJaTerminou(t, l.agora))
-          .map((t) => ({ inscricaoId: t.inscricaoId, turnoId: t.id, data: t.data, inicio: t.inicio, fim: t.fim, funcao: t.funcao, podeDesistir: desistenciaAberta(t, l.agora, l.config) })),
+          .map((t) => ({
+            inscricaoId: t.inscricaoId, turnoId: t.id, data: t.data, inicio: t.inicio, fim: t.fim, funcao: t.funcao,
+            podeDesistir: desistenciaAberta(t, l.agora, l.config), aceito: !!t.aceitoEm,
+          })),
       });
     }
 
@@ -139,6 +152,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ codigo:
         await gravarPixPeloLink(l.lojaId, pessoa, lida.chave, lida.tipo, !!pessoa.pix);
       }
       return NextResponse.json({ ok: true, pix: pixVisivel({ pix: lida.chave, pixTipo: lida.tipo }) });
+    }
+
+    if (acao === "meu-link") {
+      if (!pessoa) return NextResponse.json({ error: "Primeiro se inscreva em um turno.", codigo: "PRECISA_NOME" }, { status: 400 });
+      if (!(await aparelhoDaPessoa(l.lojaId, pessoa, Array.isArray(corpo.chaves) ? corpo.chaves : []))) {
+        throw new ErroDaEscala("Abra o link que chegou no seu WhatsApp — ou use o celular em que você se inscreveu.", 403, "OUTRO_APARELHO");
+      }
+      return NextResponse.json({ ok: true, link: caminhoDoLinkPessoal(l.config.codigo, pessoa) });
     }
 
     if (acao !== "inscrever") return NextResponse.json({ error: "Ação inválida." }, { status: 400 });
@@ -177,6 +198,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ codigo:
         if (!inscricaoAberta(t, l.agora, l.config)) throw new ErroDaEscala("As inscrições para este turno já fecharam.", 409);
       },
     });
+    avisarDepois(l.lojaId, pessoa, "link");
     return NextResponse.json({
       ok: true, inscricaoId: r.id, chave: r.chave,
       pessoa: { nome: primeiroNome(pessoa.nome), tipo: ROTULO[pessoa.tipo] },
