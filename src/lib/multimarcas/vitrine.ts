@@ -12,6 +12,8 @@ export type MarcaDaVitrine = {
   cor: string;
   logo: string | null;
   capa: string | null;
+  /** A foto do cartão grande (escolhida pelo dono); sem ela, a capa; sem capa, a cor e a logo. */
+  fundo?: string | null;
   /** Nota média dos pedidos com itens da marca; null = ainda sem avaliação ("Nova"). */
   nota: number | null;
   avaliacoes: number;
@@ -46,6 +48,8 @@ export type ConfigDaVitrine = {
   banners: BannerDaVitrine[];
   /** Ids dos produtos da fileira de destaques; vazio = um com foto por marca. */
   destaques?: string[];
+  /** Os atalhos embaixo do banner (nome do dono + as marcas de cada um). Vazio = filtro pelo tipo de comida. */
+  atalhos?: { id: string; nome: string; marcas: string[] }[];
 };
 
 export type ProdutoDaVitrine = {
@@ -61,6 +65,10 @@ export type ProdutoDaVitrine = {
   nome: string;
   descricao: string;
   preco: number;
+  /** O preço de antes, riscado, quando o item está em promoção. */
+  precoDe?: number | null;
+  /** Entra em "Promoções do dia": a mesma regra do botão Ofertas do cardápio (lib/multimarcas/carga.ts). */
+  promocao?: boolean;
   foto: string | null;
 };
 

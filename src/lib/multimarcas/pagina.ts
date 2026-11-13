@@ -28,6 +28,11 @@ export type MarcaDaPagina = {
   cor: string;
   logo: string | null;
   capa: string | null;
+  /**
+   * A foto do cartão grande no começo da página (uma foto do cardápio, escolhida
+   * pelo dono). null = o cartão usa a capa da marca; sem capa, a cor e a logo.
+   */
+  fundo: string | null;
   /** Nomes das categorias do cardápio que são desta marca (a mesma pode estar em outras marcas). */
   categorias: string[];
   oculta: boolean;
@@ -45,6 +50,18 @@ export type BannerDaPagina = {
   ativo: boolean;
 };
 
+/**
+ * Um atalho da fileira embaixo do banner ("Lanches", "Porções", "Novidades"):
+ * o nome é do dono, e ele diz quais marcas entram em cada um (Lucas,
+ * 13/11/2026). Tocar no atalho mostra só essas marcas.
+ */
+export type AtalhoDaPagina = {
+  id: string;
+  nome: string;
+  /** Ids das marcas deste atalho (uma marca pode estar em vários). */
+  marcas: string[];
+};
+
 export type ConfigDaPagina = {
   nome: string;
   frase: string;
@@ -56,9 +73,11 @@ export type ConfigDaPagina = {
    * Vazio = a fileira escolhe sozinha (um item com foto por marca).
    */
   destaques: string[];
+  /** A fileira de atalhos embaixo do banner. Vazio = a página filtra pelo tipo de comida, como antes. */
+  atalhos: AtalhoDaPagina[];
 };
 
-export const LIMITES = { marcas: 30, banners: 12, categoriasPorMarca: 60, destaques: 20 } as const;
+export const LIMITES = { marcas: 30, banners: 12, categoriasPorMarca: 60, destaques: 20, atalhos: 12 } as const;
 export const CORES_DAS_MARCAS = ["#1F1F23", "#E8590C", "#C92A2A", "#F08C00", "#2B8A3E", "#1864AB", "#7048E8", "#C2255C", "#0B7285", "#5C940D"];
 
 export const chaveDaCategoria = (nome: string) => String(nome || "").trim().toLowerCase();
@@ -85,8 +104,8 @@ const id = (v: unknown, prefixo: string, i: number) => {
 
 /**
  * A config que vem da tela (ou do banco), limpa: textos cortados, cores e
- * imagens validadas, ids únicos, e cada categoria uma vez por marca (pode
- * repetir em outra marca). Puro, para o teste.
+ * imagens validadas, ids únicos, cada categoria uma vez por marca (pode
+ * repetir em outra marca) e atalhos só com marcas que existem. Puro, para o teste.
  */
 export function limparConfig(bruto: unknown, nomeDaLoja = "Minhas marcas"): ConfigDaPagina {
   const b = (bruto && typeof bruto === "object" ? bruto : {}) as any;
@@ -111,6 +130,7 @@ export function limparConfig(bruto: unknown, nomeDaLoja = "Minhas marcas"): Conf
       cor: cor(m?.cor, CORES_DAS_MARCAS[i % CORES_DAS_MARCAS.length]),
       logo: imagem(m?.logo),
       capa: imagem(m?.capa),
+      fundo: imagem(m?.fundo),
       categorias,
       oculta: m?.oculta === true,
     };
@@ -131,6 +151,15 @@ export function limparConfig(bruto: unknown, nomeDaLoja = "Minhas marcas"): Conf
       ativo: x?.ativo !== false,
     };
   }).filter((x: BannerDaPagina) => x.titulo || x.imagem);
+  // Atalho sem nome some; marca que não existe mais sai do atalho.
+  const idsAtalhos = new Set<string>();
+  const atalhos: AtalhoDaPagina[] = (Array.isArray(b.atalhos) ? b.atalhos : []).slice(0, LIMITES.atalhos).map((a: any, i: number) => {
+    let aid = id(a?.id, "a", i);
+    while (idsAtalhos.has(aid)) aid = `${aid}x`;
+    idsAtalhos.add(aid);
+    const marcasDoAtalho = (Array.isArray(a?.marcas) ? a.marcas : []).filter((m: unknown) => typeof m === "string" && idsDasMarcas.has(m));
+    return { id: aid, nome: texto(a?.nome, 24), marcas: [...new Set<string>(marcasDoAtalho)] };
+  }).filter((a: AtalhoDaPagina) => a.nome);
   return {
     nome: texto(b.nome, 40) || nomeDaLoja.slice(0, 40),
     frase: texto(b.frase, 120),
@@ -138,6 +167,7 @@ export function limparConfig(bruto: unknown, nomeDaLoja = "Minhas marcas"): Conf
     marcas,
     banners,
     destaques: [...new Set((Array.isArray(b.destaques) ? b.destaques : []).map(idDeProduto).filter(Boolean) as string[])].slice(0, LIMITES.destaques),
+    atalhos,
   };
 }
 

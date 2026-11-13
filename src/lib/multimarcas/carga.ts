@@ -10,6 +10,7 @@ import { estadoDaLoja } from "@/lib/loja-aberta";
 import { filtroDoCardapio, minimoDeEstrelas } from "@/lib/avaliacoes-no-cardapio";
 import { ordenarComoALoja } from "@/lib/cardapio-da-loja";
 import { comPrazoDaExtensao } from "@/lib/prazo-automatico";
+import { disponivelAgora } from "@/lib/cardapio-interno";
 import { chaveDaCategoria, mapaDeCategorias, type ConfigDaPagina } from "./pagina";
 import { MARCA_DOS_EXTRAS, type ConfigDaVitrine, type ProdutoDaVitrine } from "./vitrine";
 
@@ -35,6 +36,23 @@ export function notasPorMarca(
     }
   }
   return new Map([...soma].map(([m, x]) => [m, { media: Math.round((x.s / x.n) * 10) / 10, total: x.n }]));
+}
+
+/**
+ * O item vai para "Promoções do dia"? A mesma regra do botão Ofertas do
+ * cardápio (promoProducts em components/customer/CustomerStorePage.tsx): o
+ * preço promocional de verdade (`precoDe`, já resolvido para o delivery), a
+ * promoção só numa opção, ou a etiqueta/nome "promo" que as lojas usavam antes
+ * do campo existir. Esgotado e fora do dia/horário não entram (com agendamento
+ * ligado o cardápio vem inteiro). Puro, para o teste.
+ */
+export function emPromocao(p: any, timeZone?: string | null): boolean {
+  if (!p || p.esgotado === true || !disponivelAgora(p, timeZone)) return false;
+  if (Number(p.precoDe) > 0) return true;
+  if ((p.comboGroups || []).some((g: any) => (g?.items || []).some((i: any) => Number(i?.adicionalDe) > 0))) return true;
+  const tags = String(p.tags || "");
+  return tags.includes("Promoção") || tags.includes("Oferta")
+    || String(p.name || "").toLowerCase().includes("promo") || String(p.category || "").toLowerCase().includes("promo");
 }
 
 async function avaliacoesComCategorias(franchisee: any) {
@@ -81,6 +99,8 @@ export async function vitrineDaLoja(franchisee: any, config: ConfigDaPagina): Pr
     nome: String(p.name || ""),
     descricao: String(p.description || ""),
     preco: Number(p.price) || 0,
+    precoDe: Number(p.precoDe) > Number(p.price) ? Number(p.precoDe) : null,
+    promocao: emPromocao(p, franchisee.storeTimezone),
     foto: p.imageUrl || null,
   }));
 
@@ -95,13 +115,14 @@ export async function vitrineDaLoja(franchisee: any, config: ConfigDaPagina): Pr
       avisoFechada: estado.aberta ? undefined : estado.texto,
       entrega: { taxa: null, ...prazoDasAreas(comPrazoDaExtensao(franchisee).deliveryZones), minimo: Number(dc.minimumOrderValue) || 0 },
       marcas: config.marcas.map((m) => ({
-        id: m.id, nome: m.nome, tipo: m.tipo, cor: m.cor, logo: m.logo, capa: m.capa, oculta: m.oculta,
+        id: m.id, nome: m.nome, tipo: m.tipo, cor: m.cor, logo: m.logo, capa: m.capa, fundo: m.fundo, oculta: m.oculta,
         nota: notas.get(m.id)?.media ?? null,
         avaliacoes: notas.get(m.id)?.total ?? 0,
         aberta: estado.aberta,
       })),
       banners: config.banners,
       destaques: config.destaques,
+      atalhos: config.atalhos,
     },
   };
 }

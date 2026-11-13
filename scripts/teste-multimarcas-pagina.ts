@@ -7,8 +7,9 @@ import assert from "node:assert/strict";
 import { limparConfig, marcaDaCategoria, mapaDeCategorias } from "../src/lib/multimarcas/pagina";
 import { categoriaEntraNaMarca, marcasNoCardapio, siglaDaMarca } from "../src/lib/multimarcas/no-cardapio";
 import { itensComMarca } from "../src/lib/multimarcas/itens";
-import { notasPorMarca } from "../src/lib/multimarcas/carga";
+import { emPromocao, notasPorMarca } from "../src/lib/multimarcas/carga";
 import { corParaTexto, textoSobreCor } from "../src/lib/multimarcas/vitrine";
+import { diaDaSemanaDaLoja } from "../src/lib/cardapio-interno";
 
 let casos = 0;
 const ok = (f: () => void) => { f(); casos++; };
@@ -145,5 +146,37 @@ ok(() => assert.equal(textoSobreCor("#1F1F23"), "#FFFFFF"));
 ok(() => assert.equal(corParaTexto("#1864AB"), "#1864AB")); // cor escura já se lê: não muda
 ok(() => assert.notEqual(corParaTexto("#FFC800"), "#FFC800")); // amarelo como texto escurece
 ok(() => assert.equal(textoSobreCor(corParaTexto("#FFC800")), "#FFFFFF")); // ...até dar contraste com o branco
+
+// ─── home de app de delivery: atalhos e foto do cartão (Lucas, 13/11) ───
+const home = limparConfig({
+  marcas: [{ id: "smash", nome: "Smash", fundo: "/uploads/lojas/f.webp" }, { id: "frango", nome: "Frango", fundo: "javascript:x" }],
+  atalhos: [
+    { id: "a1", nome: "  Lanches  ", marcas: ["smash", "fantasma", "smash", "frango"] },
+    { id: "a1", nome: "Porções", marcas: "frango" },
+    { id: "a3", nome: "", marcas: ["smash"] },
+  ],
+});
+ok(() => assert.equal(home.marcas[0].fundo, "/uploads/lojas/f.webp"));
+ok(() => assert.equal(home.marcas[1].fundo, null)); // javascript: não passa
+ok(() => assert.equal(home.atalhos.length, 2)); // sem nome some
+ok(() => assert.equal(home.atalhos[0].nome, "Lanches"));
+ok(() => assert.deepEqual(home.atalhos[0].marcas, ["smash", "frango"])); // marca que não existe sai, repetida conta uma vez
+ok(() => assert.notEqual(home.atalhos[0].id, home.atalhos[1].id));
+ok(() => assert.deepEqual(home.atalhos[1].marcas, []));
+// Config antiga, sem nada disso: sem atalhos e sem foto (a página fica como era).
+ok(() => assert.deepEqual(c.atalhos, []));
+ok(() => assert.equal(c.marcas[0].fundo, null));
+
+// ─── promoções do dia: a regra do botão Ofertas do cardápio ───
+ok(() => assert.equal(emPromocao({ name: "Smash", price: 20, precoDe: 25 }), true));
+ok(() => assert.equal(emPromocao({ name: "Smash", price: 20 }), false));
+ok(() => assert.equal(emPromocao({ name: "Smash", price: 20, precoDe: 25, esgotado: true }), false));
+ok(() => assert.equal(emPromocao({ name: "Pizza", price: 30, comboGroups: [{ items: [{ adicionalDe: 10 }] }] }), true));
+ok(() => assert.equal(emPromocao({ name: "Combo", price: 30, tags: "Promoção" }), true));
+ok(() => assert.equal(emPromocao({ name: "Batata", price: 10, category: "Promoções" }), true));
+// Fora do dia (só domingo) não entra, mesmo com preço promocional.
+// O dia de depois de amanhã: nunca é hoje, nem com a madrugada contando como ontem.
+const diaQueNaoE = diaDaSemanaDaLoja("America/Sao_Paulo", new Date(Date.now() + 2 * 24 * 60 * 60 * 1000));
+ok(() => assert.equal(emPromocao({ name: "Smash", price: 20, precoDe: 25, availableDays: [diaQueNaoE] }, "America/Sao_Paulo"), false));
 
 console.log(`✅ teste-multimarcas-pagina: ${casos} casos ok`);

@@ -306,3 +306,54 @@
 .prazo { display: inline-flex; align-items: center; gap: 4px; }
 .seloImg { width: 38px; height: 38px; border-radius: 12px; object-fit: cover; flex-shrink: 0; }
 .banner:is(a) { display: block; }
+
+/* ─── Home de app de delivery (Lucas, 13/11/2026) ─── */
+/* Atalhos do dono: presos embaixo da barra do topo, para trocar sem voltar. */
+.atalhos {
+  position: sticky; top: 65px; z-index: 15; background: var(--fundo);
+  margin: 12px -16px 0; padding: 10px 16px;
+}
+.secaoDasLojas { scroll-margin-top: 125px; }
+
+/* Cartões grandes: carrossel no celular, grade no computador. */
+.cartoesGrandes {
+  display: grid; grid-auto-flow: column; grid-auto-columns: 82%; gap: 12px;
+  overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; padding-bottom: 2px;
+}
+.cartoesGrandes::-webkit-scrollbar { display: none; }
+@media (min-width: 760px) {
+  .cartoesGrandes { grid-auto-flow: row; grid-auto-columns: auto; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); overflow: visible; }
+}
+.embutida .cartoesGrandes { grid-auto-flow: column; grid-auto-columns: 82%; grid-template-columns: none; overflow-x: auto; }
+.cartaoGrande {
+  position: relative; display: block; aspect-ratio: 16 / 10; border: 0; padding: 0; border-radius: 18px;
+  overflow: hidden; scroll-snap-align: start; text-align: left; color: #fff;
+  transition: transform .15s ease;
+}
+.cartaoGrande:active { transform: scale(0.99); }
+.cartaoGrandeFoto { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.cartaoGrandeFechado .cartaoGrandeFoto, .cartaoGrandeFechado .logo, .cartaoGrandeFechado .logoLetra { filter: grayscale(0.8); }
+.cartaoGrandeVeu { position: absolute; inset: 0; background: linear-gradient(0deg, rgba(0,0,0,.78) 0%, rgba(0,0,0,.35) 45%, rgba(0,0,0,0) 75%); }
+.seloAberto, .seloFechado {
+  position: absolute; top: 12px; right: 12px; padding: 4px 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; letter-spacing: .01em;
+}
+.seloAberto { background: #2b8a3e; color: #fff; }
+.seloFechado { background: rgba(20,16,12,.78); color: #fff; }
+.cartaoGrandeRodape { position: absolute; left: 14px; right: 14px; bottom: 12px; display: flex; align-items: center; gap: 12px; }
+.cartaoGrandeRodape .logo, .cartaoGrandeRodape .logoLetra { border: 2px solid rgba(255,255,255,.9); border-radius: 12px; }
+.cartaoGrandeInfo { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cartaoGrandeInfo strong { font-size: 18px; font-weight: 800; letter-spacing: -0.015em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cartaoGrandeInfo > span { display: flex; align-items: center; gap: 4px; font-size: 13px; color: rgba(255,255,255,.9); }
+.cartaoGrandeInfo .ponto2, .cartaoGrandeInfo .notaQtd { color: rgba(255,255,255,.75); }
+
+/* Promoções do dia. */
+.tituloComAcao { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.verTodas { background: none; border: 0; padding: 4px 0; font-size: 14px; font-weight: 700; color: var(--cor-tinta, var(--cor)) !important; }
+.gradeDePromocoes { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.miniPromocao { position: relative; }
+.seloDesconto {
+  position: absolute; top: 14px; left: 14px; z-index: 1; padding: 2px 7px; border-radius: 6px;
+  background: #c92a2a; color: #fff; font-size: 12px; font-weight: 800;
+}
+.precoDe { color: var(--tinta-3); font-weight: 500; font-size: 12px; margin-right: 2px; }
