@@ -9,6 +9,7 @@ import { observacaoDasPartes } from "@/lib/observacao-do-item";
 import { dataHoraDaLoja } from "@/lib/fuso";
 import { coordenadasDoParceiro } from "./coordenadas-do-parceiro";
 import { isBeverageName } from "@/lib/beverage";
+import { TEMPO_DE_RETIRADA_PADRAO_MIN } from "@/lib/previsao-da-entrega";
 import type { WabizPedido, WabizParte, WabizPagamento } from "@/lib/wabiz-api";
 
 export const dinheiro = (v: unknown) => Math.round((Number(v) || 0) * 100) / 100;
@@ -345,7 +346,13 @@ function ehPizzaSemTipoNoNome(nomeDoGrupo: string, partes: WabizParte[], nomesDa
  */
 export function traduzirPedidoWabiz(
   pedido: WabizPedido,
-  ctx: { lojaId: string; fuso: string; autoAcceptOrders: boolean }
+  ctx: {
+    lojaId: string;
+    fuso: string;
+    autoAcceptOrders: boolean;
+    /** "Tempo de retirada" da Minha Loja (lib/previsao-da-entrega.ts). Sem ele, 40. */
+    tempoRetiradaMin?: number | null;
+  }
 ) {
   const internalKey = texto(pedido?.internalKey);
   const orderNumber = texto(pedido?.orderNumber);
@@ -474,15 +481,18 @@ export function traduzirPedidoWabiz(
   const { paymentMethod, changeAmount } = traduzirPagamento(pagamento, total);
 
   // ── Prazo ────────────────────────────────────────────────────────────────
-  // Ordem: agendado → o tempo que a Wabiz mostrou ao cliente → 50/40 fixos
-  // (os mesmos da Brendi e do Open Delivery). O FireHub não tem tempo de
-  // retirada cadastrado por loja; quando tiver, entra antes dos fixos.
+  // Ordem: agendado → o tempo que a Wabiz mostrou ao cliente → na retirada,
+  // o "Tempo de retirada" da Minha Loja (NIK 13/11) → 50/40 fixos.
   const criadoEm = horaLocalParaInstante(pedido.dateTime, fuso) || new Date();
   const agendadoPara = horaLocalParaInstante(servico.scheduleDatetime || servico.datetime, fuso);
+  const minutosSemPrazo =
+    deliveryType === "DELIVERY" ? 50
+    : deliveryType === "RETIRADA" ? ctx.tempoRetiradaMin ?? TEMPO_DE_RETIRADA_PADRAO_MIN
+    : 40;
   const scheduledDatetime =
     agendadoPara ??
     prazoEstimadoDaWabiz(pedido, criadoEm, fuso) ??
-    new Date(criadoEm.getTime() + (deliveryType === "DELIVERY" ? 50 : 40) * 60_000);
+    new Date(criadoEm.getTime() + minutosSemPrazo * 60_000);
 
   // ── Cliente e observações ────────────────────────────────────────────────
   const cliente = pedido.customer || {};

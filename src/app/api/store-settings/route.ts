@@ -11,6 +11,7 @@ import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
 import { enderecoDoMapaComBairroDosCorreios } from "@/lib/bairro-dos-correios";
 import { validarFormasProprias } from "@/lib/formas-proprias";
 import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
+import { tempoDeEntregaParaGravar } from "@/lib/previsao-da-entrega";
 
 /**
  * GET: o cadastro de entrega GRAVADO da loja da sessão.
@@ -247,6 +248,9 @@ export async function PUT(req: Request) {
     // (liberação, requisitos e limites). Aqui a chave é ignorada — e a gravada
     // fica: tela que reenvia o deliveryConfig inteiro lido antes não a desfaz.
     delete novo.roteirizacaoAutomatica;
+    // "Tempo de retirada" (NIK 13/11): minutos inteiros de 1 a 360, ou null
+    // (vazio = 40 na previsão — lib/previsao-da-entrega.ts).
+    if ("tempoRetiradaMin" in novo) novo.tempoRetiradaMin = tempoDeEntregaParaGravar(novo.tempoRetiradaMin);
     daLoja.deliveryConfig = { ...base, ...novo };
   }
 
