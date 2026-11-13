@@ -29,7 +29,7 @@ type Pagamento = { forma: FormaDoCaixa; valorCentavos: number };
 type Turno = { id: string; operador: string; abertoEm: string; fundoCentavos: number };
 type Resumo = { vendas: number; totalVendidoCentavos: number; porForma: Record<string, number>; esperado: Record<string, number>; movimentos: { tipo: string; valorCentavos: number; descricao: string | null }[] };
 type Modal =
-  | null | "busca" | "pagamento" | "pix" | "tef" | "sucesso" | "abrir" | "turno" | "fechar" | "desconto" | "cpf" | "ajuda" | "peso" | "quantidade" | "cancelar";
+  | null | "busca" | "pagamento" | "pix" | "tef" | "sucesso" | "abrir" | "turno" | "fechar" | "desconto" | "cpf" | "ajuda" | "peso" | "quantidade" | "cancelar" | "novo";
 
 const NOME_DA_FORMA: Record<FormaDoCaixa, string> = {
   DINHEIRO: "Dinheiro", PIX: "Pix", TEF: "Cartão no pinpad", CREDITO: "Crédito (maquininha)", DEBITO: "Débito (maquininha)", VALE: "Vale-alimentação",
@@ -84,6 +84,8 @@ export default function CaixaClient({ simularBalanca }: { simularBalanca: boolea
   const [ocupado, setOcupado] = useState(false);
   const [balanca, setBalanca] = useState<"desligada" | "conectando" | "conectada" | "caiu">("desligada");
   const [pesoSimulado, setPesoSimulado] = useState("0,452");
+  // Código bipado que não existe: cadastra ali mesmo (com a senha do gerente) e já lança.
+  const [novo, setNovo] = useState<{ codigo: string; nome: string; preco: string; unidade: "UN" | "KG"; quantidade: number | null } | null>(null);
 
   const campoRef = useRef<HTMLInputElement>(null);
   const modalRef = useRef<HTMLInputElement>(null);
@@ -253,8 +255,34 @@ export default function CaixaClient({ simularBalanca }: { simularBalanca: boolea
     // Não é código: abre a busca com o texto.
     setBusca(digitos ? "" : e.codigo);
     setBuscaSel(0);
-    if (digitos) return avisar(false, `Código ${c} não cadastrado. Busque pelo nome (F2) ou cadastre o código em Importar produtos.`);
+    if (digitos) { setNovo({ codigo: c, nome: "", preco: "", unidade: "UN", quantidade }); return setModal("novo"); }
     setModal("busca");
+  }
+
+  async function salvarNovo() {
+    if (!novo || ocupado) return;
+    const precoCentavos = centavosDoTexto(novo.preco);
+    if (!novo.nome.trim()) return avisar(false, "Escreva o nome do produto.");
+    if (!precoCentavos) return avisar(false, "Informe o preço de venda.");
+    setOcupado(true);
+    const corpo = JSON.stringify({ nome: novo.nome, codigo: novo.codigo, precoCentavos, unidade: novo.unidade });
+    const r = await comSenhaDoGerente((cab) => fetch("/api/store/caixa-mercado/produto?de=caixa", { method: "POST", headers: { "Content-Type": "application/json", ...cab }, body: corpo }), pedirSenha)
+      .finally(() => setOcupado(false));
+    if (!r) return;
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return avisar(false, d?.error || "Não deu para cadastrar.");
+    const c = await fetch("/api/store/caixa-mercado/catalogo", { cache: "no-store" });
+    const cd = await c.json().catch(() => ({}));
+    const lista: Produto[] = c.ok ? cd.produtos || [] : produtos;
+    setProdutos(lista);
+    const p = lista.find((x) => x.eans.includes(novo.codigo));
+    const { codigo, quantidade } = novo;
+    setNovo(null);
+    setModal(null);
+    avisar(true, d.criado ? `Produto cadastrado: ${novo.nome}.` : `Código ligado ao produto que já existia com esse nome.`);
+    if (!p) return;
+    if (p.unidade === "KG" && quantidade == null) return void pesarEAdicionar(p, codigo);
+    adicionar(p, quantidade ?? 1, codigo);
   }
 
   const resultadosDaBusca = useMemo(() => {
@@ -462,6 +490,8 @@ export default function CaixaClient({ simularBalanca }: { simularBalanca: boolea
   teclas.current = (e: KeyboardEvent) => {
     const k = e.key;
     if (/^F\d+$/.test(k)) e.preventDefault();
+    if (k === "F11") return alternarTelaCheia();
+    if (sempreTelaCheia && !document.fullscreenElement) entrarTelaCheia();
     // A janela da senha do gerente cuida das teclas dela (o Enter não pode finalizar nada por baixo).
     if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
     if (ocupado && k !== "Escape") return;
@@ -532,6 +562,38 @@ export default function CaixaClient({ simularBalanca }: { simularBalanca: boolea
   }, [modal, itens.length, ocupado]);
   useEffect(() => { listaRef.current?.querySelector(`[data-i="${selecionado}"]`)?.scrollIntoView({ block: "nearest" }); }, [selecionado]);
 
+  // ── Tela cheia, como o EvoPDV: só o caixa na tela, sem abas, barra de endereço
+  // nem barra do Windows (Douglas, 13/11). O navegador só entra com um gesto do
+  // operador, então entra no primeiro clique/tecla quando "sempre" está ligado.
+  // Em tela cheia o Esc fica com o caixa (limpar o campo); para sair, segura o Esc.
+  const [telaCheia, setTelaCheia] = useState(false);
+  const [sempreTelaCheia, setSempreTelaCheia] = useState(true);
+  useEffect(() => {
+    try { setSempreTelaCheia(localStorage.getItem("fh-caixa-tela-cheia") !== "nao"); } catch {}
+    const mudou = () => {
+      const cheia = Boolean(document.fullscreenElement);
+      setTelaCheia(cheia);
+      const teclado = (navigator as unknown as { keyboard?: { lock?: (k: string[]) => Promise<void>; unlock?: () => void } }).keyboard;
+      if (cheia) teclado?.lock?.(["Escape", "F11"]).catch(() => {});
+      else teclado?.unlock?.();
+    };
+    document.addEventListener("fullscreenchange", mudou);
+    mudou();
+    return () => document.removeEventListener("fullscreenchange", mudou);
+  }, []);
+  function entrarTelaCheia() {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen?.({ navigationUI: "hide" }).catch(() => {});
+  }
+  function alternarTelaCheia() {
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    else entrarTelaCheia();
+  }
+  function mudarSempre(v: boolean) {
+    setSempreTelaCheia(v);
+    try { localStorage.setItem("fh-caixa-tela-cheia", v ? "sim" : "nao"); } catch {}
+    if (v) entrarTelaCheia();
+  }
+
   // ── Tela ──────────────────────────────────────────────────────────────
   if (erroGeral) {
     return (
@@ -549,7 +611,9 @@ export default function CaixaClient({ simularBalanca }: { simularBalanca: boolea
   const legenda: [string, string][] = [["F1", "Ajuda"], ["F2", "Buscar"], ["F3", "Quantidade"], ["F4", "Balança"], ["F6", "Desconto"], ["F7", "Cancelar item"], ["F8", "CPF"], ["F9", "Turno"], ["F10", "Finalizar"]];
 
   return (
-    <div style={S.tela} onMouseUp={() => { if (!modal) setTimeout(() => campoRef.current?.focus(), 0); }}>
+    <div style={S.tela} onMouseUp={() => { if (sempreTelaCheia) entrarTelaCheia(); if (!modal) setTimeout(() => campoRef.current?.focus(), 0); }}>
+      {/* O selo da extensão do prazo do iFood não tem nada a ver com o caixa do mercado. */}
+      <style>{"#firehub-corner-pill{display:none!important}"}</style>
       {modalDaSenha}
       {aviso && <div style={{ ...S.aviso, background: aviso.ok ? "#065F46" : "#991B1B" }} onClick={() => setAviso(null)}>{aviso.texto}</div>}
 
@@ -561,6 +625,12 @@ export default function CaixaClient({ simularBalanca }: { simularBalanca: boolea
         <span style={{ ...S.etiq, background: portaTef ? "#065F46" : "#374151" }}>TEF: {segredoTef ? (portaTef ? "pronto" : "sem Assistente") : "maquininha manual"}</span>
         <span style={{ ...S.etiq, background: temPix ? "#065F46" : "#374151" }}>Pix: {temPix ? "chave ok" : "sem chave"}</span>
         <span style={{ flex: 1 }} />
+        <button type="button" onClick={alternarTelaCheia} style={{ ...S.etiq, border: 0, cursor: "pointer", background: telaCheia ? "#374151" : "#EA580C", color: "#fff", fontWeight: 800 }}>
+          {telaCheia ? "Sair da tela cheia (F11)" : "⛶ Tela cheia (F11)"}
+        </button>
+        <label style={{ display: "flex", gap: 4, alignItems: "center", color: "#94A3B8", fontSize: 12 }}>
+          <input type="checkbox" checked={sempreTelaCheia} onChange={(e) => mudarSempre(e.target.checked)} /> sempre
+        </label>
         <a href="/store/caixa-mercado" style={{ color: "#94A3B8", fontSize: 13 }}>sair</a>
       </header>
 
@@ -651,6 +721,26 @@ export default function CaixaClient({ simularBalanca }: { simularBalanca: boolea
                 <input ref={modalRef} style={S.campoModal} value={campoModal} onChange={(e) => setCampoModal(e.target.value)} aria-label="Fundo de troco"
                   onKeyDown={async (e) => { if (e.key === "Enter") { const d = await acaoDoTurno({ acao: "abrir", fundoCentavos: centavosDoTexto(campoModal) ?? 0 }); if (d) { setTurno(d.turno); setResumo(d.resumo); setModal(null); avisar(true, "Turno aberto. Boas vendas!"); } } }} />
                 <p style={S.dica}>Enter abre o turno.</p>
+              </>
+            )}
+            {modal === "novo" && novo && (
+              <>
+                <h2 style={S.h2}>Código {novo.codigo} não cadastrado</h2>
+                <p style={S.p}>Cadastre agora e o produto já entra na venda. Da próxima vez, é só bipar.</p>
+                <label style={S.p}>Nome do produto</label>
+                <input ref={modalRef} style={S.campoModal} value={novo.nome} placeholder="Ex.: Café Pilão 500g" aria-label="Nome do produto"
+                  onChange={(e) => setNovo({ ...novo, nome: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); (document.getElementById("cx-novo-preco") as HTMLInputElement | null)?.focus(); } }} />
+                <label style={S.p}>Preço de venda {novo.unidade === "KG" ? "(por kg)" : ""}</label>
+                <input id="cx-novo-preco" style={S.campoModal} value={novo.preco} placeholder="0,00" inputMode="decimal" aria-label="Preço de venda"
+                  onChange={(e) => setNovo({ ...novo, preco: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void salvarNovo(); } }} />
+                <div style={{ display: "flex", gap: 16, margin: "10px 0", color: "#334155" }}>
+                  <label><input type="radio" checked={novo.unidade === "UN"} onChange={() => setNovo({ ...novo, unidade: "UN" })} /> Unidade</label>
+                  <label><input type="radio" checked={novo.unidade === "KG"} onChange={() => setNovo({ ...novo, unidade: "KG" })} /> Por quilo (balança)</label>
+                </div>
+                <button style={S.botao} disabled={ocupado} onClick={() => void salvarNovo()}>{ocupado ? "Cadastrando…" : "Cadastrar e lançar"}</button>
+                <p style={S.dica}>Enter no preço cadastra · Esc volta sem cadastrar. NCM e o resto do fiscal você completa em Importar produtos › Conferência.</p>
               </>
             )}
             {modal === "busca" && (
