@@ -170,6 +170,8 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
   const [dirtyInfo, setDirtyInfo] = useState(false);
   const [dirtyHours, setDirtyHours] = useState<boolean>(!user.hasConfiguredHours && !user.storeHours);
   const [dirtyCoupons, setDirtyCoupons] = useState(false);
+  /** Qual cupom acabou de ter o link copiado (o botão mostra "Copiado!" por 2 s). */
+  const [linkDoCupomCopiado, setLinkDoCupomCopiado] = useState<string | null>(null);
   const [dirtyPayment, setDirtyPayment] = useState<boolean>(!user.hasConfiguredPayment && (!user.paymentFees || !user.paymentFees.PIX));
   const [syncIfoodHours, setSyncIfoodHours] = useState(true); // Refletir horários no iFood
   // Abre e fecha sozinha no horário (lib/abertura-da-loja.ts). Salva no toque:
@@ -1093,6 +1095,32 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                   <div style={{ paddingLeft: ehPrimeiro ? 0 : 24 }}>
                     <FormasDoCupom cupom={c} paymentConfig={paymentConfig} onMudar={(campo, valor) => updateCoupon(idx, campo, valor)} />
                   </div>
+                  {/* Linha 4: o link que abre o cardápio com o cupom já aplicado
+                      (CustomerStorePage lê o ?cupom=) — para anúncio, bio, status. O de 1º pedido já entra sozinho. */}
+                  {!ehPrimeiro && c.code && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 8, paddingLeft: 24 }}>
+                      <button
+                        type="button"
+                        disabled={dirtyCoupons || !c.active}
+                        onClick={() => {
+                          navigator.clipboard.writeText(`${storeUrl}?cupom=${encodeURIComponent(c.code)}`);
+                          setLinkDoCupomCopiado(c.code);
+                          setTimeout(() => setLinkDoCupomCopiado((atual) => (atual === c.code ? null : atual)), 2000);
+                        }}
+                        className="btn btn-outline"
+                        style={{ padding: "0.35rem 0.7rem", fontSize: "0.78rem", display: "inline-flex", alignItems: "center", gap: 5, opacity: dirtyCoupons || !c.active ? 0.5 : 1, cursor: dirtyCoupons || !c.active ? "not-allowed" : "pointer" }}
+                      >
+                        <Copy size={13} /> {linkDoCupomCopiado === c.code ? "Copiado!" : "Copiar link do cupom"}
+                      </button>
+                      <span style={{ fontSize: "0.72rem", color: "#64748B" }}>
+                        {dirtyCoupons
+                          ? "Salve os cupons para copiar o link."
+                          : !c.active
+                            ? "Ative o cupom para usar o link."
+                            : "Quem abre o link cai no seu cardápio com o cupom já aplicado — bom para anúncio, bio e status."}
+                      </span>
+                    </div>
+                  )}
                 </div>
               );
             })}
