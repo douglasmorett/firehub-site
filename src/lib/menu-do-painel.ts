@@ -56,6 +56,8 @@ export const MENU_DO_PAINEL: GrupoDoMenu[] = [
       // Self-service por quilo: balança + comanda numerada (R$ 197/mês, lib/balanca — Douglas, 05/11/2026).
       { href: "/store/balanca", label: "Balança", icone: "Scale", selo: "NOVO" },
       { href: "/store/venda-presencial", label: "Balcão", icone: "ShoppingBag" },
+      // Frente de caixa de mercado: leitor, balança, Pix na tela, TEF (R$ 97 por computador — lib/caixa-mercado, Douglas, 12/11/2026).
+      { href: "/store/caixa-mercado", label: "Caixa de mercado", icone: "ScanBarcode", selo: "NOVO" },
       { href: "/store/roteirizacao", label: "Roteirização", icone: "MapPin", novaAba: true },
       // A extensão que muda o prazo do iFood, do 99 e do site pela fila (cortesia para
       // quem usa FireHub — lib/prazo-automatico.ts). Douglas, 18/10/2026: "às vezes o cara
