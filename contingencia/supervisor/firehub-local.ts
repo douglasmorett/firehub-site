@@ -127,6 +127,9 @@ export class FireHubLocal {
         NEXTAUTH_URL: `http://127.0.0.1:${this.amb.portaDaLoja}`,
         CONTINGENCIA_SEGREDO_DO_BILHETE: this.amb.segredoDoBilhete,
         CONTINGENCIA_LOJA: this.amb.loja,
+        // As fotos do cardápio que o supervisor baixou (fotos.ts): a rota
+        // /uploads de sempre serve daqui (lib/storage.ts, UPLOADS_ROOT).
+        UPLOADS_DIR: path.join(this.amb.pasta, "fotos"),
         // O FireHub local não usa a chave da loja nem nenhuma chave de fora.
         CONTINGENCIA_CHAVE: "",
       },

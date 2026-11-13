@@ -10,30 +10,39 @@
  *     fetchAssistente): ativar só faz sentido no computador do caixa, que é
  *     onde a contingência roda.
  *
- * Pedido do Douglas (13/10/2026): a tela tem que se explicar sozinha, para o
- * dono ativar sem chamar o suporte. Por isso o desenho do "Como funciona" e o
- * passo a passo que olha o estado de verdade (Assistente achado, versão nova,
- * ativado, cópia pronta, teste feito) e abre só o passo da vez, com o botão
- * certo dentro dele. Os `data-*` são as âncoras do vídeo
- * (tutoriais/roteiros/contingencia.mjs).
+ * Refeita em 12/11/2026 (pedido do Douglas): explica que há DOIS modos de
+ * contingência — "Na web", sem instalar nada, e "FireHub instalado no
+ * computador", o que RECOMENDAMOS, que funciona até offline e até com o nosso
+ * servidor fora — lado a lado, bem ilustrada (DesenhosDosModos.tsx), com o
+ * botão grande de baixar o instalador e o passo a passo instalar → ativar →
+ * pronto. Continua fazendo o que fazia: ativar, testar, desativar, situação ao
+ * vivo, TV e garçom, últimas quedas.
+ *
+ * O passo a passo detalhado olha o estado de verdade (Assistente achado,
+ * versão nova, ativado, cópia pronta, teste feito) e abre só o passo da vez.
+ * Os `data-*` são as âncoras do vídeo (tutoriais/roteiros/contingencia.mjs).
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
 import {
-  Check, CheckCircle2, Clock, Download, FlaskConical, LifeBuoy, Monitor, Pause, Printer,
-  RefreshCw, Router, ShieldCheck, Smartphone, Tv, Wifi,
+  BarChart3, Camera, Check, CheckCircle2, Clock, CloudOff, Cpu, Download, FlaskConical, HardDrive, LifeBuoy,
+  MemoryStick, Monitor, Pause, Power, Printer, RefreshCw, Router, ShieldCheck, Smartphone, Sparkles, Tv, Wifi,
 } from "lucide-react";
 import { fetchAssistente } from "@/lib/print";
 import TutorialDaTela from "@/components/TutorialDaTela";
 import { useTutoriaisEnviados } from "@/components/TutoriaisEnviados";
 import { tutoriaisDaTela } from "@/lib/tutoriais";
+import type { EnderecoDoInstalador } from "@/lib/contingencia/instalador";
 import IlustracaoDaContingencia from "./IlustracaoDaContingencia";
+import { DesenhoDoPasso, DesenhoModoComputador, DesenhoModoWeb } from "./DesenhosDosModos";
 
 const PORTAS_DO_ASSISTENTE = [7899, 7900, 7901, 7891];
 /** Teste feito neste navegador: só para o passo 5 aparecer como feito. */
 const CHAVE_TESTOU = "firehub_contingencia_testou";
 /** Erro de rede do download, que o Assistente resolve sozinho na próxima tentativa. */
 const ERRO_PASSAGEIRO = /→ \d{3}|fetch failed|timeout|timed out|ECONN|ETIMEDOUT|aborted|socket|network|incompleto/i;
+/** O botão de baixar: a rota escolhe o instalador completo ou, sem ele, o Assistente de sempre. */
+const BAIXAR = "/api/contingencia/instalador";
 
 type EstadoDaNuvem = {
   ativada: boolean;
@@ -71,6 +80,8 @@ type ContingenciaDoAssistente = {
   progresso?: number | null;
   erro?: string | null;
   memoriaTotalMb?: number;
+  /** Veio pelo instalador completo (FireHub-Completo-Setup.exe). */
+  instalacaoCompleta?: boolean;
 };
 
 type EstadoDoAssistente =
@@ -80,7 +91,7 @@ type EstadoDoAssistente =
 const cor = {
   borda: "#E2E8F0", texto: "#0F172A", suave: "#64748B", fundo: "#F8FAFC",
   roxo: "#7C3AED", roxoEscuro: "#6D28D9", roxoClaro: "#F5F3FF", roxoBorda: "#DDD6FE",
-  verde: "#16A34A", verdeClaro: "#F0FDF4",
+  verde: "#16A34A", verdeClaro: "#F0FDF4", ambar: "#B45309", vermelho: "#B91C1C",
 };
 
 const botaoRoxo: React.CSSProperties = {
@@ -95,6 +106,16 @@ const botaoClaro: React.CSSProperties = {
   padding: "10px 16px", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit", textDecoration: "none",
 };
 
+const ESTILO = `
+.fh-cg-modos{display:grid;grid-template-columns:1fr 1.15fr;gap:16px;align-items:stretch}
+.fh-cg-passos3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.fh-cg-topo{display:grid;grid-template-columns:1.25fr 1fr;gap:20px;align-items:center}
+@media (max-width:820px){.fh-cg-modos,.fh-cg-topo{grid-template-columns:1fr}}
+@media (max-width:620px){.fh-cg-passos3{grid-template-columns:1fr}}
+.fh-cg-baixar:hover{transform:translateY(-1px);box-shadow:0 10px 26px rgba(109,40,217,.42)}
+.fh-cg-baixar{transition:transform .15s ease,box-shadow .15s ease}
+`;
+
 function Cartao({ titulo, sub, children, ancora }: { titulo?: string; sub?: string; children: React.ReactNode; ancora?: string }) {
   return (
     <section
@@ -102,7 +123,7 @@ function Cartao({ titulo, sub, children, ancora }: { titulo?: string; sub?: stri
       style={{ background: "#fff", border: `1.5px solid ${cor.borda}`, borderRadius: 16, padding: "18px 20px", marginBottom: 16 }}
     >
       {titulo && <h2 style={{ fontSize: 17, fontWeight: 900, margin: sub ? "0 0 2px" : "0 0 12px", color: cor.texto }}>{titulo}</h2>}
-      {sub && <p style={{ margin: "0 0 14px", fontSize: 14, color: cor.suave }}>{sub}</p>}
+      {sub && <p style={{ margin: "0 0 14px", fontSize: 14, color: cor.suave, lineHeight: 1.5 }}>{sub}</p>}
       {children}
     </section>
   );
@@ -140,6 +161,105 @@ async function acharAssistente(): Promise<EstadoDoAssistente> {
     }
   }
   return { achado: false };
+}
+
+/** O botão grande de baixar. O texto de baixo diz se é o instalador completo ou o Assistente. */
+function BotaoBaixar({ instalador, grande = true }: { instalador: EnderecoDoInstalador; grande?: boolean }) {
+  return (
+    <div style={{ display: "inline-flex", flexDirection: "column", gap: 6, maxWidth: "100%" }}>
+      <a
+        href={BAIXAR}
+        data-acao="baixar"
+        className="fh-cg-baixar"
+        style={{
+          ...botaoRoxo,
+          padding: grande ? "15px 22px" : "12px 18px",
+          fontSize: grande ? 16.5 : 15,
+          borderRadius: 14,
+          justifyContent: "center",
+          boxShadow: "0 8px 22px rgba(109,40,217,.35)",
+        }}
+      >
+        <Download size={grande ? 22 : 18} /> Baixar o FireHub para Windows
+      </a>
+      <span style={{ fontSize: 12.5, color: cor.suave, lineHeight: 1.4 }}>
+        {instalador.completo
+          ? `Instalador completo${instalador.tamanhoMb ? ` · ${instalador.tamanhoMb} MB` : ""} · Windows 10 ou 11 · já vem com tudo`
+          : "Windows 10 ou 11 · depois de ativar, ele baixa o resto sozinho"}
+      </span>
+    </div>
+  );
+}
+
+function ItemDaLista({ sim, children }: { sim: boolean; children: React.ReactNode }) {
+  return (
+    <li style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 14, lineHeight: 1.45, margin: "0 0 7px" }}>
+      <span
+        style={{
+          flex: "0 0 auto", width: 20, height: 20, borderRadius: 999, marginTop: 1,
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          background: sim ? "#DCFCE7" : "#FEF3C7", color: sim ? cor.verde : cor.ambar,
+        }}
+      >
+        {sim ? <Check size={13} strokeWidth={3.2} /> : <Pause size={11} strokeWidth={3} />}
+      </span>
+      <span style={{ minWidth: 0 }}>{children}</span>
+    </li>
+  );
+}
+
+/** Um dos dois modos, lado a lado. */
+function CartaoDoModo({
+  numero, titulo, selo, frase, desenho, cobre, naoCobre, recomendado, rodape, ancora,
+}: {
+  numero: 1 | 2; titulo: string; selo: string; frase: string; desenho: React.ReactNode;
+  cobre: React.ReactNode[]; naoCobre: React.ReactNode[]; recomendado?: boolean; rodape?: React.ReactNode; ancora: string;
+}) {
+  return (
+    <article
+      data-modo={ancora}
+      style={{
+        position: "relative", display: "flex", flexDirection: "column", minWidth: 0,
+        background: recomendado ? "linear-gradient(180deg,#FDFCFF,#F7F3FF)" : "#fff",
+        border: `${recomendado ? 2.5 : 1.5}px solid ${recomendado ? cor.roxo : cor.borda}`,
+        borderRadius: 18, padding: "16px 16px 18px",
+        boxShadow: recomendado ? "0 14px 36px rgba(124,58,237,.16)" : "none",
+      }}
+    >
+      {recomendado && (
+        <span
+          style={{
+            position: "absolute", top: -13, right: 16, display: "inline-flex", alignItems: "center", gap: 5,
+            background: `linear-gradient(135deg,#8B5CF6,${cor.roxoEscuro})`, color: "#fff", fontSize: 11.5, fontWeight: 900,
+            letterSpacing: ".04em", borderRadius: 999, padding: "5px 12px", boxShadow: "0 4px 12px rgba(109,40,217,.35)",
+          }}
+        >
+          <Sparkles size={13} /> RECOMENDADO
+        </span>
+      )}
+      <div style={{ borderRadius: 14, overflow: "hidden", marginBottom: 12 }}>{desenho}</div>
+      <div style={{ fontSize: 12, fontWeight: 900, color: recomendado ? cor.roxo : cor.suave, letterSpacing: ".05em" }}>MODO {numero}</div>
+      <h3 style={{ margin: "2px 0 4px", fontSize: 19, fontWeight: 900, color: cor.texto, lineHeight: 1.25 }}>{titulo}</h3>
+      <span
+        style={{
+          alignSelf: "flex-start", fontSize: 11, fontWeight: 800, borderRadius: 999, padding: "3px 9px", marginBottom: 8,
+          background: recomendado ? cor.roxoClaro : "#F1F5F9", color: recomendado ? cor.roxoEscuro : "#475569",
+        }}
+      >
+        {selo}
+      </span>
+      <p style={{ margin: "0 0 12px", fontSize: 14.5, lineHeight: 1.5, color: "#1E293B", fontWeight: 600 }}>{frase}</p>
+      <div style={{ fontSize: 12.5, fontWeight: 900, color: "#166534", margin: "0 0 6px" }}>O QUE COBRE</div>
+      <ul style={{ listStyle: "none", margin: "0 0 10px", padding: 0 }}>
+        {cobre.map((c, i) => <ItemDaLista key={i} sim>{c}</ItemDaLista>)}
+      </ul>
+      <div style={{ fontSize: 12.5, fontWeight: 900, color: "#92400E", margin: "0 0 6px" }}>{recomendado ? "ESPERA A INTERNET VOLTAR" : "NÃO COBRE"}</div>
+      <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+        {naoCobre.map((c, i) => <ItemDaLista key={i} sim={false}>{c}</ItemDaLista>)}
+      </ul>
+      {rodape && <div style={{ marginTop: "auto", paddingTop: 14 }}>{rodape}</div>}
+    </article>
+  );
 }
 
 type SituacaoDoPasso = "feito" | "agora" | "depois";
@@ -200,24 +320,36 @@ function Requisito({ icone, titulo, texto }: { icone: React.ReactNode; titulo: s
   );
 }
 
+const TRES_PASSOS: { n: 1 | 2 | 3; titulo: string; texto: string }[] = [
+  { n: 1, titulo: "Instale", texto: "Baixe o FireHub para Windows no computador do caixa e abra o instalador. Ele já traz tudo e cria o ícone FireHub na área de trabalho." },
+  { n: 2, titulo: "Ative", texto: "Abra o FireHub, entre com o seu login e, nesta tela, clique em Ativar neste computador. Ele copia a loja sozinho." },
+  { n: 3, titulo: "Pronto", texto: "Daqui em diante ele funciona com ou sem internet, e até se o nosso servidor cair. Atualiza sozinho sempre que a internet volta." },
+];
+
 const DUVIDAS: { p: string; r: string }[] = [
-  { p: "Como abro o FireHub sem internet?", r: "Pelo ícone FireHub que aparece sozinho na área de trabalho do computador do caixa, ou pelo endereço de sempre. Sem internet, o navegador leva ao computador da loja já com você dentro, sem pedir senha." },
-  { p: "E se ficar dias sem internet?", r: "A loja continua funcionando: pedidos, balcão, mesas, cozinha, abrir e fechar o caixa e impressão. A entrada guardada vale por até um ano sem nenhuma conexão. Quando a internet voltar, tudo sobe sozinho." },
+  { p: "Qual modo eu escolho?", r: "O Modo 1 (na web) já vem ligado para todo mundo: ele protege seus clientes quando a internet da loja cai, mas a loja para. O Modo 2 (FireHub instalado no computador) é o que recomendamos: o sistema inteiro roda no computador do caixa e a loja continua vendendo, imprimindo e fechando o caixa, sem internet e até se o nosso servidor cair." },
+  { p: "Funciona mesmo se o servidor do FireHub cair?", r: "Sim. No Modo 2 o FireHub roda inteiro no seu computador, com uma cópia da loja sempre atualizada. Se a nossa nuvem sair do ar, as telas passam para o computador em menos de 1 minuto. Quando ela volta, tudo sobe sozinho." },
+  { p: "Preciso de internet para instalar?", r: "Para ativar, sim, uma vez: é quando o computador recebe a cópia da sua loja. O instalador completo já traz o sistema inteiro, então a ativação é rápida. Depois disso ele funciona sem internet pelo tempo que precisar." },
+  { p: "Ele se atualiza sozinho?", r: "Sim. Sempre que tem internet o computador recebe a versão nova do FireHub (só o que mudou, sem pesar) e a cópia da loja fica em dia a cada poucos segundos. A troca de versão espera a loja ficar calma, para não atrapalhar o movimento." },
+  { p: "Como abro o FireHub sem internet?", r: "Pelo ícone FireHub da área de trabalho do computador do caixa. Ele abre o sistema numa janela própria: com internet usa a nuvem, sem internet usa o computador, já com você dentro, sem pedir senha." },
+  { p: "E se ficar dias sem internet?", r: "A loja continua funcionando: pedidos, balcão, mesas, cozinha, caixa, relatórios do último mês e impressão. A entrada guardada vale por até um ano sem nenhuma conexão. Quando a internet voltar, tudo sobe sozinho." },
   { p: "Preciso fazer alguma coisa quando a internet cair?", r: "Não. Em menos de 1 minuto as telas passam sozinhas para o computador do caixa, e voltam sozinhas quando a internet volta." },
   { p: "E se o computador do caixa estiver desligado?", r: "Aí não tem contingência. Com internet, a TV e o celular do garçom continuam funcionando normalmente pela nuvem." },
   { p: "Os pedidos feitos na queda duplicam?", r: "Não. Cada pedido sobe uma vez só. Se alguma coisa foi mudada nos dois lugares ao mesmo tempo, ela aparece em \"Últimas quedas\", nesta tela." },
   { p: "Posso mexer pelo celular no 4G durante a queda?", r: "O 4G não alcança o computador da loja. Durante a queda, use as telas que estão no Wi-Fi da loja." },
-  { p: "Troquei de computador. E agora?", r: "Abra esta tela no computador novo e clique em Ativar neste computador. O antigo para de receber a cópia." },
-  { p: "Quanto custa?", r: "Está incluído no plano, sem custo a mais." },
+  { p: "Troquei de computador. E agora?", r: "Instale o FireHub no computador novo, abra esta tela nele e clique em Ativar neste computador. O antigo para de receber a cópia." },
+  { p: "Quanto custa?", r: "Os dois modos estão incluídos no plano, sem custo a mais." },
 ];
 
-export default function ModoContingenciaClient() {
+export default function ModoContingenciaClient({ instalador }: { instalador: EnderecoDoInstalador }) {
   const [nuvem, setNuvem] = useState<EstadoDaNuvem | null>(null);
   const [assistente, setAssistente] = useState<EstadoDoAssistente | null>(null);
   const [ocupado, setOcupado] = useState("");
   const [mensagem, setMensagem] = useState("");
   const [qr, setQr] = useState("");
   const [testou, setTestou] = useState(false);
+  const [confirmarDesativar, setConfirmarDesativar] = useState(false);
+  const [acabouDeInstalar, setAcabouDeInstalar] = useState(false);
   const videos = tutoriaisDaTela("/store/contingencia", useTutoriaisEnviados());
 
   const atualizar = useCallback(async () => {
@@ -234,6 +366,8 @@ export default function ModoContingenciaClient() {
 
   useEffect(() => {
     try { setTestou(localStorage.getItem(CHAVE_TESTOU) === "1"); } catch {}
+    // A janela do FireHub abre aqui com ?instalado=1 logo depois do instalador (Assistente, main.js).
+    try { setAcabouDeInstalar(new URLSearchParams(window.location.search).get("instalado") === "1"); } catch {}
   }, []);
 
   const enderecos = useMemo(() => {
@@ -271,6 +405,7 @@ export default function ModoContingenciaClient() {
   const situacao = (n: 1 | 2 | 3 | 4 | 5): SituacaoDoPasso => (feito[n] ? "feito" : daVez === n ? "agora" : "depois");
   const memoriaGb = contingenciaAqui?.memoriaTotalMb ? contingenciaAqui.memoriaTotalMb / 1024 : null;
   const procurarDeNovo = () => { setAssistente(null); atualizar(); };
+  const protegida = ativada && daVez === null;
 
   async function ativar() {
     if (!assistente?.achado) return;
@@ -286,7 +421,11 @@ export default function ModoContingenciaClient() {
         body: JSON.stringify({ lojaId: d.lojaId, chave: d.chave, segredoDoBilhete: d.segredoDoBilhete, nuvem: d.nuvem }),
       });
       if (!p.ok) throw new Error((await p.json().catch(() => ({})))?.error || "O Assistente não aceitou a ativação.");
-      setMensagem("✅ Ativado neste computador. Agora o Assistente baixa o FireHub e faz a cópia da loja — acompanhe no passo 4.");
+      setMensagem(
+        contingenciaAqui?.instalacaoCompleta
+          ? "✅ Ativado neste computador. O FireHub já veio no instalador: agora ele só faz a cópia da loja — acompanhe no passo 4."
+          : "✅ Ativado neste computador. Agora o Assistente baixa o FireHub e faz a cópia da loja — acompanhe no passo 4.",
+      );
       await atualizar();
     } catch (e: any) {
       setMensagem(`⚠️ ${e?.message || "Não foi possível ativar."}`);
@@ -296,7 +435,7 @@ export default function ModoContingenciaClient() {
   }
 
   async function desativar() {
-    if (!confirm("Desativar o Modo Contingência? Se a internet cair, a loja volta a parar como antes.")) return;
+    setConfirmarDesativar(false);
     setOcupado("desativar");
     try {
       await fetch("/api/contingencia/ativar", { method: "DELETE" });
@@ -330,22 +469,60 @@ export default function ModoContingenciaClient() {
   const travaTroca = emOutroComputador && !!relato?.pendentes;
 
   return (
-    <div style={{ maxWidth: 880, margin: "0 auto", padding: "20px 16px 60px", color: cor.texto, fontFamily: "inherit" }}>
-      <header style={{ marginBottom: 18, display: "flex", gap: 14, alignItems: "flex-start" }}>
-        <div style={{ flex: "0 0 auto", width: 52, height: 52, borderRadius: 15, background: `linear-gradient(135deg,#8B5CF6,${cor.roxoEscuro})`, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 6px 18px rgba(109,40,217,.3)" }}>
-          <LifeBuoy size={28} />
-        </div>
+    <div style={{ maxWidth: 1040, margin: "0 auto", padding: "20px 16px 60px", color: cor.texto, fontFamily: "inherit" }}>
+      <style>{ESTILO}</style>
+
+      {/* ── O topo ─────────────────────────────────────────────────────────── */}
+      <header
+        data-secao="topo"
+        className="fh-cg-topo"
+        style={{
+          background: "linear-gradient(135deg,#1E1B4B 0%,#4C1D95 55%,#6D28D9 100%)", color: "#fff",
+          borderRadius: 22, padding: "22px 22px", marginBottom: 16, boxShadow: "0 18px 40px rgba(76,29,149,.28)", overflow: "hidden",
+        }}
+      >
         <div style={{ minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+            <div style={{ width: 44, height: 44, borderRadius: 13, background: "rgba(255,255,255,.14)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <LifeBuoy size={24} />
+            </div>
             <h1 style={{ fontSize: 24, fontWeight: 900, margin: 0 }}>Modo Contingência</h1>
-            <span style={{ background: cor.roxo, color: "#fff", fontSize: 11, fontWeight: 800, borderRadius: 999, padding: "3px 10px" }}>NOVO</span>
+            <span style={{ background: "#FBBF24", color: "#422006", fontSize: 11, fontWeight: 900, borderRadius: 999, padding: "3px 10px" }}>NOVO</span>
           </div>
-          <p style={{ color: cor.suave, fontSize: 15, margin: "6px 0 0", lineHeight: 1.5 }}>
-            A internet caiu? <strong style={{ color: cor.texto }}>Sua loja não para.</strong> O computador do caixa assume as mesmas telas
-            e a mesma impressão, e quando a conexão volta tudo sobe sozinho. É opcional e está incluído no plano.
+          <p style={{ fontSize: 22, fontWeight: 900, lineHeight: 1.25, margin: "0 0 8px" }}>
+            Sua loja não para. Nem sem internet, nem se o nosso servidor cair.
           </p>
+          <p style={{ fontSize: 15, lineHeight: 1.55, margin: "0 0 16px", color: "#DDD6FE" }}>
+            Instale o FireHub no computador do caixa: ele roda o sistema inteiro ali mesmo — pedidos, balcão, mesas, cozinha, caixa e
+            impressão — e, quando a internet volta, sobe tudo sozinho para a nuvem. Incluído no plano.
+          </p>
+          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            <a
+              href={BAIXAR}
+              data-acao="baixar-topo"
+              className="fh-cg-baixar"
+              style={{ ...botaoRoxo, background: "#fff", color: cor.roxoEscuro, padding: "14px 20px", fontSize: 16, borderRadius: 14, boxShadow: "0 8px 22px rgba(0,0,0,.25)" }}
+            >
+              <Download size={20} /> Baixar o FireHub para Windows
+            </a>
+            {protegida && (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(22,163,74,.22)", border: "1px solid rgba(134,239,172,.5)", color: "#DCFCE7", borderRadius: 999, padding: "7px 12px", fontSize: 13, fontWeight: 800 }}>
+                <ShieldCheck size={16} /> Sua loja está protegida
+              </span>
+            )}
+          </div>
+        </div>
+        <div style={{ minWidth: 0, borderRadius: 18, overflow: "hidden", boxShadow: "0 10px 30px rgba(0,0,0,.25)" }}>
+          <DesenhoModoComputador escuro />
         </div>
       </header>
+
+      {acabouDeInstalar && !ativada && (
+        <div role="status" style={{ display: "flex", gap: 10, alignItems: "flex-start", background: cor.verdeClaro, border: "1.5px solid #86EFAC", borderRadius: 14, padding: "12px 14px", marginBottom: 14, fontSize: 14.5, lineHeight: 1.5 }}>
+          <CheckCircle2 size={20} color={cor.verde} style={{ flex: "0 0 auto", marginTop: 1 }} />
+          <div><strong>FireHub instalado neste computador.</strong> Falta só um clique: desça até <strong>Ative neste computador</strong> e clique em <strong>Ativar neste computador</strong>.</div>
+        </div>
+      )}
 
       {mensagem && (
         <div style={{ background: cor.roxoClaro, border: `1.5px solid ${cor.roxoBorda}`, borderRadius: 12, padding: "10px 14px", marginBottom: 14, fontSize: 14, lineHeight: 1.45 }}>
@@ -353,63 +530,143 @@ export default function ModoContingenciaClient() {
         </div>
       )}
 
+      {/* ── Os dois modos ──────────────────────────────────────────────────── */}
+      <Cartao
+        titulo="Dois modos de contingência"
+        sub="Os dois estão incluídos no plano. O Modo 1 já vem ligado para todo mundo; o Modo 2 é o que recomendamos, porque a loja continua funcionando de verdade."
+        ancora="dois-modos"
+      >
+        <div className="fh-cg-modos" style={{ paddingTop: 6 }}>
+          <CartaoDoModo
+            numero={1}
+            ancora="web"
+            titulo="Na web"
+            selo="JÁ VEM LIGADO · SEM INSTALAR NADA"
+            frase="Protege seus clientes quando a internet da loja cai. A loja para, mas ninguém fica esperando pedido que não vai chegar."
+            desenho={<DesenhoModoWeb />}
+            cobre={[
+              <>Pausa o <strong>iFood</strong> sozinho e o <strong>site e o robô</strong> avisam &quot;volte em alguns minutos&quot;.</>,
+              <><strong>99Food, Keeta e Wabiz</strong> param de aceitar sozinhos; os pedidos ficam esperando você.</>,
+              <>Avisa você no <strong>WhatsApp</strong> na queda e na volta.</>,
+              <>Tudo volta sozinho quando a internet volta. Dá para seguir pelo <strong>celular no 4G</strong>.</>,
+            ]}
+            naoCobre={[
+              <>Sem internet na loja, as <strong>telas e a impressão param</strong>.</>,
+              <>Se o <strong>servidor do FireHub</strong> cair, para tudo até ele voltar.</>,
+              <>Precisa do Assistente de Impressão ligado no caixa (é por ele que sabemos que a loja caiu).</>,
+            ]}
+          />
+          <CartaoDoModo
+            numero={2}
+            ancora="computador"
+            recomendado
+            titulo="FireHub instalado no computador"
+            selo="FUNCIONA ATÉ OFFLINE"
+            frase="O sistema completo no computador do caixa. Funciona sem internet e até se o nosso servidor cair — sua loja não para."
+            desenho={<DesenhoModoComputador />}
+            cobre={[
+              <><strong>Pedidos, balcão, mesas e garçom</strong>, nas mesmas telas de sempre.</>,
+              <><strong>Cozinha (KDS) e impressão</strong> das comandas, pela rede da loja.</>,
+              <><strong>Caixa</strong>: abrir, lançar, sangria e <strong>fechar</strong>.</>,
+              <><strong>Relatórios do último mês</strong> e as <strong>fotos do cardápio</strong>.</>,
+              <>Sobe tudo sozinho na volta, sem duplicar, e <strong>se atualiza sozinho</strong>.</>,
+            ]}
+            naoCobre={[
+              <>Receber pedidos do <strong>iFood, 99, Keeta, site e robô</strong> (pausam sozinhos e voltam).</>,
+              <><strong>Pix automático, cashback e cupom</strong>.</>,
+              <><strong>Nota fiscal (NFC-e)</strong>: os pedidos da queda ficam para emitir na volta.</>,
+              <><strong>App do motoboy e mapa</strong>: ele sai com a comanda impressa.</>,
+            ]}
+            rodape={<BotaoBaixar instalador={instalador} />}
+          />
+        </div>
+      </Cartao>
+
+      {/* ── Instalar → ativar → pronto ─────────────────────────────────────── */}
+      <Cartao titulo="Instale em 3 passos" sub="Leva poucos minutos. Faça no computador do caixa, o mesmo que imprime as comandas." ancora="tres-passos">
+        <div className="fh-cg-passos3">
+          {TRES_PASSOS.map((p) => (
+            <div key={p.n} data-tres-passos={p.n} style={{ border: `1.5px solid ${cor.borda}`, borderRadius: 16, padding: 14, background: "#fff", minWidth: 0 }}>
+              <DesenhoDoPasso n={p.n} />
+              <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "12px 0 4px" }}>
+                <span style={{ width: 26, height: 26, borderRadius: 999, background: p.n === 3 ? cor.verde : cor.roxo, color: "#fff", fontWeight: 900, fontSize: 13.5, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{p.n}</span>
+                <strong style={{ fontSize: 16.5 }}>{p.titulo}</strong>
+              </div>
+              <p style={{ margin: 0, fontSize: 14, color: "#334155", lineHeight: 1.5 }}>{p.texto}</p>
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop: 16, display: "flex", justifyContent: "center" }}>
+          <BotaoBaixar instalador={instalador} />
+        </div>
+      </Cartao>
+
       <Cartao titulo="Como funciona" sub="Veja o que acontece na sua loja em cada momento." ancora="como-funciona">
         <IlustracaoDaContingencia />
       </Cartao>
 
       <Cartao
-        titulo={daVez === null ? "Sua loja está protegida" : "Ative em 5 passos"}
+        titulo={daVez === null ? "Sua loja está protegida" : "Ative neste computador"}
         sub={daVez === null
           ? "Está tudo pronto. Se a internet cair, ninguém precisa fazer nada. Para abrir o FireHub sem internet, use o ícone FireHub da área de trabalho."
           : "Esta lista acompanha o que você já fez. O passo da vez fica em roxo, com o botão dentro."}
         ancora="passos"
       >
         <ol style={{ margin: 0, padding: 0 }}>
-          <Passo n={1} titulo="Abra esta tela no computador do caixa" resumo="O computador onde o Assistente de Impressão está instalado." situacao={situacao(1)}>
+          <Passo n={1} titulo="Instale o FireHub no computador do caixa" resumo="O computador onde ficam a impressora e o caixa." situacao={situacao(1)}>
             {assistente === null ? (
-              <p style={{ margin: 0, color: cor.suave }}>Procurando o Assistente neste computador…</p>
+              <p style={{ margin: 0, color: cor.suave }}>Procurando o FireHub neste computador…</p>
             ) : (
               <>
                 <p style={{ margin: "0 0 10px" }}>
-                  O Modo Contingência roda no <strong>computador do caixa</strong>, o mesmo onde está o Assistente de Impressão que
-                  imprime suas comandas. <strong>Não achamos o Assistente neste aparelho.</strong>
+                  O FireHub instalado roda no <strong>computador do caixa</strong>, o mesmo que imprime suas comandas.{" "}
+                  <strong>Ainda não achamos o FireHub instalado neste aparelho.</strong>
                 </p>
                 <ul style={{ margin: "0 0 12px", paddingLeft: 18 }}>
                   <li>Está no celular ou em outro computador? Abra o FireHub no computador do caixa e entre nesta mesma tela.</li>
-                  <li>Ainda não tem o Assistente? Baixe e instale em Impressoras.</li>
+                  <li>Já usa o Assistente de Impressão? O instalador abaixo atualiza ele — não fica nada em dobro.</li>
                 </ul>
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <a href="/store/impressoras" style={botaoRoxo}><Download size={18} /> Baixar o Assistente</a>
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+                  <BotaoBaixar instalador={instalador} grande={false} />
                   <button type="button" onClick={procurarDeNovo} style={botaoClaro}><RefreshCw size={16} /> Já instalei, procurar de novo</button>
                 </div>
               </>
             )}
           </Passo>
 
-          <Passo n={2} titulo="Deixe o Assistente atualizado" resumo="A contingência vem na versão nova do Assistente." situacao={situacao(2)}>
+          <Passo n={2} titulo="Deixe o FireHub atualizado" resumo="A contingência vem na versão nova do Assistente." situacao={situacao(2)}>
             <p style={{ margin: "0 0 8px" }}>
-              Achamos o Assistente{assistente?.achado && assistente.versao ? ` (versão ${assistente.versao})` : ""}, mas ele é de uma versão sem o Modo Contingência. Para atualizar:
+              Achamos o Assistente{assistente?.achado && assistente.versao ? ` (versão ${assistente.versao})` : ""}, mas ele é de uma versão sem o Modo Contingência. O jeito mais rápido é instalar o FireHub por cima
+              (o botão abaixo). Ou, para atualizar o que já está aí:
             </p>
             <ol style={{ margin: "0 0 12px", paddingLeft: 20 }}>
               <li>No canto de baixo da tela, perto do relógio, ache o <strong>ícone do FireHub</strong> (se não aparecer, clique na setinha ^).</li>
               <li>Clique nele com o <strong>botão direito</strong> e escolha <strong>Procurar atualização agora</strong>.</li>
-              <li>Espere uns minutos e clique no botão abaixo.</li>
+              <li>Espere uns minutos e clique em conferir.</li>
             </ol>
-            <button type="button" onClick={procurarDeNovo} style={botaoClaro}><RefreshCw size={16} /> Já atualizei, conferir</button>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+              <BotaoBaixar instalador={instalador} grande={false} />
+              <button type="button" onClick={procurarDeNovo} style={botaoClaro}><RefreshCw size={16} /> Já atualizei, conferir</button>
+            </div>
           </Passo>
 
-          <Passo n={3} titulo="Clique em Ativar neste computador" resumo="Um clique: o Assistente baixa o que precisa sozinho." situacao={situacao(3)}>
+          <Passo n={3} titulo="Clique em Ativar neste computador" resumo="Um clique: o computador prepara tudo sozinho." situacao={situacao(3)}>
             {emOutroComputador ? (
               <>
                 <p style={{ margin: "0 0 10px" }}>
                   A contingência está ativada em <strong>outro computador</strong>. Para usar este no lugar dele, ative aqui — o outro deixa de receber a cópia.
                 </p>
                 {travaTroca && (
-                  <p style={{ margin: "0 0 10px", color: "#B91C1C" }}>
+                  <p style={{ margin: "0 0 10px", color: cor.vermelho }}>
                     O computador atual ainda tem {relato?.pendentes} mudança(s) para subir. Espere subir antes de trocar.
                   </p>
                 )}
               </>
+            ) : contingenciaAqui?.instalacaoCompleta ? (
+              <p style={{ margin: "0 0 10px" }}>
+                FireHub encontrado, com a <strong>instalação completa</strong>: o sistema já está neste computador. Ao ativar, ele só faz a cópia da loja.{" "}
+                <strong>Pode continuar trabalhando enquanto isso.</strong>
+              </p>
             ) : (
               <p style={{ margin: "0 0 10px" }}>
                 Assistente encontrado. Ao ativar, ele baixa o FireHub para este computador (uns 250 MB na primeira vez; depois, só o que mudar)
@@ -417,7 +674,7 @@ export default function ModoContingenciaClient() {
               </p>
             )}
             {memoriaGb !== null && memoriaGb < 3.8 && (
-              <p style={{ margin: "0 0 10px", fontSize: 13.5, color: "#B45309" }}>
+              <p style={{ margin: "0 0 10px", fontSize: 13.5, color: cor.ambar }}>
                 Este computador tem {memoriaGb.toFixed(1).replace(".", ",")} GB de memória. Funciona, mas o recomendado é 4 GB ou mais.
               </p>
             )}
@@ -461,7 +718,7 @@ export default function ModoContingenciaClient() {
                       <span style={{ display: "block", fontSize: 11.5, color: cor.suave, wordBreak: "break-all" }}>Detalhe: {contingenciaAqui.erro}</span>
                     </p>
                   ) : (
-                    <p style={{ margin: "0 0 6px", color: "#B91C1C" }}>
+                    <p style={{ margin: "0 0 6px", color: cor.vermelho }}>
                       Problema: {contingenciaAqui.erro}. Se continuar, chame o suporte pelo WhatsApp.
                     </p>
                   )
@@ -545,10 +802,12 @@ export default function ModoContingenciaClient() {
               <div style={{ fontWeight: 800 }}>
                 {relato?.modo === "contingencia" ? "Em contingência" : relato?.modo === "voltando" ? "⬆️ Subindo" : relato?.modo === "normal" ? "✅ Normal" : relato?.modo || "—"}
               </div>
-              <div style={{ color: cor.suave, fontSize: 12 }}>versão {relato?.versao || "—"}</div>
+              <div style={{ color: cor.suave, fontSize: 12 }}>
+                versão {relato?.versao || "—"}{contingenciaAqui?.instalacaoCompleta ? " · instalação completa" : ""}
+              </div>
             </div>
           </div>
-          {relato?.ultimoErro && <p style={{ margin: "10px 0 0", fontSize: 13, color: "#B91C1C" }}>Último problema: {relato.ultimoErro}</p>}
+          {relato?.ultimoErro && <p style={{ margin: "10px 0 0", fontSize: 13, color: cor.vermelho }}>Último problema: {relato.ultimoErro}</p>}
           {nuvem?.redeDaLoja && (
             // Só alerta, nunca trava (14/10/2026: a contingência da Hakim Centro
             // estava no PC de casa do Douglas e as telas da loja pulavam para um
@@ -576,15 +835,33 @@ export default function ModoContingenciaClient() {
             </div>
           )}
           {podeMexer && (
-            <div style={{ marginTop: 14 }}>
-              <button
-                type="button"
-                disabled={!!ocupado}
-                onClick={desativar}
-                style={{ background: "#fff", color: "#B91C1C", border: "1.5px solid #FCA5A5", borderRadius: 12, padding: "9px 14px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
-              >
-                Desativar
-              </button>
+            <div style={{ marginTop: 14, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              {confirmarDesativar ? (
+                <>
+                  <span style={{ fontSize: 13.5, color: "#7F1D1D", fontWeight: 700 }}>
+                    Desativar? Se a internet cair, a loja volta a parar como antes.
+                  </span>
+                  <button
+                    type="button"
+                    data-acao="desativar-sim"
+                    disabled={!!ocupado}
+                    onClick={desativar}
+                    style={{ background: cor.vermelho, color: "#fff", border: 0, borderRadius: 12, padding: "9px 14px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}
+                  >
+                    Sim, desativar
+                  </button>
+                  <button type="button" onClick={() => setConfirmarDesativar(false)} style={botaoClaro}>Manter ativado</button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  disabled={!!ocupado}
+                  onClick={() => setConfirmarDesativar(true)}
+                  style={{ background: "#fff", color: cor.vermelho, border: "1.5px solid #FCA5A5", borderRadius: 12, padding: "9px 14px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+                >
+                  {ocupado === "desativar" ? "Desativando…" : "Desativar"}
+                </button>
+              )}
             </div>
           )}
         </Cartao>
@@ -623,17 +900,20 @@ export default function ModoContingenciaClient() {
         </Cartao>
       )}
 
-      <Cartao titulo="O que você precisa" ancora="precisa">
+      <Cartao titulo="O computador que você precisa" sub="Não precisa ser novo nem caro: o computador que já fica no caixa costuma servir." ancora="precisa">
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 }}>
-          <Requisito icone={<Monitor size={20} />} titulo="Computador Windows no caixa" texto="Ligado durante o expediente, com 4 GB de memória ou mais e 1 GB livre no disco." />
-          <Requisito icone={<Printer size={20} />} titulo="Assistente de Impressão" texto="O mesmo que já imprime suas comandas, instalado nesse computador." />
+          <Requisito icone={<Monitor size={20} />} titulo="Windows 10 ou 11, 64 bits" texto="O computador do caixa, ligado durante o expediente." />
+          <Requisito icone={<MemoryStick size={20} />} titulo="4 GB de memória ou mais" texto="Com 8 GB fica folgado. A tela avisa se o computador tiver menos." />
+          <Requisito icone={<HardDrive size={20} />} titulo="2 GB livres no disco" texto="O sistema, o banco da loja e as fotos do cardápio." />
+          <Requisito icone={<Cpu size={20} />} titulo="Qualquer processador de 64 bits" texto="De 2015 para cá serve. Ele fica leve enquanto a internet funciona." />
           <Requisito icone={<Wifi size={20} />} titulo="TV e celulares no Wi-Fi da loja" texto="No 4G, o celular do garçom não alcança o computador." />
           <Requisito icone={<Router size={20} />} titulo="Endereço fixo no roteador" texto="Para a TV e o garçom acharem o computador. Se precisar, a gente faz por acesso remoto." />
           <Requisito icone={<ShieldCheck size={20} />} titulo="Clique em Permitir" texto="Na primeira vez, o Windows pergunta se libera o FireHub na rede da loja." />
+          <Requisito icone={<Power size={20} />} titulo="Não deixe o computador dormir" texto="O FireHub já impede o modo de espera do Windows durante o expediente." />
         </div>
       </Cartao>
 
-      <Cartao titulo="Durante a queda" ancora="queda">
+      <Cartao titulo="Durante a queda, com o FireHub instalado" ancora="queda">
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 }}>
           <div style={{ borderRadius: 12, background: cor.verdeClaro, padding: "12px 14px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 900, color: "#166534", marginBottom: 6 }}>
@@ -643,8 +923,10 @@ export default function ModoContingenciaClient() {
               <li>Pedidos e Balcão</li>
               <li>Mesas e celular do garçom</li>
               <li>Tela da cozinha (KDS)</li>
-              <li>Caixa</li>
+              <li>Caixa, do abrir ao fechar</li>
               <li>Impressão das comandas</li>
+              <li><BarChart3 size={13} style={{ verticalAlign: "-2px" }} /> Relatórios do último mês</li>
+              <li><Camera size={13} style={{ verticalAlign: "-2px" }} /> Fotos do cardápio</li>
             </ul>
           </div>
           <div style={{ borderRadius: 12, background: "#FFFBEB", padding: "12px 14px" }}>
@@ -661,6 +943,10 @@ export default function ModoContingenciaClient() {
             </ul>
           </div>
         </div>
+        <p style={{ margin: "12px 0 0", fontSize: 13, color: cor.suave, display: "flex", gap: 6, alignItems: "flex-start" }}>
+          <CloudOff size={15} style={{ flex: "0 0 auto", marginTop: 1 }} />
+          Sem o FireHub instalado (só o Modo 1), as telas da loja param durante a queda — os canais pausam e você é avisado.
+        </p>
       </Cartao>
 
       <Cartao titulo="Dúvidas comuns" ancora="duvidas">
