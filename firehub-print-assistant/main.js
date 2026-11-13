@@ -421,7 +421,9 @@ function prepararInstalacaoCompleta() {
   if (pediuAJanela) return abrirOFireHub();
   // Logo depois de instalar (o instalador abre o Assistente sem --hidden): a
   // janela abre uma vez na tela do Modo Contingência, para entrar e ativar.
-  if (!process.argv.includes("--hidden") && !lerMarca(ARQ_JANELA_JA_ABRIU)) abrirOFireHub("/store/contingencia?instalado=1");
+  // A vigia e a cópia que assume o lugar de uma travada não são gente abrindo o programa.
+  const abertoAMao = !["--hidden", "--vigia", "--assumindo"].some((a) => process.argv.includes(a));
+  if (abertoAMao && !lerMarca(ARQ_JANELA_JA_ABRIU)) abrirOFireHub("/store/contingencia?instalado=1");
 }
 
 let tray = null;
