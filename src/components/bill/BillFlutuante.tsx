@@ -55,7 +55,8 @@ export default function BillFlutuante({ ligadoInicial }: { ligadoInicial: boolea
       `}</style>
 
       {!aberto && (
-        <div style={{ position: "fixed", bottom: 176, right: "clamp(8px, 4vw, 24px)", zIndex: 10001, display: "flex", alignItems: "center", gap: 8, ...arraste.estiloDoContainer }}>
+        // flutuante-da-loja: some com modal aberto, como o WhatsApp da loja (globals.css).
+        <div className="flutuante-da-loja" style={{ position: "fixed", bottom: 176, right: "clamp(8px, 4vw, 24px)", zIndex: 10001, display: "flex", alignItems: "center", gap: 8, ...arraste.estiloDoContainer }}>
           <span style={{ background: "#0B1220", color: "#67E8F9", fontWeight: 800, fontSize: 12, padding: "5px 10px", borderRadius: 999, boxShadow: "0 4px 12px rgba(2,6,23,.25)" }}>
             Fale com o Bill
           </span>
