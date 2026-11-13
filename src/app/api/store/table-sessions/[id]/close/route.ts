@@ -6,6 +6,7 @@ import { resolverOperadorDaMesa, rotuloDoOperador, idDoOperadorDaMesa } from "@/
 import { recusaSeCaixaFechado } from "@/lib/caixa-aberto-servidor";
 import { lerPagamentos, somarPagamentos } from "@/lib/pagamentos-da-mesa";
 import { comissaoDoGarcom, sanearTaxa } from "@/lib/conta-da-mesa";
+import { contaSemTaxa } from "@/lib/taxa-da-mesa";
 import { lerDocumentoDoCliente, normalizarDocumento, problemaDoDocumento } from "@/lib/documento-do-cliente";
 import { formaDoTexto } from "@/lib/relatorios/formas-de-pagamento";
 import { ehFormaPropria, problemaDaFormaPropria } from "@/lib/formas-proprias";
@@ -122,7 +123,9 @@ export async function POST(
       if (!operador.garcom.podeLiberarMesa && subtotal <= 0) {
         return NextResponse.json({ error: "Este garçom não libera mesa. Peça ao caixa para liberar pelo painel." }, { status: 403 });
       }
-      if (!operador.garcom.podeTirarTaxa) {
+      // Conta já marcada "sem taxa" por quem pode (lib/taxa-da-mesa.ts): fechar
+      // sem a taxa não é este garçom tirando.
+      if (!operador.garcom.podeTirarTaxa && !contaSemTaxa(tableSession)) {
         const loja = await prisma.user.findUnique({ where: { id: targetFranchiseeId }, select: { taxaServicoPadrao: true } });
         const taxaMinima = sanearTaxa(loja?.taxaServicoPadrao, TAXA_PADRAO);
         if ((Number(serviceFeePercent) || 0) < taxaMinima) {
