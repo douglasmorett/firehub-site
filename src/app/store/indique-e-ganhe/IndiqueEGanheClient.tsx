@@ -6,7 +6,9 @@
  * e a lista de indicados são o cartão da aba Mensalidade (CartaoIndiqueEGanhe),
  * reaproveitado aqui embaixo — um lugar só para a regra e os números.
  */
+import { useState } from "react";
 import Link from "next/link";
+import MateriaisDeDivulgacao, { type QuemIndica } from "@/components/materiais/MateriaisDeDivulgacao";
 import CartaoIndiqueEGanhe from "../financeiro/CartaoIndiqueEGanhe";
 import { INDICADOS_PARA_ISENCAO, VALOR_DO_CREDITO } from "@/lib/indique-e-ganhe";
 
@@ -35,6 +37,8 @@ const DUVIDAS = [
 ];
 
 export default function IndiqueEGanheClient() {
+  // O código, o nome e o WhatsApp vêm do cartão (mesma rota); sem acesso ao Financeiro, o material sai genérico.
+  const [quem, setQuem] = useState<QuemIndica | null>(null);
   return (
     <div style={{ maxWidth: 1040, margin: "0 auto", padding: "1.2rem 1rem 3rem", color: TINTA, fontFamily: "inherit" }}>
       {/* Topo */}
@@ -111,11 +115,23 @@ export default function IndiqueEGanheClient() {
       <section id="meu-link" style={{ marginTop: 26, scrollMarginTop: 80 }}>
         <div style={{ fontSize: 13, fontWeight: 900, color: LARANJA, letterSpacing: ".08em" }}>SEU LINK E SEUS NÚMEROS</div>
         <h2 style={{ fontSize: 26, margin: "4px 0 14px", fontWeight: 900 }}>Copie, compartilhe e acompanhe</h2>
-        <CartaoIndiqueEGanhe />
+        <CartaoIndiqueEGanhe
+          aoCarregar={(d) => setQuem({ tipo: "loja", codigo: d.material.codigo, nome: d.material.nome || "", whatsapp: d.material.whatsapp, linkDeCadastro: d.link })}
+        />
         <p style={{ color: TINTA_2, fontSize: 13, marginTop: 8 }}>
           Não apareceu o seu link? Ele fica com quem tem acesso ao Financeiro da loja. Também dá para ver em{" "}
           <Link href="/store/financeiro" style={{ color: LARANJA, fontWeight: 800 }}>Financeiro › Mensalidade</Link>.
         </p>
+      </section>
+
+      {/* Material para divulgar */}
+      <section id="material" style={{ marginTop: 26, scrollMarginTop: 80 }}>
+        <div style={{ fontSize: 13, fontWeight: 900, color: LARANJA, letterSpacing: ".08em" }}>MATERIAL PARA DIVULGAR</div>
+        <MateriaisDeDivulgacao
+          quem={quem}
+          titulo="Vídeo, apresentação e folder com o seu QR"
+          subtitulo="O material sai com o nome e o WhatsApp da sua loja. Quem se cadastrar pelo QR fica marcado como indicação sua."
+        />
       </section>
 
       {/* Dúvidas */}

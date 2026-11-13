@@ -333,6 +333,8 @@ export async function proxy(request: NextRequest) {
   }
   // A prévia do tablet abre na moldura da aba Tablet na mesa (o par no next.config).
   if (pathname === "/tablet/previa") response.headers.set("X-Frame-Options", "SAMEORIGIN");
+  // O material de divulgação abre na prévia da tela do material (o par no next.config).
+  if (pathname.startsWith("/material/")) response.headers.set("X-Frame-Options", "SAMEORIGIN");
 
   // Add CORS headers for API routes
   if (pathname.startsWith("/api") && !ROTAS_COM_CORS_PROPRIO.has(pathname)) {

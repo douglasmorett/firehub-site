@@ -237,6 +237,16 @@ const nextConfig: NextConfig = {
         ],
       },
       {
+        // O material de divulgação personalizado (app/material/*) abre como
+        // prévia DENTRO da tela do material (components/materiais): moldura só
+        // do próprio domínio, como a prévia do tablet.
+        source: "/material/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          { key: "Content-Security-Policy", value: csp.replace("frame-ancestors 'none'", "frame-ancestors 'self'") },
+        ],
+      },
+      {
         // O relatório do Acompanhamento iFood é um HTML inteiro servido no
         // domínio do admin. Mesmo CSP + sandbox SEM allow-same-origin: o script
         // do relatório roda, mas numa origem opaca, sem enxergar a sessão. A
