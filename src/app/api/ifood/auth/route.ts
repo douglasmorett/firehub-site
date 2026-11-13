@@ -11,6 +11,7 @@ import { authOptions } from "@/lib/auth";
 import { getIfoodToken, merchantsDoToken } from "@/lib/ifood-api";
 import { appEscolhido, credenciaisDoApp, ErroCredencialApp } from "@/lib/ifood-app";
 import { lojaDaSessao, merchantDeOutraLoja } from "@/lib/ifood-token";
+import { tokenMaisNovo } from "@/lib/ifood-permissoes";
 import { prisma } from "@/lib/prisma";
 
 const IFOOD_BASE = "https://merchant-api.ifood.com.br";
@@ -515,6 +516,7 @@ export async function POST(req: NextRequest) {
         ifoodAccessToken: true, ifoodRefreshToken: true, ifoodTokenExpiresAt: true,
       }
     });
+    let renovadaPorUuid: string | null = null;
     if (userRec) {
       await prisma.user.update({
         where: { id: storeId },
@@ -539,6 +541,26 @@ export async function POST(req: NextRequest) {
             }
           : {};
 
+        // ── INTEGRAÇÃO QUE JÁ EXISTE: SÓ TROCA PARA O TOKEN MAIS NOVO ────────
+        // Holy Top, 13/11/2026: autorizou de novo, ouviu "cole o Merchant ID",
+        // colou — e o selo "Autorize de novo" ficou, porque esta linha seguia
+        // com o token velho (sem merchant/catalog/shipping) e o novo tinha ido
+        // só para o User. O token do User entra aqui quando cobre este merchant
+        // e foi emitido DEPOIS do da integração; nunca o contrário, senão colar
+        // o UUID desfaria uma autorização nova. clientId/secret vão a null
+        // porque o token do User se renova pelas credenciais do app distribuído.
+        const existente = await prisma.ifoodIntegration.findFirst({
+          where: { userId: storeId, merchantId: rawCode },
+          select: { accessToken: true, label: true },
+        });
+        const tokenDoUserEMaisNovo =
+          !!existente?.accessToken &&
+          merchantsDoToken(userRec.ifoodAccessToken).includes(rawCode) &&
+          tokenMaisNovo(userRec.ifoodAccessToken, existente.accessToken);
+        if (tokenDoUserEMaisNovo) {
+          renovadaPorUuid = existente?.label || userRec.storeName || userRec.name || "sua loja";
+        }
+
         await prisma.ifoodIntegration.upsert({
           where: { userId_merchantId: { userId: storeId, merchantId: rawCode } },
           create: {
@@ -549,7 +571,19 @@ export async function POST(req: NextRequest) {
             active: true,
             ...credenciaisDaAdicional,
           },
-          update: { connected: true, active: true },
+          update: {
+            connected: true,
+            active: true,
+            ...(tokenDoUserEMaisNovo
+              ? {
+                  accessToken: userRec.ifoodAccessToken,
+                  refreshToken: userRec.ifoodRefreshToken,
+                  tokenExpiresAt: userRec.ifoodTokenExpiresAt,
+                  clientId: null,
+                  clientSecret: null,
+                }
+              : {}),
+          },
         });
       } catch (e: any) {
         console.warn("[iFood Auth] Aviso ao salvar ifoodIntegration por UUID:", e?.message);
@@ -558,7 +592,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       merchantId: rawCode,
-      message: "Loja iFood conectada com sucesso!",
+      ...(renovadaPorUuid ? { renovada: true } : {}),
+      message: renovadaPorUuid ? `✅ Autorização renovada para ${renovadaPorUuid}` : "Loja iFood conectada com sucesso!",
     });
   }
 
@@ -696,6 +731,52 @@ export async function POST(req: NextRequest) {
     }, { status: res.status });
   }
 
+  const credenciais = {
+    accessToken: data.accessToken ?? null,
+    refreshToken: data.refreshToken ?? null,
+    tokenExpiresAt: data.expiresIn ? new Date(Date.now() + (data.expiresIn - 60) * 1000) : null,
+    clientId,
+    clientSecret,
+  };
+
+  // ── REAUTORIZAÇÃO: A LOJA QUE JÁ ESTÁ AQUI RECEBE O TOKEN NOVO ───────────
+  //
+  // Holy Top, 13/11/2026: loja já conectada, com o selo "Autorize de novo para
+  // liberar as novidades" (lib/ifood-permissoes.ts lê o token DA INTEGRAÇÃO).
+  // Autorizou no portal, colou o código e ouviu "cole o Merchant ID" — o token
+  // novo foi só para o User, a integração ficou com o velho e o selo não saiu.
+  // Quem cobre isto é o próprio token: toda integração DESTA loja cujo merchant
+  // está no `merchant_scope` dele ganha a credencial nova, sem perguntar nada.
+  // Só a credencial e o `connected` — `active` é o que entra na cobrança, e
+  // renovar autorização não liga nem desliga loja. A posse já existia (a linha
+  // é desta loja), então a régua de "ocupado por outro dono" lá embaixo não se
+  // aplica aqui. Merchant do token que ainda não é integração segue o fluxo de
+  // sempre; token sem `merchant_scope` também.
+  const renovadas: { merchantId: string; label: string }[] = [];
+  const noToken = merchantsDoToken(data.accessToken);
+  if (storeId && noToken.length > 0) {
+    const jaAqui = await prisma.ifoodIntegration.findMany({
+      where: { userId: storeId, merchantId: { in: noToken } },
+      select: { merchantId: true, label: true },
+    });
+    for (const i of jaAqui) {
+      try {
+        await prisma.ifoodIntegration.update({
+          where: { userId_merchantId: { userId: storeId, merchantId: i.merchantId } },
+          data: { connected: true, ...credenciais },
+        });
+        renovadas.push({ merchantId: i.merchantId, label: i.label || i.merchantId.slice(0, 8) });
+      } catch (e: any) {
+        console.warn(`[iFood Auth] Aviso ao renovar a autorização de ${i.merchantId}:`, e?.message);
+      }
+    }
+    if (renovadas.length > 0) {
+      console.log(`[iFood Auth] Loja ${storeId}: autorização renovada em ${renovadas.map((r) => r.merchantId).join(", ")}.`);
+    }
+  }
+  // Loja nova que ESTE código vinculou junto com a renovação — para o aviso não esconder.
+  let vinculouNova = false;
+
   // Obter merchantId do iFood usando o accessToken obtido
   let merchantId = data.merchantId || data.merchant?.id;
   let merchantName = data.merchantName || data.merchant?.name || "";
@@ -736,14 +817,6 @@ export async function POST(req: NextRequest) {
       ...jaDeOutros.map((i) => i.merchantId),
       ...(deOutroUser.map((u) => u.ifoodMerchantId).filter(Boolean) as string[]),
     ]);
-
-    const credenciais = {
-      accessToken: data.accessToken ?? null,
-      refreshToken: data.refreshToken ?? null,
-      tokenExpiresAt: data.expiresIn ? new Date(Date.now() + (data.expiresIn - 60) * 1000) : null,
-      clientId,
-      clientSecret,
-    };
 
     const livres = lojasDoToken.filter((id) => !ocupados.has(id));
 
@@ -814,6 +887,7 @@ export async function POST(req: NextRequest) {
           update: { connected: true, active: true, ...credenciais },
         });
         merchantId = user?.ifoodMerchantId || paraVincular;
+        vinculouNova = !renovadas.some((r) => r.merchantId === paraVincular);
         if (recemAutorizadas.length === 1) {
           console.log(`[iFood Auth] Loja ${storeId}: ${paraVincular} vinculada — é a que este código autorizou.`);
         }
@@ -840,6 +914,15 @@ export async function POST(req: NextRequest) {
       `${jaMinhas.size} já vinculada(s), ${novas.length} disponível(is), ${ocupados.size} de outro dono.`
     );
     if (!merchantId && jaMinhas.size > 0) merchantId = user?.ifoodMerchantId || [...jaMinhas][0];
+  }
+
+  // A renovação já resolveu: a loja é a que estava aqui. Sem isto a Holy Top
+  // caía na espiada da fila (vazia) e no "cole o Merchant ID" — e a espiada
+  // ainda poderia vincular, como loja NOVA, outra loja da conta com pedido na
+  // fila. Prefere a principal; senão, a primeira renovada (nunca uma loja que
+  // o token não cobre, para não gravar nela um token que não vale para ela).
+  if (!merchantId && renovadas.length > 0) {
+    merchantId = renovadas.find((r) => r.merchantId === user?.ifoodMerchantId)?.merchantId || renovadas[0].merchantId;
   }
 
   // ── DESCOBERTA DO MERCHANT ID ─────────────────────────────────────────
@@ -964,9 +1047,13 @@ export async function POST(req: NextRequest) {
   if (storeId && merchantId) {
     const userId = user?.id;
     const isPrimaryAlreadySet = !!user?.ifoodMerchantId;
-    const isNewStore = isPrimaryAlreadySet && user.ifoodMerchantId !== merchantId;
+    // Loja que só teve a autorização renovada não é loja nova: a credencial já
+    // foi gravada lá em cima, e o upsert daqui ligaria `active` (cobrança) numa
+    // linha que a renovação não deve mexer.
+    const soRenovou = renovadas.some((r) => r.merchantId === merchantId);
+    const isNewStore = isPrimaryAlreadySet && user.ifoodMerchantId !== merchantId && !soRenovou;
 
-    if (userId) {
+    if (userId && !soRenovou) {
       // Garantir registro na tabela de integrações
       try {
         // O token e as credenciais ficam gravados NA INTEGRAÇÃO, não só no
@@ -1026,10 +1113,14 @@ export async function POST(req: NextRequest) {
       success: true,
       merchantId,
       isAdditional: isNewStore,
+      ...(renovadas.length > 0 ? { renovada: true } : {}),
       merchantsDisponiveis: merchantsAmbiguos.length > 0 ? merchantsAmbiguos : undefined,
       message: merchantsAmbiguos.length > 0
         ? `🎉 Loja vinculada! Esta conta do iFood tem mais ${merchantsAmbiguos.length} loja(s) autorizada(s). ` +
           `Escolha quais você quer no FireHub — cada uma adicional custa +R$50,00/mês.`
+        : renovadas.length > 0
+          ? `✅ Autorização renovada para ${renovadas.map((r) => r.label).join(", ")}` +
+            (vinculouNova ? ". E mais uma loja do iFood foi vinculada." : "")
         : isNewStore
           ? "🎉 Nova loja iFood adicional vinculada com sucesso (+R$50,00/mês)!"
           : "🎉 Loja iFood vinculada com sucesso!",
