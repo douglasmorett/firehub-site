@@ -10,7 +10,8 @@
  * item avulso e para a opção dentro de todo combo, em todos os canais
  * (lib/opcao-pausada.ts), pausa a meia pizza do mesmo sabor e atualiza a
  * vitrine na hora (o cache é de 60 s). Espelho de marketplace fica de fora: o iFood tem o
- * cardápio dele.
+ * cardápio dele — com iFood/99 conectados, o Bill pergunta e pausa lá com o
+ * SIM (pausa-nos-apps.ts, 12/11/2026).
  *
  * Fechar o site é o `storeOpen` do botão "Site" do topo. O iFood NÃO fecha por
  * aqui (a interrupção é pela tela) — a resposta avisa.
@@ -22,6 +23,7 @@ import { atualizarVitrineDaLoja, mudarPausaDosProdutos } from "@/lib/pausar-prod
 import { esquecerPausaPeloEstoque } from "@/lib/pausa-pelo-estoque-no-banco";
 import type { ContextoDoAssessor } from "./ferramentas";
 import { comAutor } from "./painel";
+import { appsDaLoja, AVISO_IFOOD_SO_CENTRAL, desfazerNosApps, perguntaDosApps } from "./pausa-nos-apps";
 
 const semAcento = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 const reais = (n: number) => `R$ ${n.toFixed(2).replace(".", ",")}`;
@@ -81,11 +83,15 @@ export async function pausarOuReativar(args: any, ctx: ContextoDoAssessor) {
       });
     } catch {}
   }
+  // iFood (app distribuído) e 99: o Bill pergunta antes de mexer lá (pausar_nos_apps).
+  const apps = await appsDaLoja(ctx.franchiseeId).catch(() => null);
+  const aqui = ativo ? "Já aparece de novo no site, robô, balcão e totem." : "Some do site, robô, balcão e totem — e de dentro dos combos.";
   return {
     ok: true,
     [ativo ? "reativados" : "pausados"]: mudar.map((p) => p.name),
     jaEstavamAssim: jaEstavam.length ? jaEstavam : undefined,
-    observacao: ativo ? "Já aparece de novo no site, robô, balcão e totem." : "Some do site, robô, balcão e totem — e de dentro dos combos. O iFood tem o cardápio dele: pausar lá pelo app do iFood.",
+    observacao: apps?.ifoodSoCentral ? `${aqui} ${AVISO_IFOOD_SO_CENTRAL}` : aqui,
+    perguntarNosApps: (apps && perguntaDosApps(apps, ativo)) || undefined,
   };
 }
 
@@ -118,6 +124,11 @@ export async function abrirOuFecharSite(args: any, ctx: ContextoDoAssessor) {
 
 /** Desfaz uma pausa/reativação ou a abertura/fechamento do site. */
 export async function desfazerNoCardapio(tipo: string, refs: any, ctx: ContextoDoAssessor) {
+  if ((tipo === "PAUSADO" || tipo === "REATIVADO") && refs.nosApps) {
+    // A pausa feita no iFood/99: volta só lá. A do FireHub é outro registro.
+    await desfazerNosApps(refs, ctx);
+    return;
+  }
   if (tipo === "PAUSADO" || tipo === "REATIVADO") {
     const voltaPara = !refs.ativo;
     const ids: string[] = refs.ids || [];

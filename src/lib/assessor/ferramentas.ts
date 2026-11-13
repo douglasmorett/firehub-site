@@ -31,6 +31,7 @@ import { hojeNaLoja } from "@/lib/relatorios/base";
 import { garantirEstruturaDeDespesas } from "@/lib/garantir-colunas";
 import { comAutor } from "./painel";
 import { buscarNoCardapio, pausarOuReativar, listarPausados, abrirOuFecharSite, desfazerNoCardapio } from "./cardapio";
+import { pausarNosApps } from "./pausa-nos-apps";
 import { consultarTaxasDeEntrega, alterarTaxaDeBairro, cadastrarBairro, removerBairro, desfazerNaEntrega } from "./entrega";
 
 export type ContextoDoAssessor = {
@@ -197,6 +198,18 @@ export const DECLARACOES_DO_ASSESSOR = [
     },
   },
   {
+    name: "pausar_nos_apps",
+    description: "Só depois do SIM do dono à pergunta 'Posso pausar no iFood e na 99 também?' (perguntarNosApps de pausar_ou_reativar_itens): pausa ou reativa os mesmos itens no iFood e na 99. Sem produtoIds, usa a pausa/reativação que você acabou de fazer.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        produtoIds: { type: Type.ARRAY, items: { type: Type.STRING }, description: "ids de buscar_no_cardapio; omita para usar os itens da pausa/reativação que acabou de fazer" },
+        ativo: { type: Type.BOOLEAN, description: "false = pausar; true = reativar (obrigatório quando mandar produtoIds)" },
+        apps: { type: Type.ARRAY, items: { type: Type.STRING, enum: ["IFOOD", "99"] }, description: "omita = todos os conectados; 'só no iFood' = ['IFOOD']" },
+      },
+    },
+  },
+  {
     name: "listar_itens_pausados",
     description: "Lista o que está pausado no cardápio, por categoria.",
     parameters: { type: Type.OBJECT, properties: {} },
@@ -263,7 +276,7 @@ export const DECLARACOES_DO_ASSESSOR = [
 /** Ferramentas que gravam: a resposta da IA sem nenhuma delas não pode dizer "lancei". */
 export const FERRAMENTAS_QUE_GRAVAM = new Set([
   "registrar_compra", "registrar_saida", "registrar_despesa", "registrar_conta_a_pagar", "marcar_conta_paga", "desfazer_ultimo_registro",
-  "pausar_ou_reativar_itens", "abrir_ou_fechar_site",
+  "pausar_ou_reativar_itens", "pausar_nos_apps", "abrir_ou_fechar_site",
   "alterar_taxa_de_bairro", "cadastrar_bairro", "remover_bairro",
 ]);
 
@@ -282,6 +295,7 @@ export async function executarFerramentaDoAssessor(nome: string, args: any, ctx:
       case "desfazer_ultimo_registro": return await desfazerUltimo(ctx);
       case "buscar_no_cardapio": return await buscarNoCardapio(args, ctx);
       case "pausar_ou_reativar_itens": return await pausarOuReativar(args, ctx);
+      case "pausar_nos_apps": return await pausarNosApps(args, ctx);
       case "listar_itens_pausados": return await listarPausados(args, ctx);
       case "abrir_ou_fechar_site": return await abrirOuFecharSite(args, ctx);
       case "consultar_taxas_de_entrega": return await consultarTaxasDeEntrega(args, ctx);

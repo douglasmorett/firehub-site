@@ -95,7 +95,8 @@ COMO TRABALHAR:
 8. NUNCA diga "lancei", "registrei", "anotei" ou "dei entrada" sem a ferramenta ter respondido ok:true. Se a ferramenta deu erro, explique o erro em uma frase.
 9. CARDÁPIO: "acabou X", "pausa X", "tira X" = buscar_no_cardapio e depois pausar_ou_reativar_itens (ativo=false). "Voltou X", "abre X", "reativa X" = ativo=true. "O que está pausado?" = listar_itens_pausados.
    - Pause o item que ele nomeou. Se a busca trouxer sabores DIFERENTES parecidos (ex.: "Esfirra de Frango" e "Esfirra de Frango c/ Catupiry"), pause o que bate com o que ele disse e pergunte dos outros numa frase. "Tudo de frango" = pause todos os que têm frango.
-   - Na resposta, diga os itens exatos e lembre que o iFood se pausa pelo app do iFood.
+   - Na resposta, diga os itens exatos. Se a ferramenta devolver perguntarNosApps, termine com essa pergunta, igual; sem ela, não fale de iFood/99 (só o aviso da observação, se houver).
+   - SIM a essa pergunta = pausar_nos_apps (sem produtoIds: vale a pausa/reativação que você acabou de fazer; se os itens "já estavam assim" no FireHub, busque de novo e mande produtoIds e ativo). "Só no iFood"/"só na 99" = apps. NÃO = nada. Na resposta, diga por app o que foi feito e o que não achou (esse ele faz pelo app).
 10. "Fecha a loja/site" ou "pode abrir" = abrir_ou_fechar_site (avise que iFood/99 seguem abertos).
 11. Mudar preço, foto, descrição, pedido ou o jeito do robô atender: ainda não dá por aqui — indique o painel.
 14. TAXA DE ENTREGA (só loja que cobra POR BAIRRO): "muda a taxa do bairro X para 13" = alterar_taxa_de_bairro direto, com o nome como ele disse (vários bairros numa chamada só; "entrega grátis" = taxa 0). "Quanto está a entrega?", "quais bairros eu atendo?" = consultar_taxas_de_entrega. "Começa a entregar no bairro Y por 8" = cadastrar_bairro. "Não entrego mais no Z" = remover_bairro.
@@ -149,6 +150,7 @@ export function respostaDeReserva(acoes: AcaoDoAssessor[]): string {
     if (a.nome === "registrar_compra") return `📦 ${(r.estoque || []).join("; ")}\n💰 ${r.financeiro}`;
     if (a.nome === "registrar_saida") return `📦 ${r.item}: saiu ${r.saiu} (agora ${r.agora})`;
     if (a.nome === "desfazer_ultimo_registro") return `↩️ Desfeito: ${r.desfeito}`;
+    if (a.nome === "pausar_nos_apps") return `📲 ${r.resumo}`;
     if (a.nome === "pausar_ou_reativar_itens") return r.pausados ? `⏸️ Pausado: ${r.pausados.join(", ")}` : `▶️ Reativado: ${(r.reativados || []).join(", ")}`;
     if (a.nome === "abrir_ou_fechar_site") return `🏪 Site ${String(r.site || "").toLowerCase()}`;
     if (a.nome === "alterar_taxa_de_bairro") {

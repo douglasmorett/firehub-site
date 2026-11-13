@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import { parseJson99Food } from "./json-ids-longos";
+import { corpoDoStatus99 } from "./casar-itens-dos-apps";
 
 /**
  * Cliente da API do 99Food (DiDi Food Open Platform).
@@ -524,6 +525,24 @@ export async function detalheDaLoja(authToken: string): Promise<LojaNoNoveNove |
  */
 export async function cardapioDaLoja(authToken: string): Promise<RespostaFood99> {
   return chamar("/v3/item/item/list", { query: { auth_token: authToken }, base: BASE_V3 });
+}
+
+/**
+ * Pausa ou reativa itens na 99 (`POST /v3/item/item/updateItemStatus`). O id é
+ * o `app_item_id` do `cardapioDaLoja`; a resposta diz, item a item, o que deu
+ * certo (data.success) e o que não (data.failed). Usado pelo Bill
+ * (lib/assessor/pausa-nos-apps.ts).
+ */
+export async function mudarStatusDosItens(
+  authToken: string,
+  appItemIds: string[],
+  ativo: boolean
+): Promise<RespostaFood99<{ success?: string[]; failed?: string[] }>> {
+  return chamar("/v3/item/item/updateItemStatus", {
+    metodo: "POST",
+    corpo: corpoDoStatus99(authToken, appItemIds, ativo),
+    base: BASE_V3,
+  });
 }
 
 // ── Diagnóstico ─────────────────────────────────────────────────────────────
@@ -1178,4 +1197,73 @@ export async function estadoOperacionalDaLoja(
     subBizStatus: num(d.sub_biz_status),
     autoSwitch: num(d.auto_switch),
   };
+}
+
+// ── 99 ENTREGA ──────────────────────────────────────────────────────────────
+//
+// Entregador da 99 sob demanda para pedido DA 99 que a loja entregaria com
+// motoboy próprio (doc "Entrega API", lida em 12/11/2026). Regras da 99:
+// só pedido pago online; o `order_id` é o do pedido da 99 (não serve para
+// pedido do site); o estimate_id vale para UM pedido; os endereços do pedido
+// têm que ser IGUAIS aos da estimativa. Valores em centavos.
+
+export type EnderecoEntrega99 = {
+  rua: string; numero?: string; complemento?: string; bairro: string;
+  cidade: string; uf: string; cep: string; lat?: number | null; lng?: number | null;
+};
+
+function ponto99(e: EnderecoEntrega99) {
+  return {
+    structured_address: {
+      street: e.rua, ...(e.numero ? { number: e.numero } : {}), ...(e.complemento ? { complement: e.complemento } : {}),
+      neighborhood: e.bairro, city: e.cidade, state: e.uf, country: "BRASIL", cep: e.cep,
+    },
+    ...(Number.isFinite(Number(e.lat)) && Number.isFinite(Number(e.lng)) && e.lat != null && e.lng != null
+      ? { location: { lat: Number(e.lat), lng: Number(e.lng) } } : {}),
+  };
+}
+
+/** Liga o 99 Entrega para a loja. Repetir não faz mal: quem chama ignora o erro de "já ativo". */
+export function ativar99Entrega(authToken: string) {
+  return chamar("/v3/entrega/authorization/register", { metodo: "POST", corpo: { auth_token: authToken } });
+}
+
+export function cotar99Entrega(authToken: string, coleta: EnderecoEntrega99, entrega: EnderecoEntrega99) {
+  return chamar<{ id: string; fee: number; delivery_distance: number; delivery_duration: number; expires_time: number }>(
+    "/v3/entrega/order/estimation",
+    { metodo: "POST", corpo: { auth_token: authToken, vehicle_type: "entrega_moto", pickup_info: ponto99(coleta), dropoff_info: ponto99(entrega) } },
+  );
+}
+
+export function pedir99Entrega(authToken: string, p: {
+  orderId: string; estimateId: string; coleta: EnderecoEntrega99; entrega: EnderecoEntrega99;
+  loja: { nome: string; telefone: string }; cliente: { nome: string }; observacao?: string;
+}) {
+  const tel = String(p.loja.telefone || "").replace(/\D/g, "").replace(/^55(?=\d{10,11}$)/, "");
+  return chamar("/v3/entrega/order/place", {
+    metodo: "POST",
+    corpo: {
+      auth_token: authToken,
+      vehicle_type: "entrega_moto",
+      order_id: String(p.orderId),
+      estimate_id: p.estimateId,
+      pickup_info: { ...ponto99(p.coleta), name: p.loja.nome.slice(0, 50), phone: tel, note: (p.observacao || "Pedido pronto no balcão").slice(0, 127) },
+      dropoff_info: { ...ponto99(p.entrega), name: (p.cliente.nome || "Cliente").slice(0, 50), note: p.entrega.complemento || "-" },
+      package_info: { package_type: "food", package_weight: "5kg" },
+    },
+    idsCrus: ["order_id"],
+  });
+}
+
+export function detalhe99Entrega(authToken: string, orderId: string) {
+  return chamar("/v3/entrega/order/detail", { query: { auth_token: authToken, order_id: String(orderId) } });
+}
+
+/** 410018 é o único motivo que a 99 aceita: "entrega não é mais necessária". */
+export function cancelar99Entrega(authToken: string, orderId: string) {
+  return chamar("/v3/entrega/order/cancel", {
+    metodo: "POST",
+    corpo: { auth_token: authToken, order_id: String(orderId), reason_id: "410018" },
+    idsCrus: ["order_id"],
+  });
 }
