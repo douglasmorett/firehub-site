@@ -433,8 +433,10 @@ export default function CaixaClient({ simularBalanca }: { simularBalanca: boolea
   // ── Itens: cancelar, quantidade, desconto ─────────────────────────────
   async function cancelarItem() {
     const i = itens[selecionado];
-    if (!i) return;
-    const r = await comSenhaDoGerente((cab) => fetch("/api/store/caixa-mercado/senha", { method: "POST", headers: cab }), pedirSenha);
+    if (!i || ocupado) return;
+    // Ocupado: o Enter da janela da senha não pode chegar de novo aqui.
+    setOcupado(true);
+    const r = await comSenhaDoGerente((cab) => fetch("/api/store/caixa-mercado/senha", { method: "POST", headers: cab }), pedirSenha).finally(() => setOcupado(false));
     if (!r) return setModal(null);
     const d = await r.json().catch(() => ({}));
     if (!r.ok) return avisar(false, d?.error || "Senha não conferiu.");
@@ -460,6 +462,8 @@ export default function CaixaClient({ simularBalanca }: { simularBalanca: boolea
   teclas.current = (e: KeyboardEvent) => {
     const k = e.key;
     if (/^F\d+$/.test(k)) e.preventDefault();
+    // A janela da senha do gerente cuida das teclas dela (o Enter não pode finalizar nada por baixo).
+    if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
     if (ocupado && k !== "Escape") return;
     if (modal === null) {
       if (k === "F1") return setModal("ajuda");
