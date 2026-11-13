@@ -30,7 +30,8 @@ confere("string JSON crua → padrão", lerBalcaoConfig('{"caixaParaPedidosOnlin
 confere(
   "o pager continua sendo lido junto",
   lerBalcaoConfig({ pagerObrigatorioMesa: true, caixaParaPedidosOnline: "travar" }),
-  { pagerObrigatorioBalcao: false, pagerObrigatorioMesa: true, caixaParaPedidosOnline: "travar" },
+  // caixaPorUsuario (13/11/2026) nasce desligado em quem nunca escolheu.
+  { pagerObrigatorioBalcao: false, pagerObrigatorioMesa: true, caixaParaPedidosOnline: "travar", caixaPorUsuario: false },
 );
 
 // ── Decisão ──────────────────────────────────────────────────────────────

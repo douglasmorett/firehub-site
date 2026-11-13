@@ -64,8 +64,8 @@ const SECTIONS = [
     icon: <BellRing size={28} />,
     color: "#B45309",
     bg: "#FFF7E6",
-    title: "Balcão & Pager",
-    desc: "Exigir o número do pager no lançamento do balcão e da mesa",
+    title: "Balcão, Pager & Caixa",
+    desc: "Pager no balcão e na mesa, pedido com o caixa fechado e caixa por usuário",
   },
   {
     id: "equipe" as Section,
@@ -171,6 +171,7 @@ const HASH_TO_SECTION: Record<string, Section> = {
   conta: "conta",
   balcao: "balcao",
   pager: "balcao",
+  "caixa-por-usuario": "balcao",
   senha: "senha",
   "senha-do-gerente": "senha",
   lojas: "lojas",
@@ -341,7 +342,7 @@ export default function MinhaLojaClient({ user }: { user: any }) {
   if (section === "balcao") {
     return (
       <div style={{ maxWidth: 850, margin: "0 auto", padding: "1.5rem 1rem" }}>
-        <BackBtn onClick={() => setSection("menu")} title="🔔 Balcão & Pager" />
+        <BackBtn onClick={() => setSection("menu")} title="🔔 Balcão, Pager & Caixa" />
         <BalcaoConfigManager />
       </div>
     );

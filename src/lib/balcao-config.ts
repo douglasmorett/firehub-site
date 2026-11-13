@@ -61,6 +61,12 @@ export type BalcaoConfig = {
   pagerObrigatorioMesa: boolean;
   /** Pedido do site e do robô com o caixa fechado (ver o topo do arquivo). */
   caixaParaPedidosOnline: CaixaParaPedidosOnline;
+  /**
+   * "Cada usuário tem o seu próprio caixa" (Garagem Burger, 13/11/2026): cada
+   * login abre, movimenta e fecha o seu caixa. Desligado = um caixa só para a
+   * loja, como sempre. As regras moram em lib/caixa-por-usuario-regras.ts.
+   */
+  caixaPorUsuario: boolean;
 };
 
 /**
@@ -77,6 +83,7 @@ export const BALCAO_CONFIG_PADRAO: BalcaoConfig = {
   pagerObrigatorioBalcao: false,
   pagerObrigatorioMesa: false,
   caixaParaPedidosOnline: null,
+  caixaPorUsuario: false,
 };
 
 /**
@@ -97,6 +104,8 @@ export function lerBalcaoConfig(bruto: unknown): BalcaoConfig {
     // ilegível não pode virar trava, pelo mesmo motivo do pager.
     caixaParaPedidosOnline:
       o.caixaParaPedidosOnline === "travar" || o.caixaParaPedidosOnline === "abrir_sozinho" ? o.caixaParaPedidosOnline : null,
+    // Só `true` liga: ilegível é o caixa único de sempre.
+    caixaPorUsuario: o.caixaPorUsuario === true,
   };
 }
 

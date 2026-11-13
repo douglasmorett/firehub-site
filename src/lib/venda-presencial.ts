@@ -34,6 +34,8 @@ import { normalizarConfigFiscal } from "@/lib/fiscal-config";
 import { documentoNoPedido, documentoObrigatorioNoPedido } from "@/lib/fiscal-modo";
 import { MENSAGEM_CAIXA_FECHADO, ERRO_CAIXA_FECHADO } from "@/lib/caixa-aberto";
 import { caixaEstaAberto } from "@/lib/caixa-aberto-servidor";
+import { caixaPorUsuarioLigado, vincularVendaDoUsuario } from "@/lib/caixa-por-usuario";
+import { MENSAGEM_ABRA_O_SEU_CAIXA } from "@/lib/caixa-por-usuario-regras";
 import { avaliarEntrega, modoDaArea, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
 import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
 import { comPrazo } from "@/lib/com-prazo";
@@ -150,9 +152,16 @@ export async function registrarVendaPresencial(opcoes: {
   //
   // Vem ANTES de tudo o que grava: nada de número de pedido queimado nem de
   // baixa de estoque por uma venda que não vai existir.
-  if (!(await caixaEstaAberto(targetFranchiseeId))) {
+  //
+  // Caixa por usuário (lib/caixa-por-usuario-regras.ts): quem vende pelo
+  // painel (`operador.quemId` = o User.id do login) precisa do SEU caixa
+  // aberto — é nele que a venda cai. O garçom pelo link não tem login: vale o
+  // caixa da loja, e a venda vai para o caixa principal.
+  const usuarioDoCaixa = opcoes.operador?.quemId || null;
+  if (!(await caixaEstaAberto(targetFranchiseeId, usuarioDoCaixa))) {
+    const doUsuario = usuarioDoCaixa ? await caixaPorUsuarioLigado(targetFranchiseeId) : false;
     return resposta(
-      { error: MENSAGEM_CAIXA_FECHADO, codigo: ERRO_CAIXA_FECHADO },
+      { error: doUsuario ? MENSAGEM_ABRA_O_SEU_CAIXA : MENSAGEM_CAIXA_FECHADO, codigo: ERRO_CAIXA_FECHADO },
       { status: 409 },
     );
   }
@@ -443,6 +452,10 @@ export async function registrarVendaPresencial(opcoes: {
       },
     },
   });
+
+  // Caixa por usuário: a venda fica no caixa de quem lançou. Chave
+  // desligada, não faz nada (lib/caixa-por-usuario.ts).
+  await vincularVendaDoUsuario("PEDIDO", order.id, targetFranchiseeId, usuarioDoCaixa);
 
   // Realiza a baixa imediata no estoque do pedido presencial
   const { deductStockForOrder } = await import("@/lib/stock");

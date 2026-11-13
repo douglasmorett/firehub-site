@@ -38,7 +38,7 @@ for (const lixo of ["sim", 1, 0, true, [], ["pagerObrigatorioBalcao"], "{}"]) {
 // "true" em texto é o caso que um formulário mal feito mandaria.
 confere('string "true" não liga', lerBalcaoConfig({ pagerObrigatorioBalcao: "true" }), BALCAO_CONFIG_PADRAO);
 confere("1 não liga", lerBalcaoConfig({ pagerObrigatorioMesa: 1 }), BALCAO_CONFIG_PADRAO);
-confere("só o booleano true liga", lerBalcaoConfig({ pagerObrigatorioBalcao: true }), SO_BALCAO);
+confere("só o booleano true liga", lerBalcaoConfig({ pagerObrigatorioBalcao: true }), { ...SO_BALCAO, caixaParaPedidosOnline: null, caixaPorUsuario: false });
 
 console.log("\n3) Cada chave tranca só a sua aba");
 confere("só balcão → balcão exige", pagerEhObrigatorio(SO_BALCAO, "BALCAO"), true);

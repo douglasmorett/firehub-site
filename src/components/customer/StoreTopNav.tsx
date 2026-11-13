@@ -154,6 +154,9 @@ export default function StoreTopNav({
 
   const [storeOpen, setStoreOpen] = useState(initialStoreOpen);
   const [cashOpen, setCashOpen] = useState(initialCashOpen);
+  // Caixa por usuário (Minha Loja › Balcão, Pager & Caixa): cada login abre o
+  // SEU caixa — a tela diz isso ao abrir e no menu (GET /api/cash-session).
+  const [caixaPorUsuario, setCaixaPorUsuario] = useState(false);
   const [toggling, setToggling] = useState<"store" | null>(null);
 
   // ── PAUSE MODAL ──────────────────────────────────────────────
@@ -473,7 +476,7 @@ export default function StoreTopNav({
     setResumoCarregando(true);
     return fetch("/api/cash-session", { cache: "no-store" })
       .then(r => (r.ok ? r.json() : null))
-      .then(d => setResumoDoCaixa(d?.resumoDoCaixa || null))
+      .then(d => { setResumoDoCaixa(d?.resumoDoCaixa || null); setCaixaPorUsuario(d?.caixaPorUsuario === true); })
       .catch(() => {})
       .finally(() => setResumoCarregando(false));
   };
@@ -624,6 +627,7 @@ export default function StoreTopNav({
     fetch("/api/cash-session")
       .then(r => r.json())
       .then(d => {
+        setCaixaPorUsuario(d?.caixaPorUsuario === true);
         if (d.ultimoFechamento) {
           setUltimoFechamento(d.ultimoFechamento);
           setOpeningAmount(prev => (prev ? prev : String(d.ultimoFechamento.cash || "")));
@@ -1106,6 +1110,11 @@ export default function StoreTopNav({
             <div style={{ fontSize:"1.8rem", marginBottom:8 }}>💰</div>
             <h2 style={{ margin:"0 0 4px", fontSize:"1.1rem", fontWeight:900 }}>Abrir Caixa</h2>
             <p style={{ margin:"0 0 1.2rem", fontSize:"0.85rem", color:"#64748B" }}>Informe o valor de troco disponível para abertura do caixa.</p>
+            {caixaPorUsuario && (
+              <div style={{ background:"#FFF7E6", border:"1px solid #FDE68A", borderRadius:10, padding:"10px 12px", marginBottom:"0.9rem", textAlign:"left", fontSize:"0.8rem", color:"#92400E", lineHeight:1.5 }}>
+                👤 Nesta loja cada usuário tem o seu próprio caixa. Este caixa é <strong>só seu</strong>: as vendas que você lançar, as entradas, as retiradas e o fechamento ficam nele, separados dos caixas dos colegas.
+              </div>
+            )}
             {ultimoFechamento && (ultimoFechamento.cash || 0) > 0 && (
               <div style={{ background:"#F0FDFA", border:"1px solid #99F6E4", borderRadius:10, padding:"10px 12px", marginBottom:"0.9rem", textAlign:"left", fontSize:"0.8rem", color:"#0F766E", lineHeight:1.5 }}>
                 No último fechamento foram contados <strong>{fmt(ultimoFechamento.cash)}</strong> em dinheiro.
@@ -1171,7 +1180,7 @@ export default function StoreTopNav({
               <button onClick={() => setShowCaixaMenu(false)}
                       style={{ position:"absolute", top:14, right:14, background:"none", border:"none", cursor:"pointer", color:"#64748B" }}><X size={20} /></button>
               <div style={{ fontSize:"0.68rem", fontWeight:800, letterSpacing:"0.09em", color:"#94A3B8", textTransform:"uppercase", marginBottom:4 }}>Caixa aberto</div>
-              <h2 style={{ margin:0, fontSize:"1.2rem", fontWeight:900, color:"#0F172A" }}>Movimentar caixa</h2>
+              <h2 style={{ margin:0, fontSize:"1.2rem", fontWeight:900, color:"#0F172A" }}>{caixaPorUsuario ? "Movimentar o seu caixa" : "Movimentar caixa"}</h2>
               <p style={{ margin:"6px 0 0", fontSize:"0.82rem", color:"#64748B", lineHeight:1.5 }}>
                 Registre aqui todo dinheiro que <strong>entra ou sai</strong> fora das vendas. É o que faz o
                 caixa fechar certo no fim do turno.

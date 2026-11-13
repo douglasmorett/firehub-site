@@ -21,12 +21,31 @@ import { quemEstaAbrindo, resumoCego, resumoDoCaixaAberto } from "@/lib/resumo-d
 import { gravarQuemAbriu, lerQuemAbriuDoBanco } from "@/lib/quem-abriu-o-caixa";
 // O fechamento cego (Minha Loja → Senha do gerente): o funcionário não recebe o esperado.
 import { caixaCegoPara } from "@/lib/senha-do-gerente";
+// Caixa por usuário (Minha Loja › Balcão, Pager & Caixa): cada login com o
+// seu caixa. Desligado, `caixaAbertoPara` é a consulta de sempre.
+import { caixaAbertoPara, caixaPorUsuarioLigado } from "@/lib/caixa-por-usuario";
+import { donoDoCaixa } from "@/lib/caixa-por-usuario-regras";
 
 async function getUser(session: any) {
   const u = await prisma.user.findUnique({ where: { email: session.user?.email || "" } });
   if (!u) return null;
   const targetId = u.ownerId || u.id;
   return { ...u, targetId };
+}
+
+/**
+ * O último caixa FECHADO que vale para este login: o da loja (chave
+ * desligada, a consulta de sempre) ou o último do próprio login (caixa por
+ * usuário — o troco sugerido é o que ficou na gaveta DELE, não na do colega).
+ */
+async function ultimoCaixaFechado(lojaId: string, usuarioId: string, porUsuario: boolean) {
+  const onde = { franchiseeId: lojaId, status: "CLOSED", closedAt: { not: null } };
+  if (!porUsuario) {
+    return prisma.cashSession.findFirst({ where: onde, orderBy: { closedAt: "desc" }, select: { closingCash: true, closedAt: true, closedBy: true } });
+  }
+  const recentes = await prisma.cashSession.findMany({ where: onde, orderBy: { closedAt: "desc" }, take: 60, select: { closingCash: true, closedAt: true, closedBy: true, abertoPor: true } });
+  const meu = recentes.find((c) => donoDoCaixa(c.abertoPor) === usuarioId);
+  return meu ? { closingCash: meu.closingCash, closedAt: meu.closedAt, closedBy: meu.closedBy } : null;
 }
 
 // GET - retorna sessão aberta atual e pedidos presenciais do período
@@ -36,11 +55,9 @@ export async function GET() {
   const user = await getUser(session);
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
-  // Sessão aberta atual
-  const openSession = await prisma.cashSession.findFirst({
-    where: { franchiseeId: user.targetId, status: "OPEN" },
-    orderBy: { openedAt: "desc" },
-  });
+  // Sessão aberta atual — com o caixa por usuário ligado, a DESTE login.
+  const porUsuario = await caixaPorUsuarioLigado(user.targetId);
+  const openSession = await caixaAbertoPara(user.targetId, user.id, porUsuario);
 
   const dados = openSession
     ? await calcularEsperadoDoTurno(user.targetId, openSession)
@@ -69,7 +86,10 @@ export async function GET() {
   // Não entra no esperado — seria adivinhar quanto daquilo ainda está na
   // gaveta. Vai para a tela como explicação da diferença.
   let foraDoTurno = { valor: 0, quantidade: 0, dinheiro: 0, desde: null as string | null };
-  if (openSession) {
+  // Caixa por usuário: as vendas entre um fechamento e outra abertura caem no
+  // caixa dos colegas (ou no principal), não na gaveta deste login — a
+  // explicação não vale, e a conta pela loja inteira mentiria.
+  if (openSession && !porUsuario) {
     const anterior = await prisma.cashSession.findFirst({
       where: {
         franchiseeId: user.targetId,
@@ -110,11 +130,7 @@ export async function GET() {
   // O ÚLTIMO caixa fechado, contado ou não: desde 11/10/2026 o dinheiro deixado
   // em branco grava `closingCash` nulo, e pular o caixa sem contagem (como a
   // consulta fazia) sugeriria o troco de um fechamento de dias atrás.
-  const ultimoCaixa = await prisma.cashSession.findFirst({
-    where: { franchiseeId: user.targetId, status: "CLOSED", closedAt: { not: null } },
-    orderBy: { closedAt: "desc" },
-    select: { closingCash: true, closedAt: true },
-  });
+  const ultimoCaixa = await ultimoCaixaFechado(user.targetId, user.id, porUsuario);
   const ultimoFechamento = ultimoCaixa?.closingCash != null ? ultimoCaixa : null;
 
   // ── O RESUMO DO CAIXA ABERTO (topo do "Movimentar caixa") ─────────────
@@ -148,6 +164,7 @@ export async function GET() {
   if (cego) {
     return NextResponse.json({
       caixaCego: true,
+      caixaPorUsuario: porUsuario,
       resumoDoCaixa: resumoDoCaixa ? { ...resumoCego(resumoDoCaixa), fuso: resumoDoCaixa.fuso } : null,
       session: openSession,
       expected: {
@@ -186,6 +203,8 @@ export async function GET() {
 
   return NextResponse.json({
     resumoDoCaixa,
+    // A tela diz "o SEU caixa" quando cada login tem o seu.
+    caixaPorUsuario: porUsuario,
     session: openSession,
     expected,
     // Quanto do pago online (já dentro de `expected.ifoodOnline`) veio do site
@@ -288,21 +307,17 @@ export async function POST(req: Request) {
   // fica marcado como automático e `difference` fica NULO — não houve
   // conferência, e zero seria mentira. Quem abriu o caixa recebe de volta o
   // que ficou pendurado, para a tela poder avisar.
-  const abertaAntes = await prisma.cashSession.findFirst({
-    where: { franchiseeId: user.targetId, status: "OPEN" },
-    orderBy: { openedAt: "desc" },
-  });
+  // Caixa por usuário: o caixa "anterior" é só o DESTE login. Abrir o meu
+  // caixa nunca encerra o do colega — é para isso que a chave existe.
+  const porUsuario = await caixaPorUsuarioLigado(user.targetId);
+  const abertaAntes = await caixaAbertoPara(user.targetId, user.id, porUsuario);
 
   let encerradaSemConferencia: { esperadoTotal: number; esperadoCash: number; abertoEm: string } | null = null;
 
   // O último fechamento DE VERDADE, antes de esta abertura encerrar alguma
   // coisa: é contra o dinheiro contado nele que o troco de agora se confere
   // (lib/troco-da-abertura.ts).
-  const ultimoFechado = await prisma.cashSession.findFirst({
-    where: { franchiseeId: user.targetId, status: "CLOSED", closedAt: { not: null } },
-    orderBy: { closedAt: "desc" },
-    select: { closingCash: true, closedAt: true, closedBy: true },
-  });
+  const ultimoFechado = await ultimoCaixaFechado(user.targetId, user.id, porUsuario);
 
   if (abertaAntes) {
     try {
@@ -321,6 +336,9 @@ export async function POST(req: Request) {
           expectedTotal: Number(d.expected.total.toFixed(2)),
           difference: null,
           closedBy: "sistema — encerrado ao abrir outro caixa",
+          // Caixa por usuário: o mesmo login abre outro caixa na hora, então o
+          // turno da loja segue (a numeração não volta ao #1, lib/order-number.ts).
+          ...(porUsuario ? { abertoPor: { ...((abertaAntes.abertoPor as Record<string, unknown> | null) || {}), turnoContinua: true } as any } : {}),
           notes:
             `Turno encerrado automaticamente em ${agora.toLocaleString("pt-BR", { timeZone: user.storeTimezone || FUSO_PADRAO })} porque um caixa novo foi aberto. ` +
             `Ninguém conferiu a gaveta: o esperado ficou registrado e o contado não existe. ` +
@@ -338,34 +356,47 @@ export async function POST(req: Request) {
   }
 
   // Rede de segurança: qualquer outra sessão aberta (duplicada por corrida)
-  // continua sendo encerrada, como sempre foi.
-  await prisma.cashSession.updateMany({
-    where: { franchiseeId: user.targetId, status: "OPEN" },
-    data: { status: "CLOSED", closedAt: new Date() },
-  });
-
-  // Criar nova sessão
-  const cashSession = await prisma.cashSession.create({
-    data: { franchiseeId: user.targetId, openingAmount: Number(openingAmount), status: "OPEN" },
-  });
+  // continua sendo encerrada, como sempre foi. No caixa por usuário, só as
+  // DESTE login — os caixas abertos dos colegas seguem abertos.
+  if (porUsuario) {
+    const meus = (await prisma.cashSession.findMany({ where: { franchiseeId: user.targetId, status: "OPEN" }, select: { id: true, abertoPor: true } }))
+      .filter((c) => donoDoCaixa(c.abertoPor) === user.id)
+      .map((c) => c.id);
+    if (meus.length > 0) {
+      await prisma.cashSession.updateMany({ where: { id: { in: meus }, status: "OPEN" }, data: { status: "CLOSED", closedAt: new Date() } });
+    }
+  } else {
+    await prisma.cashSession.updateMany({
+      where: { franchiseeId: user.targetId, status: "OPEN" },
+      data: { status: "CLOSED", closedAt: new Date() },
+    });
+  }
 
   // ── QUEM ABRIU ─────────────────────────────────────────────────────────
   // O topo do "Movimentar caixa" mostra quem abriu e quando (Allan, Delícia
-  // de Casa, 17/10/2026). À parte e sem lançar (lib/quem-abriu-o-caixa.ts): o
+  // de Casa, 17/10/2026). O suporte do FireHub entrando como a loja grava
+  // "Suporte FireHub", não o nome da loja — mesma regra da correção do caixa
+  // fechado.
+  const impersonatedBy = (session.user as any)?.impersonatedBy as string | null | undefined;
+  const suporte = impersonatedBy
+    ? await prisma.user.findUnique({ where: { id: impersonatedBy }, select: { name: true } }).catch(() => null)
+    : null;
+  const quem = quemEstaAbrindo(user, impersonatedBy ? suporte || { name: null } : null);
+
+  // Criar nova sessão. No caixa por usuário, o dono do caixa vai JUNTO na
+  // criação (e não depois, como o "quem abriu" de sempre): um caixa por
+  // usuário sem a marca seria lido como o compartilhado e contaria as vendas
+  // dos colegas — a marca não pode ficar para uma segunda gravação que falhe.
+  const cashSession = await prisma.cashSession.create({
+    data: {
+      franchiseeId: user.targetId, openingAmount: Number(openingAmount), status: "OPEN",
+      ...(porUsuario ? { abertoPor: { ...quem, usuarioId: user.id, porUsuario: true } } : {}),
+    },
+  });
+
+  // Caixa compartilhado: à parte e sem lançar (lib/quem-abriu-o-caixa.ts) — o
   // caixa já está aberto aqui, e falhar a gravação só deixa o "quem" em "—".
-  // O suporte do FireHub entrando como a loja grava "Suporte FireHub", não o
-  // nome da loja — mesma regra da correção do caixa fechado.
-  {
-    const impersonatedBy = (session.user as any)?.impersonatedBy as string | null | undefined;
-    const suporte = impersonatedBy
-      ? await prisma.user.findUnique({ where: { id: impersonatedBy }, select: { name: true } }).catch(() => null)
-      : null;
-    await gravarQuemAbriu(
-      cashSession.id,
-      user.targetId,
-      quemEstaAbrindo(user, impersonatedBy ? suporte || { name: null } : null),
-    );
-  }
+  if (!porUsuario) await gravarQuemAbriu(cashSession.id, user.targetId, quem);
 
   // Marcar caixa como aberto no user e no owner
   await prisma.user.updateMany({
@@ -402,7 +433,9 @@ export async function POST(req: Request) {
       troco: Number(openingAmount),
       tz: ownerInfo.storeTimezone || FUSO_PADRAO,
     });
-    const msg = `🟢 *Caixa Aberto*\n\nOlá chefe! O caixa da loja *${ownerInfo.storeName || 'sua loja'}* acabou de ser *ABERTO* às ${timeStr} com R$ ${Number(openingAmount).toFixed(2).replace('.', ',')} de troco.${trocoNaoBate ? `\n\n${trocoNaoBate}` : ""}\n\n_Ass: Seu Assistente FireHub 🔥_`;
+    // Caixa por usuário: o dono precisa saber DE QUEM é o caixa que abriu.
+    const deQuem = porUsuario ? ` (caixa de *${quem.nome}*)` : "";
+    const msg = `🟢 *Caixa Aberto*\n\nOlá chefe! O caixa da loja *${ownerInfo.storeName || 'sua loja'}*${deQuem} acabou de ser *ABERTO* às ${timeStr} com R$ ${Number(openingAmount).toFixed(2).replace('.', ',')} de troco.${trocoNaoBate ? `\n\n${trocoNaoBate}` : ""}\n\n_Ass: Seu Assistente FireHub 🔥_`;
     mandarParaOsNumerosDoDono(user.targetId, numerosDoAviso, msg).catch(() => 0);
   }
 
@@ -453,10 +486,9 @@ export async function PUT(req: Request) {
   // CONTADAS contra o esperado delas, apurado aqui (conferirFechamento): o
   // online fica fora dos dois lados, e os cupons nunca entraram.
 
-  const openSession = await prisma.cashSession.findFirst({
-    where: { franchiseeId: user.targetId, status: "OPEN" },
-    orderBy: { openedAt: "desc" },
-  });
+  // Caixa por usuário: fecha o caixa DESTE login, nunca o do colega.
+  const porUsuario = await caixaPorUsuarioLigado(user.targetId);
+  const openSession = await caixaAbertoPara(user.targetId, user.id, porUsuario);
 
   let difference: number | null = 0;
   // O esperado e o contado das formas CONTADAS: o resultado que a tela mostra
@@ -561,12 +593,48 @@ export async function PUT(req: Request) {
     });
   }
 
+  // ── CAIXA POR USUÁRIO: A LOJA AINDA ESTÁ NO TURNO? ────────────────────
+  //
+  // Fechar o MEU caixa com o do colega aberto não é o fim do turno da loja:
+  // os pedidos na rua não viram entregues, os garçons não são deslogados, o
+  // caixa da loja continua "aberto" para o robô e para o site, e a numeração
+  // dos pedidos não volta ao #1 (lib/order-number.ts lê a marca
+  // `turnoContinua` gravada aqui). Quem fecha por último encerra o turno.
+  let turnoContinua = false;
+  let inicioDoTurnoDaLoja: Date | null = openSession?.openedAt ?? null;
+  // (Sem caixa aberto deste login e com o do colega aberto, também não
+  // encerra nada da loja.)
+  if (porUsuario) {
+    try {
+      const outrosAbertos = await prisma.cashSession.count({ where: { franchiseeId: user.targetId, status: "OPEN" } });
+      turnoContinua = outrosAbertos > 0;
+      if (!openSession) {
+        // nada deste login para marcar
+      } else if (turnoContinua) {
+        const marcado = { ...((openSession.abertoPor as Record<string, unknown> | null) || {}), turnoContinua: true };
+        await prisma.cashSession.update({ where: { id: openSession.id }, data: { abertoPor: marcado as any } });
+      } else {
+        // O último a fechar: o turno da loja começou no primeiro caixa que
+        // fechou deixando os outros abertos desde a abertura deste.
+        const irmaos = await prisma.cashSession.findMany({
+          where: { franchiseeId: user.targetId, status: "CLOSED", closedAt: { gte: openSession.openedAt } },
+          select: { openedAt: true, abertoPor: true },
+        });
+        for (const c of irmaos) {
+          if ((c.abertoPor as any)?.turnoContinua === true && inicioDoTurnoDaLoja && c.openedAt < inicioDoTurnoDaLoja) inicioDoTurnoDaLoja = c.openedAt;
+        }
+      }
+    } catch (e: any) {
+      console.error("[Caixa por usuário] não consegui conferir os outros caixas abertos:", e?.message);
+    }
+  }
+
   // 🔧 Auto-finalizar pedidos travados em SAIU_ENTREGA com mais de 3h
   // Isso limpa pedidos que nunca foram confirmados como entregues pelo motoboy
   const threeHoursAgoMs = 3 * 60 * 60 * 1000;
   const threeHoursAgo = new Date(Date.now() - threeHoursAgoMs);
   let finalizadosNoFechamento = 0;
-  try {
+  if (!turnoContinua) try {
     const naRua = {
         franchiseeId: user.targetId,
         status: "SAIU_ENTREGA",
@@ -583,7 +651,7 @@ export async function PUT(req: Request) {
         // (19/09/2026): tudo que estava na rua é dado por entregue junto, e a
         // tela avisa QUANTOS são antes de o operador confirmar — ver
         // GET /api/cash-session, campo `saiuParaEntrega`.
-        ...(openSession ? { createdAt: { gte: openSession.openedAt } } : { createdAt: { lt: threeHoursAgo } }),
+        ...(inicioDoTurnoDaLoja ? { createdAt: { gte: inicioDoTurnoDaLoja } } : { createdAt: { lt: threeHoursAgo } }),
         // ── PEDIDO DE MESA NÃO ESTÁ "NA RUA" ─────────────────────────────
         //
         // O KDS dá a mesa por pronta como dá a retirada — SAIU_ENTREGA —, e
@@ -641,8 +709,10 @@ export async function PUT(req: Request) {
     .then(({ emitirNotasEsquecidas }) => emitirNotasEsquecidas({ franchiseeId: user.targetId, desde: openSession?.openedAt ?? null }))
     .catch((err) => console.error("[CashSession Close] Erro ao disparar NFC-e do turno:", err?.message));
 
-  // Marcar caixa como fechado no user e no owner
-  await prisma.user.updateMany({
+  // Marcar caixa como fechado no user e no owner — só quando a loja não
+  // tem mais caixa aberto (caixa por usuário com colega ainda no caixa: a
+  // loja continua aberta para o robô, o site e os garçons).
+  if (!turnoContinua) await prisma.user.updateMany({
     where: { OR: [{ id: user.targetId }, { ownerId: user.targetId }] },
     // `cashClosedAt` encerra o turno dos garçons pelo link: sessão emitida
     // antes deste instante é recusada e o celular volta para o login.
@@ -721,7 +791,8 @@ export async function PUT(req: Request) {
     const fuso = ownerInfo.storeTimezone || FUSO_PADRAO;
     const hora = (d: Date) => d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: fuso });
     const msg = mensagemDoCaixaFechado({
-      loja: ownerInfo.storeName || "",
+      // Caixa por usuário: de quem é o caixa que fechou, ao lado da loja.
+      loja: porUsuario && openSession ? `${ownerInfo.storeName || ""} — caixa de ${(openSession.abertoPor as any)?.nome || session.user?.name || ""}` : ownerInfo.storeName || "",
       fechadoAs: hora(new Date()),
       abertoAs: hora(paraOCupom.abertoEm),
       esperado: paraOCupom.esperado,

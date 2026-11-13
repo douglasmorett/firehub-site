@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { formaFechadaAgora } from "@/lib/forma-fechada";
+import { caixaAbertoPara, caixaPorUsuarioLigado } from "@/lib/caixa-por-usuario";
 
 // GET - retorna status da loja (público, por slug)
 export async function GET(req: Request) {
@@ -32,7 +33,13 @@ export async function GET(req: Request) {
     select: { storeOpen: true, cashOpen: true, deliveryConfig: true },
   });
   if (!user) return NextResponse.json({ error: "Não encontrado" }, { status: 404 });
-  return NextResponse.json({ storeOpen: user.storeOpen, cashOpen: user.cashOpen, formaFechada: formaFechadaAgora(user.deliveryConfig) });
+  // Caixa por usuário: o botão "Caixa" da barra é o caixa DESTE login (o
+  // `cashOpen` da loja continua dizendo "algum caixa aberto", para o robô e
+  // o site). Desligado, é o da loja, como sempre.
+  const cashOpen = (await caixaPorUsuarioLigado(targetId))
+    ? Boolean(await caixaAbertoPara(targetId, currentUser.id, true).catch(() => null))
+    : user.cashOpen;
+  return NextResponse.json({ storeOpen: user.storeOpen, cashOpen, formaFechada: formaFechadaAgora(user.deliveryConfig) });
 }
 
 // PATCH - toggle loja/caixa

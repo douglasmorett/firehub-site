@@ -7,6 +7,8 @@ import { temEstruturaDeCaixa, garantirEstruturaDeCaixa } from "@/lib/garantir-co
 import { imprimirMovimentacaoDoCaixa } from "@/lib/imprimir-caixa";
 // A mesma leitura do valor do lançamento esquecido no caixa fechado.
 import { lerValorEmReais } from "@/lib/lancamento-tardio-do-caixa";
+// Caixa por usuário: a sangria e o reforço são do caixa DESTE login.
+import { caixaAbertoPara } from "@/lib/caixa-por-usuario";
 
 /**
  * Sangria e reforço de caixa.
@@ -28,7 +30,7 @@ async function lojaDaSessao() {
   });
   if (!u) return null;
   // `nome` é quem aparece como operador no comprovante impresso.
-  return { franchiseeId: u.ownerId || u.id, email: u.email, nome: session.user.name || u.email || "" };
+  return { franchiseeId: u.ownerId || u.id, usuarioId: u.id, email: u.email, nome: session.user.name || u.email || "" };
 }
 
 const TIPOS = ["ENTRADA", "SAIDA"] as const;
@@ -44,11 +46,8 @@ export async function GET() {
     return NextResponse.json({ disponivel: false, movimentacoes: [], entradas: 0, saidas: 0, saldo: 0 });
   }
 
-  const turno = await prisma.cashSession.findFirst({
-    where: { franchiseeId: loja.franchiseeId, status: "OPEN" },
-    orderBy: { openedAt: "desc" },
-    select: { id: true },
-  });
+  // O turno aberto que vale para este login (caixa por usuário: o dele; senão o da loja).
+  const turno = await caixaAbertoPara(loja.franchiseeId, loja.usuarioId);
   if (!turno) {
     return NextResponse.json({ disponivel: true, movimentacoes: [], entradas: 0, saidas: 0, saldo: 0 });
   }
@@ -110,11 +109,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Valor acima do limite. Confira o que foi digitado." }, { status: 400 });
   }
 
-  const turno = await prisma.cashSession.findFirst({
-    where: { franchiseeId: loja.franchiseeId, status: "OPEN" },
-    orderBy: { openedAt: "desc" },
-    select: { id: true },
-  });
+  // O turno aberto que vale para este login (caixa por usuário: o dele; senão o da loja).
+  const turno = await caixaAbertoPara(loja.franchiseeId, loja.usuarioId);
   if (!turno) {
     return NextResponse.json(
       { error: "O caixa está fechado. Abra o caixa antes de lançar entrada ou saída." },
@@ -163,11 +159,8 @@ export async function DELETE(req: Request) {
 
   // Só apaga lançamento DESTA loja e de turno ABERTO: turno fechado já virou
   // conferência assinada, e apagar dali mudaria um número que alguém já bateu.
-  const turno = await prisma.cashSession.findFirst({
-    where: { franchiseeId: loja.franchiseeId, status: "OPEN" },
-    orderBy: { openedAt: "desc" },
-    select: { id: true },
-  });
+  // O turno aberto que vale para este login (caixa por usuário: o dele; senão o da loja).
+  const turno = await caixaAbertoPara(loja.franchiseeId, loja.usuarioId);
   if (!turno) {
     return NextResponse.json({ error: "O caixa está fechado — não dá para apagar lançamento de turno já conferido." }, { status: 400 });
   }

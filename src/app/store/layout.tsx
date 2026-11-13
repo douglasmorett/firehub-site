@@ -7,6 +7,7 @@ import { ehLojaDeDemonstracao } from "@/lib/pedidos-simulados";
 import StoreSidebar from "@/components/customer/StoreSidebar";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
 import { prisma } from "@/lib/prisma";
+import { caixaAbertoPara, caixaPorUsuarioLigado } from "@/lib/caixa-por-usuario";
 import { diasDeTesteRestantes } from "@/lib/fim-do-teste";
 import { diaEMes, diasAte, vencimentoDoBoleto } from "@/lib/prazo-da-mensalidade";
 import { cicloBloqueia, ehLojaEspecial } from "@/lib/loja-bloqueada";
@@ -89,6 +90,16 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   // O dono pediu "não mostrar mais" nos tutoriais: vale para a loja toda (lib/tutoriais.ts).
   const tutoriaisOcultos = (storeOwner?.onboardingData as any)?.tutoriaisOcultos === true;
   const isAdmin = user?.role === "ADMIN";
+
+  // Caixa por usuário (Minha Loja › Balcão, Pager & Caixa): o botão "Caixa"
+  // da barra nasce com o caixa DESTE login; null = chave desligada, vale o
+  // da loja como sempre. A barra relê pelo /api/store/status.
+  let meuCaixaAberto: boolean | null = null;
+  if (user?.id && storeOwner?.id) {
+    try {
+      if (await caixaPorUsuarioLigado(storeOwner.id)) meuCaixaAberto = Boolean(await caixaAbertoPara(storeOwner.id, user.id, true));
+    } catch {}
+  }
 
   // === TRIAL / BENEFÍCIO: dias restantes da conta proprietária ===
   // A MESMA leitura da cobrança (lib/fim-do-teste.ts, usada por
@@ -243,7 +254,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           showCompras={storeOwner?.isFranqueadoHakim === true}
           isAdmin={isAdmin}
           initialStoreOpen={storeOwner?.storeOpen ?? true}
-          initialCashOpen={storeOwner?.cashOpen ?? false}
+          initialCashOpen={meuCaixaAberto ?? storeOwner?.cashOpen ?? false}
           semNavegacao
           lojaDeDemonstracao={ehLojaDeDemonstracao(storeOwner?.id || user?.id)}
         />

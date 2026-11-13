@@ -8,6 +8,8 @@ import { lerBalcaoConfig } from "@/lib/balcao-config";
 import { pegarVez } from "@/lib/vez";
 import { gravarQuemAbriu } from "@/lib/quem-abriu-o-caixa";
 import { avisarDono } from "@/lib/alertas-do-dono";
+import { caixaAbertoPara, caixaPorUsuarioLigado } from "@/lib/caixa-por-usuario";
+import { MENSAGEM_ABRA_O_SEU_CAIXA } from "@/lib/caixa-por-usuario-regras";
 
 /**
  * A consulta ao banco da trava de caixa (lib/caixa-aberto.ts tem o porquê).
@@ -23,9 +25,15 @@ import { avisarDono } from "@/lib/alertas-do-dono";
  * fechamento, não para parar a operação. Se a consulta cair, recusar toda
  * venda do balcão seria trocar um furo de caixa por uma loja parada — e a
  * loja parada é o prejuízo maior e imediato.
+ *
+ * `usuarioId` é o login que está vendendo (PDV, conta de mesa pelo painel).
+ * Com o caixa por usuário ligado, vale o caixa DELE — a venda vai cair nesse
+ * caixa (lib/caixa-por-usuario.ts). Sem login (garçom pelo link, totem) ou
+ * com a chave desligada, vale qualquer caixa aberto da loja, como sempre.
  */
-export async function caixaEstaAberto(franchiseeId: string): Promise<boolean> {
+export async function caixaEstaAberto(franchiseeId: string, usuarioId?: string | null): Promise<boolean> {
   try {
+    if (usuarioId) return Boolean(await caixaAbertoPara(franchiseeId, usuarioId));
     const aberto = await prisma.cashSession.findFirst({
       where: { franchiseeId, status: "OPEN" },
       select: { id: true },
@@ -51,11 +59,15 @@ export async function caixaEstaAberto(franchiseeId: string): Promise<boolean> {
 export async function recusaSeCaixaFechado(
   franchiseeId: string,
   ondeEstava: "abrir a mesa" | "lançar o item" | "fechar a conta" | "registrar o pagamento",
+  // O login do painel que está fazendo isto (caixa por usuário: o caixa dele).
+  usuarioId?: string | null,
 ): Promise<NextResponse | null> {
-  if (await caixaEstaAberto(franchiseeId)) return null;
+  if (await caixaEstaAberto(franchiseeId, usuarioId)) return null;
+  // Com o caixa por usuário, a loja pode ter caixa aberto — o fechado é o DESTE login.
+  const doUsuario = usuarioId ? await caixaPorUsuarioLigado(franchiseeId) : false;
   return NextResponse.json(
     {
-      error: `${MENSAGEM_CAIXA_FECHADO} (Não deu para ${ondeEstava}.)`,
+      error: `${doUsuario ? MENSAGEM_ABRA_O_SEU_CAIXA : MENSAGEM_CAIXA_FECHADO} (Não deu para ${ondeEstava}.)`,
       codigo: ERRO_CAIXA_FECHADO,
     },
     { status: 409 },
@@ -160,8 +172,17 @@ async function abrirCaixaSozinho(lojaId: string): Promise<number | null> {
   });
   const troco = Math.round((Number(ultimo?.closingCash) || 0) * 100) / 100;
 
-  const caixa = await prisma.cashSession.create({ data: { franchiseeId: lojaId, openingAmount: troco, status: "OPEN" } });
-  await gravarQuemAbriu(caixa.id, lojaId, { nome: "Aberto sozinho pelo FireHub (pedido do site/robô)", email: null, papel: "SISTEMA" });
+  const quem = { nome: "Aberto sozinho pelo FireHub (pedido do site/robô)", email: null, papel: "SISTEMA" as const };
+  // Caixa por usuário: o caixa aberto sozinho é o do DONO — é o principal, o
+  // que recebe o pedido do site e do robô (lib/caixa-por-usuario-regras.ts).
+  const porUsuario = await caixaPorUsuarioLigado(lojaId);
+  const caixa = await prisma.cashSession.create({
+    data: {
+      franchiseeId: lojaId, openingAmount: troco, status: "OPEN",
+      ...(porUsuario ? { abertoPor: { ...quem, usuarioId: lojaId, porUsuario: true } } : {}),
+    },
+  });
+  if (!porUsuario) await gravarQuemAbriu(caixa.id, lojaId, quem);
   // O mesmo que a abertura pela tela faz (api/cash-session).
   await prisma.user.updateMany({ where: { OR: [{ id: lojaId }, { ownerId: lojaId }] }, data: { cashOpen: true } });
   console.log(`[Caixa] Loja ${lojaId}: caixa aberto sozinho pelo pedido do site/robô, troco ${reais(troco)}.`);

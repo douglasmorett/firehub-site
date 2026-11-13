@@ -4,6 +4,7 @@ import { empilharEdicao } from "@/lib/edicao-de-pedido";
 import { prisma } from "@/lib/prisma";
 import { resolverOperadorDaMesa, rotuloDoOperador, idDoOperadorDaMesa } from "@/lib/garcom-auth";
 import { recusaSeCaixaFechado } from "@/lib/caixa-aberto-servidor";
+import { vincularVendaDoUsuario } from "@/lib/caixa-por-usuario";
 import { lerPagamentos, somarPagamentos } from "@/lib/pagamentos-da-mesa";
 import { comissaoDoGarcom, sanearTaxa } from "@/lib/conta-da-mesa";
 import { contaSemTaxa } from "@/lib/taxa-da-mesa";
@@ -44,7 +45,13 @@ export async function POST(
     // Sim, isto prende a mesa até alguém abrir o caixa — e é o certo. O
     // dinheiro já existe; o que falta é onde registrá-lo. Abrir o caixa
     // destrava e a mesma conta fecha normalmente, nada se perde.
-    const semCaixa = await recusaSeCaixaFechado(targetFranchiseeId, "fechar a conta");
+    //
+    // Caixa por usuário (lib/caixa-por-usuario-regras.ts): quem fecha pelo
+    // PAINEL recebe o dinheiro da conta no SEU caixa, então é o dele que
+    // precisa estar aberto. O garçom pelo link segue o caixa da loja, e a
+    // conta dele vai para o caixa principal.
+    const usuarioDoCaixa = operador.tipo === "loja" ? operador.userId : null;
+    const semCaixa = await recusaSeCaixaFechado(targetFranchiseeId, "fechar a conta", usuarioDoCaixa);
     if (semCaixa) return semCaixa;
 
     const { id } = await params;
@@ -413,6 +420,10 @@ export async function POST(
     import("@/lib/fiscal-automatico")
       .then(({ emitirNfceDaMesa }) => emitirNfceDaMesa(id, { desconto: descontoEmReais }))
       .catch((err) => console.error("[Table Sessions Close] Erro ao disparar NFC-e da conta:", err?.message));
+
+    // Caixa por usuário: a conta fica no caixa de quem fechou pelo painel
+    // (chave desligada ou garçom: não faz nada).
+    await vincularVendaDoUsuario("MESA", id, targetFranchiseeId, usuarioDoCaixa);
 
     if (fiado) console.log(`[Mesa ${id}] conta no fiado: R$ ${fiado.valor.toFixed(2)} para ${fiado.nome} — por ${rotuloDoOperador(operador)}`);
     return NextResponse.json({

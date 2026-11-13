@@ -29,7 +29,9 @@ export async function GET() {
       where: { email: session.user.email },
       select: { id: true, ownerId: true },
     });
-    if (u) return NextResponse.json({ aberto: await caixaEstaAberto(u.ownerId || u.id) });
+    // Com o caixa por usuário ligado, o PDV deste login pergunta pelo caixa
+    // DELE (é onde a venda vai cair); desligado, é o caixa da loja.
+    if (u) return NextResponse.json({ aberto: await caixaEstaAberto(u.ownerId || u.id, u.id) });
   }
 
   const operador = await resolverOperadorDaMesa().catch(() => null);

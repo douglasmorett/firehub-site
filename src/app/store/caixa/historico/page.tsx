@@ -6,6 +6,9 @@ import { VendasPorTipoDoHistorico } from "@/components/customer/VendasPorTipoDoC
 import { FORMAS_DA_CONFERENCIA, conferenciaGravada, porQueSemConferencia } from "@/lib/conferencia-do-caixa";
 import { formasAlteradas, podeEditarCaixa, type RetratoDoContado } from "@/lib/edicao-do-caixa";
 import { movimentacoesDosCaixas } from "@/lib/movimentacoes-do-caixa";
+import { caixaPorUsuarioLigado } from "@/lib/caixa-por-usuario";
+import { caixasVisiveis, donoDoCaixa } from "@/lib/caixa-por-usuario-regras";
+import { lerQuemAbriu } from "@/lib/resumo-do-caixa-aberto";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
@@ -51,11 +54,17 @@ export const metadata = { title: "Histórico de Caixas — FireHub" };
  * neste caixa e refaz o dinheiro esperado e a diferença gravados.
  * A leitura da conferência é a de lib/conferencia-do-caixa.ts — a mesma da 2ª
  * via do papel.
+ *
+ * CAIXA POR USUÁRIO (Garagem Burger, 13/11/2026; lib/caixa-por-usuario-regras.ts):
+ * com a chave ligada, o topo mostra os caixas ABERTOS agora — de quem e desde
+ * quando —, cada caixa diz de quem é, e o dono filtra o histórico por usuário
+ * (`?usuario=<id>`). O funcionário vê só os dele. Chave desligada e nenhum
+ * caixa por usuário no histórico: a tela é a de sempre.
  */
-export default async function CaixaHistoricoPage({ searchParams }: { searchParams: Promise<{ voltar?: string }> }) {
+export default async function CaixaHistoricoPage({ searchParams }: { searchParams: Promise<{ voltar?: string; usuario?: string }> }) {
   // Volta para a tela de onde veio (o menu do caixa abre em qualquer tela da
   // loja). Só caminho interno da loja, para o link não virar redirecionamento.
-  const { voltar: voltarParam } = await searchParams;
+  const { voltar: voltarParam, usuario: usuarioParam } = await searchParams;
   const voltar = voltarParam && /^\/store(\/|$)/.test(voltarParam) ? voltarParam : "/store/venda-presencial";
 
   const session = await getServerSession(authOptions);
@@ -72,11 +81,52 @@ export default async function CaixaHistoricoPage({ searchParams }: { searchParam
   const fmtDate = fmtDateEm(fuso);
   const fmtHora = fmtHoraEm(fuso);
 
-  const sessions = await prisma.cashSession.findMany({
-    where: { franchiseeId: lojaId, status: "CLOSED" },
-    orderBy: { closedAt: "desc" },
-    take: 60,
-  });
+  // ── CAIXA POR USUÁRIO ──────────────────────────────────────────────────
+  // O dono (login sem `ownerId`) vê os caixas de todos e filtra por usuário;
+  // com a chave ligada, o funcionário vê só os próprios.
+  const porUsuario = await caixaPorUsuarioLigado(lojaId);
+  const souDono = !user.ownerId;
+  const soDe: string | null = porUsuario && !souDono ? user.id : souDono && usuarioParam ? usuarioParam : null;
+  const equipe = porUsuario || soDe
+    ? await prisma.user.findMany({ where: { OR: [{ id: lojaId }, { ownerId: lojaId }] }, select: { id: true, name: true, email: true, ownerId: true }, orderBy: { name: "asc" } }).catch(() => [])
+    : [];
+  const nomeDoUsuario = (id: string | null) => {
+    if (!id) return null;
+    const u = equipe.find((e) => e.id === id);
+    return u ? (String(u.name || "").trim() || u.email || "Sem nome") + (u.ownerId ? "" : " (dono)") : null;
+  };
+  // De quem é cada caixa: o login gravado na abertura; o nome, o de hoje (o
+  // gravado é o fallback para login apagado).
+  const deQuem = (abertoPor: unknown) => {
+    const id = donoDoCaixa(abertoPor);
+    if (!id) return null;
+    return nomeDoUsuario(id) || lerQuemAbriu(abertoPor)?.nome || "Usuário";
+  };
+
+  const quemVe = { usuarioId: user.id, souDono, porUsuario, filtro: usuarioParam || null };
+  const sessions = soDe
+    ? caixasVisiveis(await prisma.cashSession.findMany({
+        where: { franchiseeId: lojaId, status: "CLOSED" },
+        orderBy: { closedAt: "desc" },
+        take: 400,
+      }), quemVe).slice(0, 60)
+    : await prisma.cashSession.findMany({
+        where: { franchiseeId: lojaId, status: "CLOSED" },
+        orderBy: { closedAt: "desc" },
+        take: 60,
+      });
+  // Os abertos agora: só com a chave ligada (o caixa único já aparece na barra).
+  // Aqui o filtro do dono não vale: ele sempre vê quem está com caixa aberto.
+  const abertosAgora = porUsuario
+    ? caixasVisiveis(await prisma.cashSession.findMany({ where: { franchiseeId: lojaId, status: "OPEN" }, orderBy: { openedAt: "asc" } }), { ...quemVe, filtro: null })
+    : [];
+  const linkDoFiltro = (id: string | null) => {
+    const q = new URLSearchParams();
+    if (voltarParam) q.set("voltar", voltar);
+    if (id) q.set("usuario", id);
+    const t = q.toString();
+    return `/store/caixa/historico${t ? `?${t}` : ""}`;
+  };
 
   // As correções feitas depois do fechamento. Consulta à parte e protegida:
   // se a tabela ainda não existir (boot que falhou), o histórico abre igual.
@@ -112,6 +162,37 @@ export default async function CaixaHistoricoPage({ searchParams }: { searchParam
         <h1 style={{ margin: 0, fontSize: "1.3rem", fontWeight: 900, color: "#0F172A" }}>🏦 Histórico de Caixas</h1>
       </div>
 
+      {porUsuario && (
+        <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 16, padding: "12px 16px", marginBottom: 12 }}>
+          <div style={{ fontWeight: 800, fontSize: "0.92rem", color: "#92400E", marginBottom: 6 }}>
+            👥 Caixa por usuário ligado — {souDono ? "caixas abertos agora" : "o seu caixa"}
+          </div>
+          {abertosAgora.length === 0 ? (
+            <div style={{ fontSize: "0.82rem", color: "#92400E" }}>{souDono ? "Nenhum caixa aberto agora." : "O seu caixa está fechado."}</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {abertosAgora.map((a) => (
+                <div key={a.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", fontSize: "0.84rem", color: "#334155" }}>
+                  <span>🟢 <b>{deQuem(a.abertoPor) || lerQuemAbriu(a.abertoPor)?.nome || "Caixa da loja"}</b></span>
+                  <span style={{ color: "#64748B" }}>aberto desde {fmtDate(a.openedAt)} • troco {fmt(a.openingAmount || 0)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {souDono && equipe.length > 0 && (
+            <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ fontSize: "0.78rem", color: "#92400E", fontWeight: 700 }}>Histórico de:</span>
+              <a href={linkDoFiltro(null)} style={{ fontSize: "0.78rem", padding: "3px 10px", borderRadius: 20, textDecoration: "none", fontWeight: 700, background: soDe ? "#FFFFFF" : "#B45309", color: soDe ? "#92400E" : "#FFFFFF", border: "1px solid #FDE68A" }}>Todos</a>
+              {equipe.map((e) => (
+                <a key={e.id} href={linkDoFiltro(e.id)} style={{ fontSize: "0.78rem", padding: "3px 10px", borderRadius: 20, textDecoration: "none", fontWeight: 700, background: soDe === e.id ? "#B45309" : "#FFFFFF", color: soDe === e.id ? "#FFFFFF" : "#92400E", border: "1px solid #FDE68A" }}>
+                  {nomeDoUsuario(e.id)}
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {sessions.length === 0 ? (
         <div style={{ textAlign: "center", padding: "3rem", color: "#94A3B8", background: "#F8FAFC", borderRadius: 16 }}>
           <div style={{ fontSize: "3rem", marginBottom: 12 }}>📭</div>
@@ -136,6 +217,8 @@ export default async function CaixaHistoricoPage({ searchParams }: { searchParam
                   {/* O nome do caixa é o turno: não muda quando a lista anda. */}
                   <div style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A" }}>
                     Caixa de {fmtDate(s.openedAt)}
+                    {/* Caixa por usuário: de quem é o caixa. */}
+                    {deQuem(s.abertoPor) && <span style={{ marginLeft: 6, padding: "1px 8px", borderRadius: 6, background: "#FFF7E6", color: "#92400E", fontSize: "0.75rem" }}>👤 {deQuem(s.abertoPor)}</span>}
                   </div>
                   <div style={{ fontSize: "0.75rem", color: "#64748B" }}>
                     Fechado: {s.closedAt ? fmtHora(s.closedAt) : "—"} {s.closedAt ? `• Duração: ${fmtDur(s.openedAt, s.closedAt)}` : ""}

@@ -123,8 +123,26 @@ export async function chaveDoContador(
     const fechado = await db.cashSession.findFirst({
       where: { franchiseeId, status: "CLOSED", closedAt: { not: null } },
       orderBy: { closedAt: "desc" },
-      select: { id: true, closedAt: true },
+      select: { id: true, closedAt: true, abertoPor: true },
     });
+    // ── CAIXA POR USUÁRIO ─────────────────────────────────────────────
+    // Fechar o MEU caixa com o do colega ainda aberto não fecha o turno da
+    // loja: esse fechamento leva `turnoContinua` (api/cash-session) e não
+    // zera a numeração — senão o #1 voltaria no meio do movimento, a cada
+    // troca de operador. Vale o último fechamento que encerrou o turno.
+    // Loja com a chave desligada nunca tem a marca: a consulta de cima basta.
+    const continua = (c: { abertoPor: unknown } | null) => (c?.abertoPor as any)?.turnoContinua === true;
+    if (continua(fechado)) {
+      const anteriores = await db.cashSession.findMany({
+        where: { franchiseeId, status: "CLOSED", closedAt: { not: null } },
+        orderBy: { closedAt: "desc" },
+        take: 100,
+        select: { id: true, closedAt: true, abertoPor: true },
+      });
+      const fimDoTurno = anteriores.find((c) => !continua(c));
+      if (fimDoTurno?.closedAt) return { dateKey: `fechamento:${fimDoTurno.id}`, desde: fimDoTurno.closedAt };
+      return { dateKey: "sempre", desde: new Date(0) };
+    }
     if (fechado?.closedAt) return { dateKey: `fechamento:${fechado.id}`, desde: fechado.closedAt };
   } catch {
     // Sem a tabela de caixa (ou erro de leitura) a numeração não pode parar:

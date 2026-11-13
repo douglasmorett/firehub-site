@@ -37,6 +37,10 @@ import type { DetalheDoTurno, ParteDoRetrato } from "@/lib/cupom-do-caixa";
 import { itensCanceladosNoTurno, quemCancelouPeloRastro } from "@/lib/cancelamentos-do-turno";
 import { SELECT_TROCO_NO_PIX } from "@/lib/troco-no-pix";
 import { somarConferidoNaMaquininha } from "@/lib/cobranca-da-entrega-na-maquininha";
+// Caixa por usuário (Garagem Burger, 13/11/2026): o caixa de um login só conta
+// o que é dele (lib/caixa-por-usuario-regras.ts tem a regra e o porquê).
+import { donoDoCaixa } from "@/lib/caixa-por-usuario-regras";
+import { separarParaOCaixaDoUsuario } from "@/lib/caixa-por-usuario";
 
 export { PAGO_ONLINE };
 
@@ -71,10 +75,23 @@ function quemCancelou(bruto: string | null | undefined): string | null {
  */
 export async function calcularEsperadoDoTurno(
   targetId: string,
-  openSession: { id: string; openedAt: Date; openingAmount: number },
+  openSession: { id: string; openedAt: Date; openingAmount: number; abertoPor?: unknown },
   opcoes: { ate?: Date | null; retrato?: boolean } = {}
 ) {
   const janela = { gte: openSession.openedAt, ...(opcoes.ate ? { lte: opcoes.ate } : {}) };
+
+  // ── CAIXA POR USUÁRIO ─────────────────────────────────────────────────
+  //
+  // O caixa compartilhado (o de sempre) é a loja inteira na janela do turno.
+  // O caixa de um login (aberto com a chave "Cada usuário tem o seu próprio
+  // caixa" ligada, marcado no `abertoPor`) divide a janela com os caixas dos
+  // colegas: das vendas achadas pelo horário, só ficam as dele
+  // (separarParaOCaixaDoUsuario). Cada venda cai em UM caixa, e a soma dos
+  // caixas do dia é o dia. Sem `abertoPor` no objeto (teste, chamada antiga),
+  // é o compartilhado — e a conta não muda em nada.
+  const porUsuario = Boolean(donoDoCaixa(openSession.abertoPor));
+  const separar = <P extends { id: string; createdAt: Date; parentOrderId?: string | null; tableSessionId?: string | null }>(lista: P[]) =>
+    separarParaOCaixaDoUsuario(targetId, openSession, opcoes.ate, lista, [] as { id?: string; closedAt?: Date | null }[]).then((r) => r.pedidos);
 
   let movimentacaoEntradas = 0;
   let movimentacaoSaidas = 0;
@@ -90,7 +107,7 @@ export async function calcularEsperadoDoTurno(
   let corridasCanceladas: { motoboyId: string; pedido: { motoboyFee: number | null; deliveryFee: number | null; deliveryDistance: number | null; entregaGratis?: unknown; customerAddress?: string | null }; ehMarketplace: boolean }[] = [];
   let maisVendidos: ParteDoRetrato[] = [];
 
-  const orders = await prisma.customerOrder.findMany({
+  let orders = await prisma.customerOrder.findMany({
     where: {
       franchiseeId: targetId,
       // CRIANDO_IA é rascunho que o assistente ainda está montando: não é
@@ -150,6 +167,12 @@ export async function calcularEsperadoDoTurno(
     });
   } catch (e: any) {
     console.error("[Caixa] Não consegui somar as baixas das mesas do turno:", e?.message);
+  }
+
+  if (porUsuario) {
+    const doCaixa = await separarParaOCaixaDoUsuario(targetId, openSession, opcoes.ate, orders, mesasFechadas);
+    orders = doCaixa.pedidos;
+    mesasFechadas = doCaixa.mesas;
   }
 
   const apurado = apurarVendasDoTurno(orders, mesasFechadas);
@@ -216,15 +239,17 @@ export async function calcularEsperadoDoTurno(
   // Um a um no papel, com o número do parceiro: é por ele que o lojista acha
   // o pedido no portal do iFood quando o cliente liga reclamando.
   try {
-    const lista = await prisma.customerOrder.findMany({
+    const todosOsCancelados = await prisma.customerOrder.findMany({
       where: { franchiseeId: targetId, status: "CANCELADO", createdAt: janela },
-      select: { createdAt: true, dailyOrderNumber: true, totalAmount: true, cancelReason: true, cancelledBy: true, editHistory: true,
+      select: { id: true, parentOrderId: true, createdAt: true, dailyOrderNumber: true, totalAmount: true, cancelReason: true, cancelledBy: true, editHistory: true,
         source: true, openDeliveryChannel: true, ifoodOrderId: true, ifoodReference: true, openDeliveryOrderId: true, openDeliveryReference: true, tableSessionId: true,
         // A corrida do cancelado: com motoboy da loja e saído antes de cancelar.
         status: true, deliveryType: true, motoboyId: true, dispatchedAt: true, cancelledAt: true, deliveryBy: true, ifoodDriverStatus: true, ifoodDriverName: true,
         motoboyFee: true, deliveryFee: true, deliveryDistance: true, entregaGratis: true, customerAddress: true },
       orderBy: { createdAt: "asc" },
     });
+    // Caixa por usuário: o cancelado de quem lançou fica no caixa dele.
+    const lista = porUsuario ? await separar(todosOsCancelados) : todosOsCancelados;
     corridasCanceladas = lista
       .filter((o) => o.motoboyId && o.deliveryType === "DELIVERY" && canceladoComCorrida(o) && ehEntregaDaLoja(o))
       .map((o) => ({
@@ -397,10 +422,13 @@ export async function calcularEsperadoDoTurno(
         where: {
           order: { franchiseeId: targetId, status: { notIn: ["CANCELADO", "CRIANDO_IA", "AGUARDANDO_PAGAMENTO"] }, createdAt: janela },
         },
-        select: { productName: true, quantity: true, price: true, menuProduct: { select: { name: true } } },
+        select: { orderId: true, productName: true, quantity: true, price: true, menuProduct: { select: { name: true } } },
       });
+      // Caixa por usuário: só os itens dos pedidos deste caixa.
+      const doCaixa = porUsuario ? new Set(orders.map((o) => o.id)) : null;
       const porNome = new Map<string, Soma & { nome: string }>();
       for (const it of itens) {
+        if (doCaixa && !doCaixa.has(it.orderId)) continue;
         const nome = String(it.productName || it.menuProduct?.name || "").trim();
         if (!nome) continue;
         const chave = nome.toLowerCase();
