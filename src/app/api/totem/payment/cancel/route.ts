@@ -43,6 +43,7 @@ export async function POST(req: NextRequest) {
         paymentPaidAt: true,
         posOrderId: true,
         posTerminalId: true,
+        posStatus: true,
       },
     });
     if (!pedido) {
@@ -53,7 +54,63 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Acesso negado" }, { status: 403 });
     }
 
+    // ── App do FireHub na maquininha (Cielo, PagBank, Getnet, Rede) ─────────
+    // Não há id na adquirente: a cobrança é a fila do próprio pedido
+    // (posStatus), que o app lê em /api/pos/terminal/pendente. Antes isto caía
+    // no SEM_COBRANCA e o Cancelar do totem não fazia nada (teste 13/11).
     if (!pedido.posOrderId) {
+      const jaPago = () =>
+        NextResponse.json(
+          {
+            error: "Este pedido já foi pago na maquininha. Para devolver o valor, faça o estorno no painel.",
+            code: "JA_PAGO",
+            pago: true,
+          },
+          { status: 409 },
+        );
+      if (pedido.paymentPaidAt) return jaPago();
+
+      const viva: string[] = [ESTADOS_DA_COBRANCA.aguardando, ESTADOS_DA_COBRANCA.noTerminal];
+      if (pedido.posStatus && viva.includes(pedido.posStatus)) {
+        // Condicional: se o app aprovou no meio, o pedido já está pago e não
+        // vira "cancelado".
+        const n = await prisma.customerOrder.updateMany({
+          where: { id: pedido.id, paymentPaidAt: null, posStatus: { in: viva } },
+          data: { posStatus: ESTADOS_DA_COBRANCA.cancelado },
+        });
+        if (n.count === 0) {
+          const atual = await prisma.customerOrder.findUnique({
+            where: { id: pedido.id },
+            select: { paymentPaidAt: true },
+          });
+          if (atual?.paymentPaidAt) return jaPago();
+        }
+        return NextResponse.json({
+          ok: true,
+          status: ESTADOS_DA_COBRANCA.cancelado,
+          // O app não recebe cancelamento à distância: se a cobrança já estava
+          // no visor, ela continua lá até alguém tocar no X da maquininha (e aí
+          // não volta para a fila — /api/pos/terminal/resultado).
+          mensagem:
+            pedido.posStatus === ESTADOS_DA_COBRANCA.noTerminal
+              ? "Cobrança cancelada. Se a maquininha ainda mostrar o valor, toque no X dela."
+              : "Cobrança cancelada. Nada foi cobrado do seu cartão.",
+        });
+      }
+
+      const morta: string[] = [
+        ESTADOS_DA_COBRANCA.recusado,
+        ESTADOS_DA_COBRANCA.cancelado,
+        ESTADOS_DA_COBRANCA.expirado,
+      ];
+      if (pedido.posStatus && morta.includes(pedido.posStatus)) {
+        return NextResponse.json({
+          ok: true,
+          status: pedido.posStatus,
+          mensagem: "A cobrança já não estava mais ativa na maquininha.",
+        });
+      }
+
       return NextResponse.json(
         { error: "Este pedido não tem cobrança na maquininha.", code: "SEM_COBRANCA" },
         { status: 409 },

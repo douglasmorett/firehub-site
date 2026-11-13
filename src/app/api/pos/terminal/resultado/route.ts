@@ -135,6 +135,22 @@ export async function POST(req: NextRequest) {
       em: new Date().toISOString(),
     };
 
+    // O cliente cancelou no totem com a cobrança já no visor e alguém tocou no
+    // X da maquininha: não volta para a fila (voltaria a acender sozinha).
+    if (!aprovado && pedido.posStatus === ESTADOS_DA_COBRANCA.cancelado) {
+      await prisma.customerOrder.update({
+        where: { id: pedido.id },
+        data: { posTerminalId: null, posDadosTransacao: { ...dadosDaTransacao, aprovado: false, motivo: motivoRecusa ?? null } },
+      });
+      return NextResponse.json({
+        success: true,
+        aprovado: false,
+        podeTentarDeNovo: false,
+        motivo: motivoRecusa ?? null,
+        mensagem: "Cobrança cancelada no totem.",
+      });
+    }
+
     if (!aprovado) {
       // Recusado volta para a fila, não morre: o cliente costuma tentar outro
       // cartão na mesma hora, e obrigá-lo a refazer o pedido inteiro no totem
