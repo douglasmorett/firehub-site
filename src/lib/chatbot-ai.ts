@@ -1337,10 +1337,11 @@ export async function processChatbotAI(
         // (Pizzaria 17, 09/10/2026: "não entregamos na W 5" para o Lagomar).
         addressValidationText = `
 🗺️ VALIDAÇÃO DA ÁREA DE ENTREGA (feita pelo sistema agora):
-- A loja entrega POR BAIRRO e o cliente ainda NÃO disse o bairro (rua e número sozinhos não dizem o bairro).
+- A loja entrega POR BAIRRO e o sistema não achou no endereço nenhum bairro da lista da loja${v.bairroNaoReconhecido ? ` ("${v.bairroNaoReconhecido}" não é um bairro cadastrado — pode ser nome de rua, nome antigo de rua ou referência)` : " (rua e número sozinhos não dizem o bairro)"}.
 - RESULTADO: ❓ FALTA O BAIRRO. É PROIBIDO dizer que a loja não entrega nesse endereço ou nessa rua, cotar taxa ou finalizar a entrega.
-- Pergunte o BAIRRO, numa frase só, antes de qualquer outra coisa: "Qual é o seu bairro? 😊" Com o bairro o sistema confere a área e a taxa na hora.
-- O que descreve a CASA ("casa verde", "portão azul", "fundos", "perto do mercado") é ponto de referência, NÃO bairro: guarde como complemento e continue esperando o bairro.
+- Pergunte o BAIRRO, numa frase só, antes de qualquer outra coisa: "Qual é o seu bairro? 😊" Com o bairro o sistema confere a área e a taxa na hora. A taxa é a do BAIRRO: a rua NÃO precisa existir no mapa nem ter o nome novo — anote a rua exatamente como o cliente escreveu (nome antigo como "W 24" vale), a loja confere depois.
+- O que descreve a CASA ("casa verde", "portão azul", "fundos", "perto do mercado", "última casa da rua") é ponto de referência, NÃO bairro: guarde como complemento e continue esperando o bairro.
+- Só diga que não entrega quando o cliente DISSER com clareza um bairro (por exemplo, respondendo à sua pergunta) e esse bairro não estiver na lista de bairros da loja${aceitaRetirada ? " — e aí ofereça retirada no balcão" : ""}.
 `;
       } else if (pedirLocalizacao === "desconhecido") {
         // R2: em KM/ROTA (e área desenhada), "não sei" nunca vira "faixa mais
@@ -1349,8 +1350,9 @@ export async function processChatbotAI(
 🗺️ VALIDAÇÃO DA ÁREA DE ENTREGA (feita pelo sistema agora):
 - O sistema NÃO conseguiu localizar este endereço no mapa (${v.motivo}).
 - RESULTADO: ❓ ÁREA NÃO CONFIRMADA. NÃO prometa entrega, NÃO cote taxa por conta própria e NÃO finalize entrega com "finalized": true.
-- Peça a LOCALIZAÇÃO do cliente, numa frase só: "Não achei esse endereço no mapa 🗺️ Me manda sua localização? ${COMO_MANDAR_A_LOCALIZACAO}" — com ela o sistema calcula a distância e a taxa na hora.
-- Se ele não puder mandar, peça o bairro e um ponto de referência e diga que um atendente confirma a área de entrega${aceitaRetirada ? " (ou ofereça retirada no balcão)" : ""}.
+- NUNCA diga que a loja não entrega por o mapa não achar a rua: muita rua tem nome antigo ou não está no mapa.
+- Peça, numa frase só, o BAIRRO ou a LOCALIZAÇÃO: "Não achei essa rua no mapa 🗺️ Qual é o seu bairro? Se preferir, me manda sua localização: ${COMO_MANDAR_A_LOCALIZACAO}" — com o bairro ou o ponto o sistema calcula a taxa na hora. Anote a rua exatamente como o cliente escreveu.
+- Se ele não souber o bairro nem puder mandar a localização, peça um ponto de referência e diga que um atendente confirma a área de entrega${aceitaRetirada ? " (ou ofereça retirada no balcão)" : ""}.
 `;
       } else {
         addressValidationText = `

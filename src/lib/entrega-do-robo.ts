@@ -333,17 +333,30 @@ export type AvaliadorDaEntrega = (pedido: {
  * O motor casa o bairro cadastrado também dentro do texto corrido; sem casar,
  * respondia FORA com o endereço inteiro no lugar do bairro. Pizzaria 17
  * (09/10/2026): "W 5 travessa Francisca casa 12" virou "não entregamos na W 5"
- * — a cliente repetiu com "Lagomar" no fim e era bairro atendido. FORA fica
- * para quando há um bairro (o campo, ou um pedaço do endereço que é bairro) e
- * ele não está na lista.
+ * — a cliente repetiu com "Lagomar" no fim e era bairro atendido.
+ *
+ * O pedaço que só PARECE bairro também não recusa: em Macaé as ruas do Lagomar
+ * ganharam nome novo e o povo usa o antigo (W 24, W 26…), e a descrição da casa
+ * virava bairro fora da lista — o robô dizia "não atendemos essa localização"
+ * a cliente do Lagomar (Pizzaria 17, 13/11/2026). FORA fica para quando o
+ * cliente DISSE o bairro: o campo `bairro` (a tag do pedido) ou "bairro X"
+ * escrito. O palpite vai em `bairroNaoReconhecido` e o robô pergunta o bairro.
  */
 export function semBairroInformado(
   veredito: VeredictoDeEntrega,
-  pedido: { bairro?: string | null; partes?: PartesDoEndereco },
+  pedido: { bairro?: string | null; partes?: PartesDoEndereco; endereco?: string | null },
 ): VeredictoDeEntrega {
   if (veredito.modo !== "BAIRRO" || veredito.resultado !== "FORA") return veredito;
-  if (String(pedido.bairro || "").trim() || String(pedido.partes?.neighborhood || "").trim()) return veredito;
-  return { ...veredito, resultado: "DESCONHECIDO", faltaBairro: true, motivo: "bairro não informado" };
+  if (String(pedido.bairro || "").trim()) return veredito;
+  if (/\bbairro\s*:?\s+[a-zà-ú]/i.test(String(pedido.endereco || ""))) return veredito;
+  const palpite = String(pedido.partes?.neighborhood || "").trim();
+  return {
+    ...veredito,
+    resultado: "DESCONHECIDO",
+    faltaBairro: true,
+    ...(palpite ? { bairroNaoReconhecido: palpite } : {}),
+    motivo: palpite ? `bairro não reconhecido ("${palpite}")` : "bairro não informado",
+  };
 }
 
 /**
