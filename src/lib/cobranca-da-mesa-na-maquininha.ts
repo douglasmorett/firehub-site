@@ -168,6 +168,12 @@ export async function criarCobrancaDaMesa(params: {
   guestId?: string | null;
   por: string;
   conta?: ContextoDaContaDaMesa;
+  /**
+   * "Emitir nota fiscal? Sim" do app do garçom. Quem confere se a loja deixa é
+   * a rota; aqui só fica gravado na cobrança, e a emissão da conta lê daqui
+   * (lib/nota-pelo-garcom).
+   */
+  emitirNota?: boolean;
 }): Promise<{ ok: true; cobranca: CobrancaDaMesa } | ErroDeCobranca> {
   const { lojaId, tableSessionId, valorCentavos, terminalId, por } = params;
   await garantirTabela();
@@ -276,7 +282,7 @@ export async function criarCobrancaDaMesa(params: {
     id, lojaId, tableSessionId, valorCentavos,
     naNuvem ? ESTADOS_DA_COBRANCA.noTerminal : ESTADOS_DA_COBRANCA.aguardando,
     terminal.id, terminal.provider, guestId, guestName, por.slice(0, 120),
-    JSON.stringify({ mesa: mesa.table?.number ?? null, conta: contextoDaConta }),
+    JSON.stringify({ mesa: mesa.table?.number ?? null, conta: contextoDaConta, ...(params.emitirNota ? { emitirNota: true } : {}) }),
     );
   } catch (e: any) {
     if (/unique|duplicate|23505/i.test(String(e?.message || e?.code || ""))) {

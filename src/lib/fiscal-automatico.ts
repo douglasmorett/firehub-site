@@ -75,6 +75,7 @@ import { tokenDoAmbiente } from "./fiscal-credenciais";
 import { PROVEDOR_PROPRIO, usaEmissorProprio } from "./nfce/config-da-loja";
 import { delegadoDaTabela, type TabelaFiscal } from "./nfce/numeracao";
 import { lerPagamentos, somarPagamentos } from "./pagamentos-da-mesa";
+import { garcomPodePedirNota, impressaoDaNotaDaConta } from "./nota-pelo-garcom";
 import {
   alertaDoCancelamento,
   chaveDaFormaDePagamento,
@@ -512,6 +513,11 @@ async function gravarResultado(
      */
     imprimirDanfe?: boolean;
     /**
+     * O cupom sai mesmo com a impressão automática da loja desligada (a nota
+     * da conta que o garçom pediu pela maquininha — lib/nota-pelo-garcom).
+     */
+    forcarDanfe?: boolean;
+    /**
      * Onde a nota mora (padrão: o pedido). A venda de fora (VendaExterna, o
      * EvoPDV) não é pedido: não vai para a fila de impressão nem tem aviso de
      * pedido cancelado.
@@ -600,7 +606,7 @@ async function gravarResultado(
     // imprimir o DANFE-NFC-e original" (Ajuste SINIEF 19/16, cl. 11ª § 1º III, c).
     const refeita = Boolean(provedor.contingenciaRefeita) && !contexto.deConsulta;
     if (ehPedido && !contexto.deConsulta && (contexto.imprimirDanfe !== false || refeita) && provedor.provedor === PROVEDOR_PROPRIO && pedidos[0]) {
-      imprimirCupomFiscal(pedidos[0], refeita ? { forcar: true } : {});
+      imprimirCupomFiscal(pedidos[0], refeita || contexto.forcarDanfe ? { forcar: true } : {});
     }
     if (ehPedido && !contexto.deConsulta) await avisarSeCanceladoNaEmissao(pedidos, avisosDaViagem[0] ?? null);
     return { acao: "emitida", motivo: resultado.chaveDeAcesso };
@@ -1123,6 +1129,27 @@ export async function emitirNfceDosPedidos(where: Prisma.CustomerOrderWhereInput
 }
 
 /**
+ * Alguma cobrança PAGA desta conta veio com "Emitir nota fiscal? Sim" do app
+ * do garçom (lib/nota-pelo-garcom)? A tabela das cobranças nasce no primeiro
+ * uso (lib/cobranca-da-mesa-na-maquininha): loja que nunca cobrou mesa na
+ * maquininha não a tem — e aí ninguém pediu.
+ */
+async function notaPedidaPeloGarcom(tableSessionId: string): Promise<{ cobrancaId: string; por: string | null } | null> {
+  try {
+    const r = await prisma.$queryRawUnsafe<{ id: string; criadoPor: string | null }[]>(
+      `SELECT "id", "criadoPor" FROM "CobrancaDaMesaNaMaquininha"
+       WHERE "tableSessionId" = $1 AND "status" = 'PAGO' AND ("dados"->>'emitirNota') = 'true'
+       ORDER BY "atualizadaEm" DESC LIMIT 1`,
+      tableSessionId
+    );
+    return r[0] ? { cobrancaId: r[0].id, por: r[0].criadoPor ?? null } : null;
+  } catch (e: any) {
+    if (/does not exist|42P01/i.test(String(e?.message || e?.code || ""))) return null;
+    throw e;
+  }
+}
+
+/**
  * UMA nota para a conta da mesa, no fechamento.
  *
  * ── Antes ───────────────────────────────────────────────────────────────────
@@ -1346,8 +1373,15 @@ export async function emitirNfceDaMesa(
     // Emissão à mão (lib/fiscal-modo): a nota da conta sai quando alguém
     // emite. O desconto da conta já ficou gravado acima, e é dele que a
     // emissão pela tela vai ler.
-    if (!conta.manual && modoDaEmissao(config) === "manual") return foraDaAutomatica(MOTIVO_DA_EMISSAO_MANUAL);
-    if (!conta.manual && !formaEntraNaAutomatica(chavesDaConta(pagamentos), config.autoEmitPaymentMethods)) {
+    //
+    // "Emitir nota fiscal? Sim" no app do garçom (lib/nota-pelo-garcom): a
+    // nota sai mesmo no modo manual e com a forma fora da lista — e só com a
+    // loja deixando AGORA (o titular pode ter desligado depois da cobrança).
+    // É ESTA chamada, a do fechamento: se a forma já estava na lista, a nota
+    // é a mesma que sairia sem o pedido — nunca uma segunda.
+    const pedidoDoGarcom = !conta.manual && garcomPodePedirNota(config) ? await notaPedidaPeloGarcom(sessao.id) : null;
+    if (!conta.manual && !pedidoDoGarcom && modoDaEmissao(config) === "manual") return foraDaAutomatica(MOTIVO_DA_EMISSAO_MANUAL);
+    if (!conta.manual && !pedidoDoGarcom && !formaEntraNaAutomatica(chavesDaConta(pagamentos), config.autoEmitPaymentMethods)) {
       return foraDaAutomatica(`formas da conta (${pagamentos.map((p) => p.method).join(", ") || "nenhuma"}) fora da emissão automática`);
     }
     if (pendenciasParaEmitir(config).length > 0) return ignorado("cadastro fiscal incompleto");
@@ -1399,11 +1433,14 @@ export async function emitirNfceDaMesa(
       // conferir a DIMP saber de onde vem a diferença.
       contaDaMesa: { ...contaDaMesa, eletronicoReduzido: montagem.eletronicoReduzido },
       ...(notasAnteriores.length > 0 ? { notasAnteriores } : {}),
+      // Quem pediu pela maquininha (a cobrança e o garçom), para a auditoria.
+      ...(pedidoDoGarcom ? { notaPedidaPeloGarcom: pedidoDoGarcom } : {}),
     };
     alvo = { ...alvo, pedidos: montagem.pedidos, extra, nota: dadosDaNota(nota) };
     // A nota da conta também reserva número — em todos os pedidos dela.
     const resultado = await emitirNfce(config, nota, { lojaId: sessao.franchiseeId, pedidos: montagem.pedidos });
     respondido = resultado;
+    const danfe = impressaoDaNotaDaConta(imprimeODanfe(config), Boolean(pedidoDoGarcom));
     return await gravarResultado(montagem.pedidos, resultado, {
       fiscalAtual: principal,
       ambiente,
@@ -1411,7 +1448,8 @@ export async function emitirNfceDaMesa(
       nota: alvo.nota,
       manual: conta.manual,
       substituiCancelada: Boolean(cancelada),
-      imprimirDanfe: imprimeODanfe(config),
+      imprimirDanfe: danfe.imprimir,
+      forcarDanfe: danfe.forcar,
     });
   } catch (err: any) {
     const mensagem = String(err?.message || err);

@@ -28,6 +28,7 @@ import { cnpjValido, type Problema } from "./fiscal-validacao";
 import { ehNotaDaConta, idDaNotaDoPedido, pedidoDeMesaExigeNotaDaConta } from "./fiscal-momento";
 import { lerFormasPorIntegracao } from "./fiscal-modo";
 import { finalDoCsc } from "./focus-empresas";
+import { gravarEscolhaDoTitular, lerNotaPeloGarcom } from "./nota-pelo-garcom";
 import { PROVEDOR_PROPRIO, provedorEfetivoDaLoja } from "./nfce/config-da-loja";
 
 /** O que fica guardado no fiscalConfig além dos dados do emitente. */
@@ -414,6 +415,9 @@ const CAMPOS_PERMITIDOS = [
   // lojaImprimeODanfe). Garagem Burger, 29/10/2026: o cupom saía em todo
   // pedido entregue e a loja não tinha onde desligar.
   "imprimirDanfe",
+  // O garçom pedir a nota pela maquininha (lib/nota-pelo-garcom). Chega como
+  // true/false; grava { ligado, por, em }.
+  "notaPeloGarcom",
 ] as const;
 
 /** Campos que só o responsável pela loja altera — são a identidade fiscal dela. */
@@ -460,6 +464,9 @@ const CAMPOS_DO_TITULAR = new Set<string>([
   "modoDaEmissao",
   "formasPorIntegracao",
   "cpfNaEntrega",
+  // O garçom pedir a nota pela maquininha: o titular responde pelo que o
+  // salão escolher (Douglas, 13/11/2026). Funcionário não liga.
+  "notaPeloGarcom",
 ]);
 
 /**
@@ -525,6 +532,8 @@ export function aplicarFormularioFiscal(
     cifrar: (segredo: string) => string | null;
     conferir: (config: ConfigFiscalGravada) => Problema[];
     agora?: Date;
+    /** Quem está salvando (nome/e-mail): vai no carimbo do `notaPeloGarcom`. */
+    quem?: string | null;
   }
 ): ResultadoDoFormulario {
   // Normaliza o que já estava gravado: a primeira gravação depois desta
@@ -552,6 +561,9 @@ export function aplicarFormularioFiscal(
     if (!(campo in body)) continue;
 
     let valor = body[campo];
+    // Só true/false: o retrato { ligado, por, em } que o GET devolve, mandado
+    // de volta por engano, não pode desligar nem trocar o carimbo.
+    if (campo === "notaPeloGarcom" && typeof valor !== "boolean") continue;
 
     // Números chegam como string do formulário; guardar como número evita
     // comparação frouxa depois ("2" !== 2 quebrava a checagem de ambiente).
@@ -587,7 +599,11 @@ export function aplicarFormularioFiscal(
       // "Mudar" é em relação ao que a tela mostrou, e o campo nunca gravado
       // a tela mostra como "": sem isso o Pastel e a NIK (fiscalConfig null)
       // recebiam 13 campos "mantidos como estavam" num Salvar sem mudança.
-      if (SEGREDOS.has(campo) || !mesmoValorNaTela(mostradoNaTela[campo], valor)) {
+      const tentouMudar =
+        campo === "notaPeloGarcom"
+          ? (valor === true) !== lerNotaPeloGarcom(antes).ligado
+          : SEGREDOS.has(campo) || !mesmoValorNaTela(mostradoNaTela[campo], valor);
+      if (tentouMudar) {
         recusados.push(campo);
       }
       continue;
@@ -640,6 +656,15 @@ export function aplicarFormularioFiscal(
       if (imprimir && sefaz && typeof sefaz === "object" && (sefaz as Record<string, unknown>).imprimirDanfe === false) {
         (config as Record<string, unknown>).sefaz = { ...(sefaz as Record<string, unknown>), imprimirDanfe: true };
       }
+      continue;
+    }
+    if (campo === "notaPeloGarcom") {
+      (config as Record<string, unknown>).notaPeloGarcom = gravarEscolhaDoTitular(
+        antes.notaPeloGarcom,
+        valor === true,
+        opcoes.quem ?? null,
+        opcoes.agora ?? new Date()
+      );
       continue;
     }
     if (campo === "intermediadores") {

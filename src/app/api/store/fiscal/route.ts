@@ -162,7 +162,7 @@ async function lojaDaSessao() {
   if (!session?.user?.email) return { erro: NextResponse.json({ error: "Não autorizado" }, { status: 401 }) };
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true, ownerId: true, role: true },
+    select: { id: true, ownerId: true, role: true, name: true, email: true },
   });
   if (!user) return { erro: NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 }) };
   return { user, lojaId: user.ownerId || user.id };
@@ -320,6 +320,8 @@ export async function PUT(req: Request) {
         papel: user.role,
         cifrar: (segredo) => cifrar(segredo),
         conferir,
+        // O carimbo de quem ligou o "garçom pede a nota" (lib/nota-pelo-garcom).
+        quem: user.name ? `${user.name} (${user.email})` : user.email,
       });
       if (!f.ok) return { gravar: null, resposta: { status: f.status, corpo: f.corpo } };
       let config = f.config;

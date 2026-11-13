@@ -19,6 +19,7 @@ import {
 } from "@/lib/textos-da-tela-fiscal";
 import { documentoDeVerdade, mascararDocumentoDigitado, problemaDoDocumento } from "@/lib/documento-do-cliente";
 import ComoANotaEEmitida from "./ComoANotaEEmitida";
+import GarcomPedeNota from "./GarcomPedeNota";
 import { formasEmTexto, modoDaEmissao, tetoSemDocumento, type IntegracaoDaNota } from "@/lib/fiscal-modo";
 import { listaDaEmissaoAutomatica } from "@/lib/fiscal-momento";
 
@@ -82,6 +83,8 @@ type FiscalConfig = {
   modoDaEmissao?: string;
   formasPorIntegracao?: Partial<Record<string, string[]>> | null;
   cpfNaEntrega?: string;
+  /** O garçom pedir a nota pela maquininha (GarcomPedeNota → lib/nota-pelo-garcom). */
+  notaPeloGarcom?: { ligado?: boolean; por?: string | null; em?: string | null } | null;
   // ── Emissor próprio (api/store/fiscal → lib/nfce/cadastro-do-emissor) ──
   // Quem transmite de fato: o gravado, ou o padrão (loja nova → "sefaz").
   provedorEfetivo?: "sefaz" | "focusnfe";
@@ -1960,6 +1963,12 @@ ${dados.aviso}` : "")
                       <ComoANotaEEmitida
                         config={fiscalConfig}
                         integracoesDaLoja={integracoesDaLoja}
+                        podeMudar={ehTitular}
+                        aoSalvar={gravarCampos}
+                      />
+                      <GarcomPedeNota
+                        gravado={fiscalConfig.notaPeloGarcom}
+                        emissaoLigada={fiscalConfig.enabled === true}
                         podeMudar={ehTitular}
                         aoSalvar={gravarCampos}
                       />

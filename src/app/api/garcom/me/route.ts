@@ -8,6 +8,8 @@
  */
 import { NextResponse } from "next/server";
 import { autenticarGarcom } from "@/lib/garcom-auth";
+import { prisma } from "@/lib/prisma";
+import { garcomPodePedirNota } from "@/lib/nota-pelo-garcom";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +18,10 @@ export async function GET() {
   if (!auth.ok) {
     return NextResponse.json({ ok: false, codigo: auth.codigo, erro: auth.erro }, { status: auth.status });
   }
+  // "Emitir nota fiscal?" no app da maquininha: só aparece com o titular
+  // liberando e a NFC-e ligada (lib/nota-pelo-garcom). A rota da cobrança
+  // barra igual.
+  const loja = await prisma.user.findUnique({ where: { id: auth.garcom.franchiseeId }, select: { fiscalConfig: true } });
   return NextResponse.json({
     ok: true,
     garcom: {
@@ -30,6 +36,7 @@ export async function GET() {
       podeTirarTaxa: auth.garcom.podeTirarTaxa,
       podeRemoverItem: auth.garcom.podeRemoverItem,
       podeFazerBalcao: auth.garcom.podeFazerBalcao,
+      podePedirNotaFiscal: garcomPodePedirNota(loja?.fiscalConfig),
     },
   });
 }

@@ -6,7 +6,9 @@
  * GET    — maquininhas da loja que podem cobrar agora + cobranças desta mesa.
  *          A tela chama de poucos em poucos segundos enquanto há cobrança viva;
  *          no Point, é também a rede de segurança do webhook.
- * POST   — { valor, terminalId, guestId? } manda a cobrança para a maquininha.
+ * POST   — { valor, terminalId, guestId?, emitirNota? } manda a cobrança para a
+ *          maquininha. `emitirNota: true` ("Emitir nota fiscal? Sim" do app do
+ *          garçom) só passa se o titular liberou (lib/nota-pelo-garcom).
  * DELETE — ?cobranca=<id> cancela a que ainda não foi paga.
  *
  * Mesma porta da rota `pagamentos`: sessão do painel ou garçom pelo link, e o
@@ -21,6 +23,7 @@ import { exigirSenhaDoGerente } from "@/lib/senha-do-gerente";
 import { resolverOperadorDaMesa, rotuloDoOperador } from "@/lib/garcom-auth";
 import { recusaSeCaixaFechado } from "@/lib/caixa-aberto-servidor";
 import { PROVEDORES_COM_APP, NOME_DO_PROVEDOR } from "@/lib/terminal-app";
+import { recusaDaNotaPeloGarcom } from "@/lib/nota-pelo-garcom";
 import {
   criarCobrancaDaMesa,
   cobrancasDaMesa,
@@ -64,6 +67,7 @@ function resumo(c: Awaited<ReturnType<typeof cobrancasDaMesa>>[number]) {
     por: c.criadoPor,
     motivo: c.dados?.motivo ?? null,
     bandeira: c.dados?.bandeira ?? null,
+    emitirNota: c.dados?.emitirNota === true,
     criadaEm: c.criadaEm,
   };
 }
@@ -150,6 +154,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       if (semSenha) return semSenha;
     }
   }
+  // "Emitir nota fiscal? Sim": a loja tem de deixar (o titular liga em Nota
+  // Fiscal › Configurações). O app nem pergunta quando não deixa; isto barra
+  // o app desatualizado e quem chama a rota por fora.
+  const emitirNota = corpo?.emitirNota === true;
+  if (emitirNota) {
+    const loja = await prisma.user.findUnique({ where: { id: ctx.lojaId! }, select: { fiscalConfig: true } });
+    const recusa = recusaDaNotaPeloGarcom(loja?.fiscalConfig);
+    if (recusa) return NextResponse.json({ error: recusa.codigo, mensagem: recusa.mensagem }, { status: recusa.status });
+  }
   const valor = Number(corpo?.valor) || 0;
   const r = await criarCobrancaDaMesa({
     lojaId: ctx.lojaId!,
@@ -159,6 +172,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     guestId: typeof corpo?.guestId === "string" && corpo.guestId ? corpo.guestId : null,
     por: rotuloDoOperador(ctx.operador!),
     ...(conta ? { conta } : {}),
+    ...(emitirNota ? { emitirNota } : {}),
   });
   if (!r.ok) return NextResponse.json({ error: r.codigo, mensagem: r.mensagem }, { status: r.status });
   return NextResponse.json({ success: true, cobranca: resumo(r.cobranca) });

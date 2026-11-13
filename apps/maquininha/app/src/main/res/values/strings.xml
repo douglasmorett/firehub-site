@@ -211,6 +211,9 @@
     <string name="garcom_valor_maior_titulo">Valor maior que o que falta</string>
     <string name="garcom_valor_maior_texto">Vai cobrar %1$s, mas faltam %2$s nesta mesa. Cobrar mesmo assim?</string>
     <string name="garcom_cobrar_mesmo_assim">Cobrar mesmo assim</string>
+    <string name="garcom_nota_titulo">Emitir nota fiscal?</string>
+    <string name="garcom_nota_texto">Com Sim, a nota fiscal da conta sai quando a mesa fechar e imprime no caixa.</string>
+    <string name="garcom_sim">Sim</string>
     <string name="garcom_sem_terminal_id">A maquininha ainda não recebeu a identificação do FireHub. Aguarde alguns segundos com internet e toque de novo.</string>
     <string name="garcom_mandando_cobranca">Mandando para a maquininha…</string>
     <string name="garcom_acordando_maquininha">Conectando a maquininha ao FireHub…</string>

@@ -141,6 +141,13 @@ class GarcomActivity : AppCompatActivity() {
     private var podeTirarTaxa: Boolean = true
 
     /**
+     * "Emitir nota fiscal?" ao cobrar: só quando o dono da loja liberou e a
+     * NFC-e está ligada (/api/garcom/me → podePedirNotaFiscal). Desligado,
+     * a pergunta nem aparece. O servidor barra igual.
+     */
+    private var podePedirNota: Boolean = false
+
+    /**
      * Contas que o cliente pediu sem taxa de serviço, por sessão. Quem guarda é
      * o servidor (POST .../conta, lib/taxa-da-mesa.ts); isto só evita buscar a
      * conta duas vezes ao abrir a mesa.
@@ -260,6 +267,7 @@ class GarcomActivity : AppCompatActivity() {
                     CofreDoGarcom.atualizarNome(this, texto(garcom, "name"))
                     if (garcom.has("podeFecharConta")) podeFecharConta = garcom.optBoolean("podeFecharConta", true)
                     if (garcom.has("podeTirarTaxa")) podeTirarTaxa = garcom.optBoolean("podeTirarTaxa", true)
+                    podePedirNota = garcom.optBoolean("podePedirNotaFiscal", false)
                     txtQuemEsta.text = CofreDoGarcom.nome(this)?.let { getString(R.string.garcom_logado_como, it) } ?: ""
                 }
             }
@@ -1562,11 +1570,29 @@ class GarcomActivity : AppCompatActivity() {
                     .setTitle(R.string.garcom_valor_maior_titulo)
                     .setMessage(getString(R.string.garcom_valor_maior_texto, Dinheiro.formatar(valor), Dinheiro.formatar(tela.falta)))
                     .setNegativeButton(R.string.garcom_nao, null)
-                    .setPositiveButton(R.string.garcom_cobrar_mesmo_assim) { _, _ -> mandarCobranca(tela, valor, tentarDeNovo = true) }
+                    .setPositiveButton(R.string.garcom_cobrar_mesmo_assim) { _, _ -> perguntarNotaECobrar(tela, valor) }
                     .show()
-                else -> mandarCobranca(tela, valor, tentarDeNovo = true)
+                else -> perguntarNotaECobrar(tela, valor)
             }
         })
+    }
+
+    /**
+     * "Emitir nota fiscal?" — um passo só, e só na loja que liberou. Com Sim,
+     * a nota da conta sai quando a mesa fechar e imprime no caixa (o servidor
+     * cuida: lib/nota-pelo-garcom). Sem a liberação, cobra direto.
+     */
+    private fun perguntarNotaECobrar(tela: Tela.Cobrar, valor: Long) {
+        if (!podePedirNota) {
+            mandarCobranca(tela, valor, tentarDeNovo = true, emitirNota = false)
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.garcom_nota_titulo)
+            .setMessage(R.string.garcom_nota_texto)
+            .setNegativeButton(R.string.garcom_nao) { _, _ -> mandarCobranca(tela, valor, tentarDeNovo = true, emitirNota = false) }
+            .setPositiveButton(R.string.garcom_sim) { _, _ -> mandarCobranca(tela, valor, tentarDeNovo = true, emitirNota = true) }
+            .show()
     }
 
     /**
@@ -1574,7 +1600,7 @@ class GarcomActivity : AppCompatActivity() {
      * serviço. NÃO há outro caminho de pagamento: o serviço pega da fila em
      * segundos e cobra pelo caminho de sempre.
      */
-    private fun mandarCobranca(tela: Tela.Cobrar, valor: Long, tentarDeNovo: Boolean) {
+    private fun mandarCobranca(tela: Tela.Cobrar, valor: Long, tentarDeNovo: Boolean, emitirNota: Boolean) {
         esconderTeclado()
         val terminalId = CofreDoToken.terminalId(this)
         if (terminalId == null) {
@@ -1583,6 +1609,7 @@ class GarcomActivity : AppCompatActivity() {
             return
         }
         val corpo = JSONObject().put("valor", Dinheiro.reais(valor)).put("terminalId", terminalId)
+        if (emitirNota) corpo.put("emitirNota", true)
         val caminho = "/api/store/table-sessions/" + ApiDoGarcom.codificar(tela.mesa.sessaoId) + "/maquininha"
         chamar(getString(R.string.garcom_mandando_cobranca), { c -> ApiDoGarcom.post(caminho, corpo, c) }, seRecusada = { r ->
             when (r.codigo) {
@@ -1594,12 +1621,19 @@ class GarcomActivity : AppCompatActivity() {
                     mostrarCarregando(getString(R.string.garcom_acordando_maquininha))
                     val minha = geracao
                     principal.postDelayed({
-                        if (minha == geracao && !isFinishing) mandarCobranca(tela, valor, tentarDeNovo = false)
+                        if (minha == geracao && !isFinishing) mandarCobranca(tela, valor, tentarDeNovo = false, emitirNota = emitirNota)
                     }, ESPERA_PARA_REENVIAR_MS)
                     true
                 } else false
                 "COBRANCA_EM_ANDAMENTO" -> {
                     voltarParaAMesa()
+                    avisar(r.mensagem)
+                    true
+                }
+                // O dono desligou depois que esta tela leu a liberação: a
+                // pergunta some, e o garçom cobra de novo sem nota.
+                "NOTA_PELO_GARCOM_DESLIGADA", "NOTA_FISCAL_DESLIGADA" -> {
+                    podePedirNota = false
                     avisar(r.mensagem)
                     true
                 }
