@@ -23,6 +23,8 @@ export const TELAS_SEM_WIDGET = [
   "/garcom",
   /** Balcão (PDV presencial). */
   "/store/venda-presencial",
+  /** Caixa de mercado (lib/caixa-mercado): tela cheia do operador. */
+  "/store/caixa-mercado/caixa",
   /** KDS: tela de cozinha, ninguém conversa por ali. */
   "/store/kds",
   /** Totem: é o CLIENTE na frente, e o widget é a venda do FireHub ao lojista. */

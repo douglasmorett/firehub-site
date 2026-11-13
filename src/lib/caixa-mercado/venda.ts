@@ -20,6 +20,7 @@
  * (CNF) na PayGo. Recusado: o operador tenta de novo, troca a forma
  * (`trocarFormaDaVendaPendente`) ou cancela.
  */
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { precoDoCanal } from "@/lib/preco-por-canal";
 import { generateDailyOrderNumber } from "@/lib/order-number";
@@ -308,7 +309,8 @@ export async function trocarFormaDaVendaPendente(orderId: string, terminal: Term
     where: { id: orderId },
     data: {
       paymentMethod,
-      paymentMethods: paymentMethods ?? undefined,
+      // Uma forma só: as partes antigas (do misto com cartão) não podem ficar.
+      paymentMethods: paymentMethods ?? Prisma.DbNull,
       changeAmount: conferencia.trocoCentavos > 0 ? dinheiro / 100 : null,
       ...(comTef ? {} : {
         status: "ENTREGUE",
