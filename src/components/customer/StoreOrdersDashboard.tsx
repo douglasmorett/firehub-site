@@ -16,6 +16,7 @@ import { canalDoPedido, rotuloDoCanal, nomeDoCanal } from "@/lib/canal-do-pedido
 import { nomeDaLojaDoPedido, type LojaDeOrigem } from "@/lib/loja-de-origem";
 import { getDisplayOrderNumber } from "@/lib/order-sequence";
 import { isStoreOpen } from "@/lib/store-hours";
+import { CONSUMO_NO_CARD, consumoDoPedido, notasSemConsumo } from "@/lib/balcao-levar-ou-local";
 import { inicioDoExpedienteDaLoja, inicioDoDiaDaLoja } from "@/lib/fuso";
 import { hojeNaLoja, somarDias } from "@/lib/relatorios/base";
 import type { ResumoDasVendas } from "@/lib/resumo-das-vendas";
@@ -1042,6 +1043,20 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 📟 {ETIQUETA_DO_PAGER} {lerPager(order.pagerNumber)}
               </span>
             )}
+            {/* Balcão: para levar ou consumir no local (lib/balcao-levar-ou-local.ts). */}
+            {consumoDoPedido(order) && (
+              <span
+                style={{
+                  display: "inline-flex", alignItems: "center", marginLeft: 8, padding: "2px 8px", borderRadius: 6,
+                  background: consumoDoPedido(order) === "LOCAL" ? "#ECFDF5" : "#fff",
+                  border: `1px solid ${consumoDoPedido(order) === "LOCAL" ? "#6EE7B7" : "var(--fh-linha-forte, #CBD5E1)"}`,
+                  color: consumoDoPedido(order) === "LOCAL" ? "#065F46" : "var(--fh-t1, #0F172A)",
+                  fontWeight: 800, fontSize: "0.74rem", verticalAlign: "middle", whiteSpace: "nowrap",
+                }}
+              >
+                {CONSUMO_NO_CARD[consumoDoPedido(order)!]}
+              </span>
+            )}
           </div>
           {/* Coluna, não linha: o selo do canal em cima e o da loja iFood
               embaixo. Lado a lado, os dois juntos não cabiam na largura da
@@ -1824,9 +1839,9 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
       {/* EXPANDED DETAILS */}
       {expanded && (
         <div style={{ padding: "0 0.75rem 0.75rem", borderTop: "1px solid #E2E8F0" }}>
-          {order.notes && (
+          {notasSemConsumo(order.notes) && (
             <div style={{ padding: "8px 12px", background: "#F8FAFC", borderRadius: "8px", border: "1px solid #E2E8F0", fontSize: "0.8rem", color: "#334155", margin: "0.4rem 0" }}>
-              {order.notes}
+              {notasSemConsumo(order.notes)}
             </div>
           )}
 

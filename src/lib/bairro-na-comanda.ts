@@ -38,6 +38,7 @@
  * os três trilhos que montam o pedido do Assistente passam por aqui.
  */
 import type { Bloco, LinhaRica, ParteDaLinha } from "@/lib/comanda-modelo";
+import { camposDoConsumoParaImpressao } from "@/lib/balcao-levar-ou-local";
 
 /** A chave do campo no modelo da comanda (CAMPOS_DISPONIVEIS). */
 export const CAMPO_DO_BAIRRO = "bairro";
@@ -196,12 +197,17 @@ export function pedidoParaOAssistente<P extends PedidoComBairro & { blocos?: unk
 ): P {
   if (!pedido || typeof pedido !== "object") return pedido;
   const blocos = Array.isArray(pedido.blocos) ? blocosComCamposDoSite(pedido.blocos as Partial<Bloco>[], valores) : pedido.blocos;
-  const notes = notasParaOPapel(pedido.notes);
-  if (blocos === pedido.blocos && notes === pedido.notes) return pedido;
+  // "PARA LEVAR" / "CONSUMIR NO LOCAL" no topo (lib/balcao-levar-ou-local.ts):
+  // passa por aqui porque os três trilhos passam. Pode tirar a etiqueta de
+  // "para levar" da observação — por isso vem antes da limpeza do bairro.
+  const consumo = camposDoConsumoParaImpressao(pedido);
+  const notes = notasParaOPapel(consumo.notes ?? pedido.notes);
+  if (blocos === pedido.blocos && notes === pedido.notes && !consumo.consumoNoBalcao) return pedido;
   return {
     ...pedido,
     ...(blocos !== pedido.blocos ? { blocos } : {}),
     ...(notes !== pedido.notes ? { notes } : {}),
+    ...(consumo.consumoNoBalcao ? { consumoNoBalcao: consumo.consumoNoBalcao } : {}),
   };
 }
 

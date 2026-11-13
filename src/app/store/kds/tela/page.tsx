@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import TutorialDaTela from "@/components/TutorialDaTela";
 import { parseComboSelections } from "@/lib/parse-combo";
 import { nomeDoItem } from "@/lib/nome-do-item";
+import { CONSUMO_NO_CARD, consumoDoPedido, notasSemConsumo } from "@/lib/balcao-levar-ou-local";
 import { getDisplayOrderNumber } from "@/lib/order-sequence";
 import {
   categoriaSoNaFinalizacao,
@@ -2819,6 +2820,24 @@ function OrderCard({
               : "🏠 Retirada"}
         </span>
 
+        {/* Balcão: para levar ou consumir no local (lib/balcao-levar-ou-local.ts). */}
+        {consumoDoPedido(order) && (
+          <span
+            style={{
+              display: "inline-block",
+              padding: "3px 10px",
+              borderRadius: 12,
+              background: consumoDoPedido(order) === "LOCAL" ? "#065F46" : "#1E293B",
+              color: consumoDoPedido(order) === "LOCAL" ? "#ECFDF5" : "#CBD5E1",
+              fontSize: 12,
+              fontWeight: 800,
+              border: consumoDoPedido(order) === "LOCAL" ? "1px solid #10B981" : "1px solid #334155",
+            }}
+          >
+            {CONSUMO_NO_CARD[consumoDoPedido(order)!]}
+          </span>
+        )}
+
         {/* Timer — pushed to the right com indicação de etapa (Produção / Finalização) */}
         <div style={{ marginLeft: "auto", textAlign: "right" }}>
           <span
@@ -2998,7 +3017,8 @@ function OrderCard({
       {/* ─── Notes / Observations (filter out system-generated lines) ──────────────────────────────────── */}
       {(() => {
         if (!order.notes) return null;
-        const customerNotes = order.notes
+        // A etiqueta de para levar/consumir no local já está no selo do topo.
+        const customerNotes = notasSemConsumo(order.notes)
           .split("\n")
           .filter((line: string) => {
             const l = line.trim();

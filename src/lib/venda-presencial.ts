@@ -49,6 +49,7 @@ import {
   type EntregaDoPedido,
 } from "@/lib/entrega-do-pedido";
 import { tempoDeEntregaParaGravar } from "@/lib/previsao-da-entrega";
+import { lerConsumoNoBalcao, notasComConsumo } from "@/lib/balcao-levar-ou-local";
 
 /**
  * Quanto o balcão espera o mapa quando o PDV não mandou a cotação. O atendente
@@ -363,7 +364,11 @@ export async function registrarVendaPresencial(opcoes: {
     return resposta({ error: `${estoque.mensagem} Ajuste a venda.` }, { status: 409 });
   }
 
-  const notasDoPedido = [String(notes || "").trim(), ...notasDeEntrega].filter(Boolean).join(" ");
+  // "Para levar" / "Consumir no local" (lib/balcao-levar-ou-local.ts): só no
+  // Balcão, e escrito AQUI a partir do campo do corpo — a tela nunca monta a
+  // etiqueta. Corpo sem o campo (garçom, aba velha do PDV) grava como hoje.
+  const consumo = tipoDeLancamento === "BALCAO" ? lerConsumoNoBalcao(data.consumoNoBalcao) : null;
+  const notasDoPedido = notasComConsumo([String(notes || "").trim(), ...notasDeEntrega].filter(Boolean).join(" "), consumo);
 
   const dailyOrderNumber = await generateDailyOrderNumber(targetFranchiseeId);
 
