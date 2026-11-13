@@ -27,6 +27,7 @@ import { pontoEDistanciaDoParceiro } from "@/lib/distancia-da-entrega";
 import { aceitaSozinhoAgora } from "@/lib/loja-sem-conexao-no-banco";
 import { guardarPayloadCru } from "@/lib/open-delivery/payload-cru";
 import { chavesDoEndereco } from "@/lib/coordenadas-do-parceiro";
+import { tempoDeRetiradaDaLoja } from "@/lib/previsao-da-entrega";
 
 export interface ResultadoWabizPedido {
   action: "created" | "exists" | "error";
@@ -66,13 +67,18 @@ export async function processWabizOrder(
 
   const loja = await prisma.user.findUnique({
     where: { id: franchiseeId },
-    select: { id: true, storeName: true, autoAcceptOrders: true },
+    select: { id: true, storeName: true, autoAcceptOrders: true, deliveryConfig: true },
   });
   if (!loja) return { action: "error", message: `loja ${franchiseeId} não encontrada` };
 
   const fuso = await fusoDaLoja(franchiseeId);
   // Loja SEM CONEXÃO: o pedido não nasce aceito (lib/loja-sem-conexao-no-banco.ts).
-  const { dados, items } = traduzirPedidoWabiz(pedido, { lojaId: loja.id, fuso, autoAcceptOrders: await aceitaSozinhoAgora(loja) });
+  const { dados, items } = traduzirPedidoWabiz(pedido, {
+    lojaId: loja.id,
+    fuso,
+    autoAcceptOrders: await aceitaSozinhoAgora(loja),
+    tempoRetiradaMin: tempoDeRetiradaDaLoja(loja.deliveryConfig),
+  });
 
   // ── O FORMATO DAS OPÇÕES, NO LOG, ENQUANTO ELE NÃO FOR CERTEZA ───────────
   //

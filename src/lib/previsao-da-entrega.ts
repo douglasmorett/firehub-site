@@ -58,6 +58,20 @@ export function tempoDeEntregaParaGravar(min: unknown): number | null {
   return Math.round(n);
 }
 
+/**
+ * Minutos da retirada quando o parceiro não manda horário: o "Tempo de
+ * retirada" da Minha Loja (`deliveryConfig.tempoRetiradaMin`), senão 40.
+ *
+ * NIK (13/11/2026): retirada da Wabiz das 21:14 saía "previsão 21:53" — os 40
+ * fixos de todo canal — numa loja que entrega o balcão em 15 min. A previsão
+ * passou a seguir o tempo que a própria loja cadastra.
+ */
+export const TEMPO_DE_RETIRADA_PADRAO_MIN = 40;
+export function tempoDeRetiradaDaLoja(deliveryConfig: unknown): number {
+  const cfg = deliveryConfig && typeof deliveryConfig === "object" ? (deliveryConfig as Record<string, unknown>) : {};
+  return tempoDeEntregaParaGravar(cfg.tempoRetiradaMin) ?? TEMPO_DE_RETIRADA_PADRAO_MIN;
+}
+
 export function previsaoDaEntrega(pedido: {
   createdAt?: unknown;
   scheduledDatetime?: unknown;

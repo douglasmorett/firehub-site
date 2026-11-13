@@ -11,6 +11,7 @@
  * (docs.believery.com.br → Pedidos Pendentes → Consulta), copiados como vieram.
  */
 import { traduzirPedidoWabiz, horaLocalParaInstante } from "../src/lib/wabiz-traducao";
+import { tempoDeRetiradaDaLoja } from "../src/lib/previsao-da-entrega";
 
 const ctx = { lojaId: "loja-teste", fuso: "America/Sao_Paulo", autoAcceptOrders: true };
 
@@ -362,6 +363,16 @@ const comCupom: any = {
   confere("prazo: agendado continua ganhando do tempo estimado",
     traduzirPedidoWabiz({ ...encomenda, service: { ...encomenda.service, estimatedTime: 15 } }, ctx).dados.scheduledDatetime,
     horaLocalParaInstante("2018-03-20 12:00:00", ctx.fuso));
+
+  // "Tempo de retirada" da Minha Loja: tempo da Wabiz → tempo da loja → 40.
+  const comLoja = { ...ctx, tempoRetiradaMin: 15 };
+  const minutosDaLoja = (p: any) => Math.round((new Date(traduzirPedidoWabiz(p, comLoja).dados.scheduledDatetime).getTime() - criado) / 60_000);
+  confere("prazo: retirada sem tempo da Wabiz usa o tempo da loja", minutosDaLoja(retirada), 15);
+  confere("prazo: tempo da Wabiz ganha do tempo da loja", minutosDaLoja({ ...retirada, service: { type: "pickup", estimatedTime: 10 } }), 10);
+  confere("prazo: entrega não usa o tempo de retirada", minutosDaLoja({ ...delivery, dateTime: retirada.dateTime }), 50);
+  confere("tempoDeRetiradaDaLoja: cadastrado, texto, vazio, zero, lixo",
+    [{ tempoRetiradaMin: 15 }, { tempoRetiradaMin: "20" }, {}, { tempoRetiradaMin: 0 }, { tempoRetiradaMin: "abc" }, null].map(tempoDeRetiradaDaLoja),
+    [15, 20, 40, 40, 40, 40]);
 }
 
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);

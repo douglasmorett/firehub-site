@@ -27,6 +27,7 @@ import { coordenadasDoParceiro } from "./coordenadas-do-parceiro";
 import { pontoEDistanciaDoParceiro } from "./distancia-da-entrega";
 import { dataHoraDaLoja } from "@/lib/fuso";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
+import { tempoDeRetiradaDaLoja } from "@/lib/previsao-da-entrega";
 import { isBeverageName } from "@/lib/beverage";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { brendiFetch, confirmarPedidoBrendi } from "@/lib/brendi-api";
@@ -1030,14 +1031,20 @@ export async function processBrendiEvent(
         }
       } else {
         // Pedido imediato: a promessa que a Brendi mandou (deliveryDateTime /
-        // takeoutDateTime, o que o cliente vê no app dela), senão retirada
-        // 40 min e entrega 50 min.
+        // takeoutDateTime, o que o cliente vê no app dela), senão o "Tempo de
+        // retirada" da Minha Loja (40 sem cadastro — NIK 13/11) e entrega 50 min.
         if (isTakeout) {
           scheduledDatetime =
             prazoPlausivel(orderData.takeout?.estimatedTakeoutWindow?.end) ||
             prazoPlausivel(orderData.takeout?.takeoutDeadline) ||
             prazoPlausivel(orderData.takeout?.takeoutDateTime) ||
-            new Date(createdMs + 40 * 60000); // 40 minutos para Retirada
+            null;
+          if (!scheduledDatetime) {
+            const daLoja = await prisma.user
+              .findUnique({ where: { id: franchiseeIdToUse }, select: { deliveryConfig: true } })
+              .catch(() => null);
+            scheduledDatetime = new Date(createdMs + tempoDeRetiradaDaLoja(daLoja?.deliveryConfig) * 60000);
+          }
         } else {
           scheduledDatetime =
             prazoPlausivel(orderData.delivery?.deliveryDeadline) ||

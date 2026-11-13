@@ -313,6 +313,12 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
   // entrega". Gravar 0 aqui liberaria a retirada sem a loja ter pedido isso.
   const pickupMinToSave = () =>
     minimumOrderValuePickup.trim() === "" ? null : parseFloat(minimumOrderValuePickup) || 0;
+  // Tempo de retirada (NIK 13/11/2026): a previsão da comanda de retirada que
+  // chega sem horário do parceiro. Vazio = 40 min (lib/previsao-da-entrega.ts).
+  const [tempoRetiradaMin, setTempoRetiradaMin] = useState<string>(
+    initialDelivConfig.tempoRetiradaMin ? String(initialDelivConfig.tempoRetiradaMin) : ""
+  );
+  const tempoRetiradaToSave = () => (tempoRetiradaMin.trim() === "" ? null : parseInt(tempoRetiradaMin, 10) || null);
   const [savingFreeShipping, setSavingFreeShipping] = useState(false);
   const [dirtyFreeShipping, setDirtyFreeShipping] = useState(false);
 
@@ -783,6 +789,16 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
             </div>
           )}
 
+          {!storeDeliveryOnly && (
+            <div className="input-group" style={{ background: "#F8FAFC", padding: "12px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+              <label style={{ color: "#334155", fontWeight: 700 }}>⏱️ Tempo de retirada (minutos)</label>
+              <input type="number" step="1" min="1" max="360" className="input-field" value={tempoRetiradaMin} onChange={e => { setTempoRetiradaMin(e.target.value); setDirtyInfo(true); setDirtyFreeShipping(true); }} placeholder="40" style={{ marginTop: 4, background: "#fff" }} />
+              <p style={{ fontSize: "0.75rem", color: "#64748B", marginTop: 6, lineHeight: 1.3 }}>
+                Usado na previsão das comandas de retirada que chegam sem horário (Wabiz, Brendi...). Vazio = 40 minutos.
+              </p>
+            </div>
+          )}
+
         </div>
         <label style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "1rem", cursor: "pointer" }}>
           {/* A pergunta é feita pelo lado de quem atende: "aceito retirada?".
@@ -793,7 +809,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
           <span style={{ fontSize: "0.95rem", fontWeight: 700, color: "#334155" }}>🛍️ Aceitar retirada no balcão (o cliente busca na loja)</span>
         </label>
         <div style={{ marginTop: "1.5rem" }}>
-          <SectionSaveBtn dirty={dirtyInfo} saving={savingInfo} onSave={async () => { await saveInfo(); await saveFields({ deliveryConfig: { freeShippingActive, freeShippingMinValue: parseFloat(freeShippingMinValue) || 0, minimumOrderValue: parseFloat(minimumOrderValue) || 0, minimumOrderValuePickup: pickupMinToSave() } }); setDirtyFreeShipping(false); }} label="Salvar Informações" />
+          <SectionSaveBtn dirty={dirtyInfo} saving={savingInfo} onSave={async () => { await saveInfo(); await saveFields({ deliveryConfig: { freeShippingActive, freeShippingMinValue: parseFloat(freeShippingMinValue) || 0, minimumOrderValue: parseFloat(minimumOrderValue) || 0, minimumOrderValuePickup: pickupMinToSave(), tempoRetiradaMin: tempoRetiradaToSave() } }); setDirtyFreeShipping(false); }} label="Salvar Informações" />
         </div>
       </div>}
 
@@ -1564,6 +1580,7 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                       freeShippingMinValue: parseFloat(freeShippingMinValue) || 0,
                       minimumOrderValue: parseFloat(minimumOrderValue) || 0,
                       minimumOrderValuePickup: pickupMinToSave(),
+                      tempoRetiradaMin: tempoRetiradaToSave(),
                     },
                   });
                   setDirtyFreeShipping(false);
