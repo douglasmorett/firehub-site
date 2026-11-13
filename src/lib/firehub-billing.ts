@@ -53,10 +53,11 @@ export const FIREHUB_PLAN = {
 
 /**
  * Totem de autoatendimento: por totem ativo, por mês, somado à fatura.
- * R$ 100 até novembro/2026; R$ 250 a partir de dezembro/2026 (Douglas,
- * 13/11/2026). Preço combinado com a loja fica em TOTEM_COMBINADO.
+ * R$ 100 até outubro/2026; R$ 250 desde novembro/2026 (Douglas, 13/11/2026:
+ * "até 01/12 nada, já era pra tá 250 de agora"). Preço combinado com a loja
+ * fica em TOTEM_COMBINADO.
  */
-export const MES_DO_TOTEM_NOVO = "2026-12";
+export const MES_DO_TOTEM_NOVO = "2026-11";
 export const TOTEM_MENSAL = 250;
 const TOTEM_MENSAL_ANTES = 100;
 const TOTEM_COMBINADO: Record<string, number> = {
