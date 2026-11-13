@@ -74,6 +74,21 @@ export async function aceitouVersaoAtual(userId: string): Promise<boolean> {
   }
 }
 
+/**
+ * Aceite adiado à mão: o dono continua usando o painel sem a tela dos termos
+ * até a data indicada (Brasília), e depois ela aparece como para todos.
+ * Chave: e-mail da conta do dono.
+ */
+const ACEITE_ADIADO_ATE: Record<string, string> = {
+  // Divinos Burger: a versão de 13/11 travou o painel na abertura de sexta e o dono quer ler com calma (13/11/2026).
+  "luizcarlos.a.a97@gmail.com": "2026-11-14T05:00:00-03:00",
+};
+
+export function aceiteAdiado(email: string | null | undefined): boolean {
+  const ate = email ? ACEITE_ADIADO_ATE[email.toLowerCase().trim()] : undefined;
+  return !!ate && Date.now() < new Date(ate).getTime();
+}
+
 /** IP de quem fez a requisição, atrás do proxy do Coolify. */
 export function ipDaRequisicao(headers: Headers): string | null {
   const encaminhado = headers.get("x-forwarded-for");

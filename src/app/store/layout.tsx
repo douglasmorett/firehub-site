@@ -32,7 +32,7 @@ import { TutoriaisEnviados } from "@/components/TutoriaisEnviados";
 import { tutoriaisEnviados } from "@/lib/tutoriais-no-servidor";
 import AceiteDosTermos from "@/components/termos/AceiteDosTermos";
 import SairDaConta from "@/components/SairDaConta";
-import { aceitouVersaoAtual } from "@/lib/termos-de-uso";
+import { aceitouVersaoAtual, aceiteAdiado } from "@/lib/termos-de-uso";
 import { VERSAO_DOS_TERMOS } from "@/lib/termos-versao";
 
 export const dynamic = "force-dynamic";
@@ -199,7 +199,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   const ehDonoDaConta = user?.role === "FRANCHISEE" && !user?.ownerId && !(session.user as any)?.impersonatedBy;
   // Na contingência (computador da loja) os termos não interrompem a operação:
   // o aceite é gravado na nuvem e não faz parte da cópia.
-  const precisaAceitarTermos = ehDonoDaConta && user?.id && process.env.FIREHUB_LOCAL !== "1" ? !(await aceitouVersaoAtual(user.id)) : false;
+  const precisaAceitarTermos = ehDonoDaConta && user?.id && process.env.FIREHUB_LOCAL !== "1" && !aceiteAdiado(user?.email) ? !(await aceitouVersaoAtual(user.id)) : false;
   // Conta criada depois desta versão (pelo robô ou pelo admin) nunca viu termo
   // nenhum: o título não pode dizer "atualizamos".
   const contaNovaParaOsTermos = !!user?.createdAt && new Date(user.createdAt) >= new Date(`${VERSAO_DOS_TERMOS}T00:00:00-03:00`);
