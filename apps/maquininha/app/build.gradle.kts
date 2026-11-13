@@ -44,8 +44,8 @@ android {
 
         // Tem que ser unico e sempre crescente: o portal do PagBank recusa
         // upload com versionCode repetido ou menor que o ja publicado.
-        versionCode = 9
-        versionName = "1.0.8"
+        versionCode = 10
+        versionName = "1.0.9"
 
         // O mesmo texto vai no parametro ?versao= do polling, para o painel do
         // FireHub mostrar qual versao esta rodando em cada balcao sem ninguem

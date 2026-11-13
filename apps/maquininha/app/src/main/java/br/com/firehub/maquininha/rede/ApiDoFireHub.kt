@@ -147,6 +147,9 @@ object ApiDoFireHub {
         referencia = json.textoOuNulo("referencia")
             ?: (json.getString("pedidoId") + ":" + json.optInt("tentativa", 1)),
         credenciais = lerCredenciais(json, raiz),
+        forma = json.textoOuNulo("forma")?.let { codigo ->
+            TipoDePagamento.values().firstOrNull { it.codigoNoContrato == codigo }
+        },
     )
 
     /**

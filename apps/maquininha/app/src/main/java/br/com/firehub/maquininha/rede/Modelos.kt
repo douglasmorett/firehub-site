@@ -45,6 +45,12 @@ data class Cobranca(
      * qualquer tela. Nos outros APKs fica sempre nulo.
      */
     val credenciais: CredenciaisDaAdquirente? = null,
+    /**
+     * A forma que o cliente já escolheu na tela do totem (servidor manda
+     * `forma`: CREDITO, DEBITO ou VOUCHER). Com ela o app abre direto a tela da
+     * adquirente, sem perguntar de novo. Nula = o app pergunta, como antes.
+     */
+    val forma: TipoDePagamento? = null,
 ) {
     /**
      * "R$ 1.234,56" a partir de 123456.

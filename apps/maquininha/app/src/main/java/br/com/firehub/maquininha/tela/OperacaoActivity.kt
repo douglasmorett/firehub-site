@@ -115,7 +115,7 @@ class OperacaoActivity : AppCompatActivity() {
             TipoDePagamento.PIX to botaoPix,
             TipoDePagamento.VOUCHER to findViewById<Button>(R.id.botaoVoucher),
         )
-        val aceitas = cobrador.formasAceitas
+        val aceitas = ServicoDeCobranca.formasNaTela()
         porForma.forEach { (forma, botao) ->
             botao.visibility = if (forma in aceitas) View.VISIBLE else View.GONE
             botao.setOnClickListener { escolher(forma) }

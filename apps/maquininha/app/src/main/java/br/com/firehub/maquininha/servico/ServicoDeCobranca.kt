@@ -21,6 +21,7 @@ import br.com.firehub.maquininha.CofreDoToken
 import br.com.firehub.maquininha.R
 import br.com.firehub.maquininha.estado.EstadoDoTerminal
 import br.com.firehub.maquininha.fila.FilaDeResultados
+import br.com.firehub.maquininha.BuildConfig
 import br.com.firehub.maquininha.pagamento.Adquirente
 import br.com.firehub.maquininha.pagamento.ConferenciaDaUltima
 import br.com.firehub.maquininha.pagamento.Impedimento
@@ -136,6 +137,14 @@ class ServicoDeCobranca : Service() {
          * não muda a resposta.
          */
         private val cobrador = Adquirente.cobrador
+
+        /**
+         * Os botões de forma desta maquininha: os que a adquirente aceita, sem o
+         * Pix no app do Totem — no totem o Pix é o do FireHub, com o QR na tela
+         * do próprio totem (Douglas, 12/11/2026). Garçom e Motoboy seguem com ele.
+         */
+        fun formasNaTela(): List<TipoDePagamento> =
+            cobrador.formasAceitas.filterNot { BuildConfig.PRODUTO == "TOTEM" && it == TipoDePagamento.PIX }
 
         fun ligar(context: Context) {
             ContextCompat.startForegroundService(
@@ -457,6 +466,20 @@ class ServicoDeCobranca : Service() {
             return
         }
 
+        // Forma já escolhida na tela do totem: abre direto a tela da adquirente.
+        // Forma que este app não oferece (o Pix, no Totem) cai na pergunta.
+        val jaEscolhida = cobranca.forma?.takeIf { it in formasNaTela() }
+        if (jaEscolhida != null) esquecerAbandono()
+        val tipo: TipoDePagamento = jaEscolhida ?: (escolherNaTela(token, cobranca) ?: return)
+
+        cobrarNaForma(token, cobranca, tipo)
+    }
+
+    /**
+     * Pergunta a forma na tela. Nulo quando o cliente cancelou ou foi embora —
+     * o resultado já foi entregue ao servidor e não há o que cobrar.
+     */
+    private fun escolherNaTela(token: String, cobranca: Cobranca): TipoDePagamento? {
         EstadoDoTerminal.prepararEscolha()
         EstadoDoTerminal.publicar(EstadoDoTerminal.Situacao.Escolhendo(cobranca))
         chamarOperador(cobranca)
@@ -473,7 +496,7 @@ class ServicoDeCobranca : Service() {
         val escolha = EstadoDoTerminal.aguardarEscolha(prazo)
         limparChamado()
 
-        val tipo: TipoDePagamento = when (escolha) {
+        return when (escolha) {
             is EstadoDoTerminal.Escolha.Forma -> {
                 esquecerAbandono()
                 escolha.tipo
@@ -490,7 +513,7 @@ class ServicoDeCobranca : Service() {
                 // maquininha e pode querer tentar de novo em seguida. Prender a
                 // tela por meio minuto aqui seria castigar quem está presente.
                 anotarAbandono(cobranca, comRespiro = false)
-                return
+                null
             }
 
             null -> {
@@ -498,10 +521,12 @@ class ServicoDeCobranca : Service() {
                 // Ninguém tocou em nada: o cliente foi embora. O respiro evita
                 // que o laço gire em vazio com este pedido para sempre.
                 anotarAbandono(cobranca, comRespiro = true)
-                return
+                null
             }
         }
+    }
 
+    private fun cobrarNaForma(token: String, cobranca: Cobranca, tipo: TipoDePagamento) {
         // O código desta tentativa junto à adquirente. No PagBank é o
         // userReference de 10 caracteres; na Getnet, o callerId da consulta;
         // na Stone e na Cielo, o código que a lista de atenção manda procurar.
