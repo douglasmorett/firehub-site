@@ -2108,8 +2108,9 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
     return () => clearInterval(id);
   }, [tela, estadoDoPagamento]);
 
-  const cancelarCobranca = async () => {
-    if (!pedido?.id || cancelandoCobranca) return;
+  /** true só quando o servidor confirmou que a cobrança morreu. */
+  const cancelarCobranca = async (): Promise<boolean> => {
+    if (!pedido?.id || cancelandoCobranca) return false;
     setCancelandoCobranca(true);
     setErroDoCancelamento(null);
 
@@ -2125,7 +2126,7 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
             : r.dados?.error || "Não foi possível cancelar no pinpad."
         );
       }
-      return;
+      return false;
     }
 
     const r = await chamar("/api/totem/payment/cancel", {
@@ -2141,13 +2142,13 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
     if (r.dados?.pago === true) {
       bipar();
       setTela("CONFIRMADO");
-      return;
+      return false;
     }
 
     if (r.ok) {
       setEstadoDoPagamento("CANCELADO");
       setDetalheDoPagamento(r.dados?.mensagem || "Cobrança cancelada. Nada foi cobrado do seu cartão.");
-      return;
+      return true;
     }
 
     // Nunca dizer "cancelado" sem o servidor confirmar: o visor da maquininha
@@ -2157,6 +2158,7 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
         ? "Não conseguimos falar com o servidor para cancelar. A cobrança pode continuar no visor da maquininha."
         : r.dados?.error || "Não foi possível cancelar a cobrança por aqui."
     );
+    return false;
   };
 
   /**
@@ -3976,6 +3978,23 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
               <X size={24} /> {cancelandoCobranca ? "Cancelando..." : "Cancelar"}
             </button>
           )}
+
+          {/* Trocar de forma (Pix, outro cartão, caixa) sem refazer o pedido.
+              Com a cobrança viva, só sai daqui depois de o servidor confirmar
+              o cancelamento — senão o visor continuaria cobrando. */}
+          <button
+            type="button"
+            disabled={cancelandoCobranca}
+            onClick={async () => {
+              if (acabou || (await cancelarCobranca())) {
+                setErroDoCancelamento(null);
+                setTela("PAGAMENTO");
+              }
+            }}
+            style={{ ...botaoSecundario, minWidth: 300, opacity: cancelandoCobranca ? 0.5 : 1 }}
+          >
+            <CreditCard size={24} /> Trocar forma de pagamento
+          </button>
 
           {erroDoCancelamento && (
             <button type="button" onClick={reiniciarSessao} style={{ ...botaoSecundario, minWidth: 300 }}>
