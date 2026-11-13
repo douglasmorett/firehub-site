@@ -84,6 +84,37 @@ export default function ConexaoDoFirecheck({ onMudou }: { onMudou?: () => void }
   const botao = (cor: string): React.CSSProperties => ({ background: cor, color: "#FFF", border: "none", borderRadius: 10, padding: "10px 18px", fontWeight: 800, fontSize: "0.88rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8 });
   const campo: React.CSSProperties = { width: "100%", padding: "10px 12px", border: "1px solid #CBD5E1", borderRadius: 10, fontSize: "0.92rem", boxSizing: "border-box" };
 
+  // O mesmo formulário conecta e TROCA de conta. Pizzaria 17 (13/11/2026): o
+  // "concordo" do plano criou um FireCheck novo para a loja, o dono seguia
+  // entrando no FireCheck antigo dele (vencido, "pede renovação") e o único
+  // botão era Desconectar — recusado com o módulo ligado. O POST da conexão já
+  // troca a ligação (a conta anterior é desconectada lá); faltava a tela.
+  const formulario = abrir && (
+    <form onSubmit={conectar} style={{ marginTop: 16, display: "grid", gap: 12, maxWidth: 520 }}>
+      <div style={{ background: "#FFF7ED", border: "1px solid #FED7AA", borderRadius: 10, padding: 12, fontSize: "0.86rem", color: "#7C2D12", lineHeight: 1.5 }}>
+        {status.conectado && (
+          <><strong>Trocar de conta:</strong> a loja passa a usar o FireCheck deste e-mail, e o Checklist e o Ponto pagos no boleto vão junto para ele. O FireCheck <strong>{status.email}</strong> deixa de ser usado aqui.<br /></>
+        )}
+        <strong>Antes de conectar:</strong> todo descarte lançado no FireCheck deste login vai contar como <strong>perda na loja {status.loja}</strong>.
+        Uma loja do FireHub fica ligada a um FireCheck só. Se você tem duas lojas, conecte em cada uma o FireCheck daquela loja.
+      </div>
+      <input style={campo} type="email" autoComplete="off" placeholder="E-mail do FireCheck (dono ou gestor)" value={email} onChange={(e) => setEmail(e.target.value)} required />
+      <input style={campo} type="password" autoComplete="new-password" placeholder="Senha do FireCheck" value={senha} onChange={(e) => setSenha(e.target.value)} required />
+      <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: "0.86rem", color: "#334155", cursor: "pointer" }}>
+        <input type="checkbox" checked={entendi} onChange={(e) => setEntendi(e.target.checked)} style={{ marginTop: 3 }} />
+        <span>Entendi: os descartes desse FireCheck vão contar como perda em {status.loja}.</span>
+      </label>
+      <div style={{ fontSize: "0.78rem", color: "#94A3B8" }}>A senha vai só para o FireCheck confirmar a conta. O FireHub não guarda.</div>
+      {erro && <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#B91C1C", borderRadius: 10, padding: "10px 12px", fontSize: "0.86rem" }}>{erro}</div>}
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <button type="submit" disabled={!entendi || enviando} style={{ ...botao("#FF4D00"), opacity: !entendi || enviando ? 0.5 : 1, cursor: !entendi || enviando ? "not-allowed" : "pointer" }}>
+          {enviando ? <Loader2 size={16} className="animate-spin" /> : <Link2 size={16} />} {status.conectado ? "Trocar de conta" : "Conectar"}
+        </button>
+        <button type="button" onClick={() => { setAbrir(false); setErro(null); }} style={{ ...botao("#FFF"), color: "#334155", border: "1px solid #CBD5E1" }}>Cancelar</button>
+      </div>
+    </form>
+  );
+
   if (status.conectado) {
     return (
       <div style={{ ...caixa, borderColor: "#99F6E4", background: "#F0FDFA" }}>
@@ -97,12 +128,18 @@ export default function ConexaoDoFirecheck({ onMudou }: { onMudou?: () => void }
               {status.conectadoEm ? ` desde ${data(status.conectadoEm)}` : ""}. {status.descartes30d ? `${status.descartes30d} descarte(s) nos últimos 30 dias.` : "Nenhum descarte recebido ainda."}
             </div>
           </div>
-          {status.podeConectar && !confirmarSaida && (
-            <button onClick={() => setConfirmarSaida(true)} style={{ ...botao("#FFF"), color: "#B91C1C", border: "1px solid #FECACA" }}>
-              <Unlink size={16} /> Desconectar
-            </button>
+          {status.podeConectar && !confirmarSaida && !abrir && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button onClick={() => { setErro(null); setAbrir(true); }} style={{ ...botao("#FFF"), color: "#0F766E", border: "1px solid #99F6E4" }}>
+                <Link2 size={16} /> Trocar de conta
+              </button>
+              <button onClick={() => setConfirmarSaida(true)} style={{ ...botao("#FFF"), color: "#B91C1C", border: "1px solid #FECACA" }}>
+                <Unlink size={16} /> Desconectar
+              </button>
+            </div>
           )}
         </div>
+        {formulario}
         {confirmarSaida && (
           <div style={{ marginTop: 12, padding: 12, background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 10, fontSize: "0.86rem", color: "#7F1D1D", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             <span style={{ flex: "1 1 240px" }}>Os próximos descartes do FireCheck deixam de contar como perda nesta loja. Os já recebidos continuam.</span>
@@ -110,7 +147,7 @@ export default function ConexaoDoFirecheck({ onMudou }: { onMudou?: () => void }
             <button onClick={() => setConfirmarSaida(false)} style={{ ...botao("#FFF"), color: "#334155", border: "1px solid #CBD5E1" }}>Voltar</button>
           </div>
         )}
-        {erro && <div style={{ marginTop: 12, background: "#FEF2F2", border: "1px solid #FECACA", color: "#B91C1C", borderRadius: 10, padding: "10px 12px", fontSize: "0.86rem" }}>{erro}</div>}
+        {erro && !abrir && <div style={{ marginTop: 12, background: "#FEF2F2", border: "1px solid #FECACA", color: "#B91C1C", borderRadius: 10, padding: "10px 12px", fontSize: "0.86rem" }}>{erro}</div>}
         {!!status.ultimos?.length && (
           <div style={{ marginTop: 12, fontSize: "0.82rem", color: "#475569" }}>
             {status.ultimos.map((d, i) => (
@@ -143,28 +180,7 @@ export default function ConexaoDoFirecheck({ onMudou }: { onMudou?: () => void }
         {!status.podeConectar && <span style={{ fontSize: "0.82rem", color: "#64748B" }}>Só o dono da loja conecta.</span>}
       </div>
 
-      {abrir && (
-        <form onSubmit={conectar} style={{ marginTop: 16, display: "grid", gap: 12, maxWidth: 520 }}>
-          <div style={{ background: "#FFF7ED", border: "1px solid #FED7AA", borderRadius: 10, padding: 12, fontSize: "0.86rem", color: "#7C2D12", lineHeight: 1.5 }}>
-            <strong>Antes de conectar:</strong> todo descarte lançado no FireCheck deste login vai contar como <strong>perda na loja {status.loja}</strong>.
-            Uma loja do FireHub fica ligada a um FireCheck só. Se você tem duas lojas, conecte em cada uma o FireCheck daquela loja.
-          </div>
-          <input style={campo} type="email" autoComplete="off" placeholder="E-mail do FireCheck (dono ou gestor)" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          <input style={campo} type="password" autoComplete="new-password" placeholder="Senha do FireCheck" value={senha} onChange={(e) => setSenha(e.target.value)} required />
-          <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: "0.86rem", color: "#334155", cursor: "pointer" }}>
-            <input type="checkbox" checked={entendi} onChange={(e) => setEntendi(e.target.checked)} style={{ marginTop: 3 }} />
-            <span>Entendi: os descartes desse FireCheck vão contar como perda em {status.loja}.</span>
-          </label>
-          <div style={{ fontSize: "0.78rem", color: "#94A3B8" }}>A senha vai só para o FireCheck confirmar a conta. O FireHub não guarda.</div>
-          {erro && <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#B91C1C", borderRadius: 10, padding: "10px 12px", fontSize: "0.86rem" }}>{erro}</div>}
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button type="submit" disabled={!entendi || enviando} style={{ ...botao("#FF4D00"), opacity: !entendi || enviando ? 0.5 : 1, cursor: !entendi || enviando ? "not-allowed" : "pointer" }}>
-              {enviando ? <Loader2 size={16} className="animate-spin" /> : <Link2 size={16} />} Conectar
-            </button>
-            <button type="button" onClick={() => { setAbrir(false); setErro(null); }} style={{ ...botao("#FFF"), color: "#334155", border: "1px solid #CBD5E1" }}>Cancelar</button>
-          </div>
-        </form>
-      )}
+      {formulario}
     </div>
   );
 }
