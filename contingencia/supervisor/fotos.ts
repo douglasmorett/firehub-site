@@ -15,7 +15,10 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import type pg from "pg";
+// Só o `query` do pool do pg. Sem importar o "pg": o teste do site
+// (scripts/teste-firehub-no-computador.ts) usa este arquivo, e o build do site não
+// tem o "pg" (ele mora em contingencia/supervisor/node_modules).
+type Pool = { query(sql: string): Promise<{ rows: Array<{ v: string | null }> }> };
 import { caminhoDaFoto, FOTOS_DA_COPIA } from "../../src/lib/contingencia/catalogo";
 
 const q = (nome: string) => `"${nome.replace(/"/g, '""')}"`;
@@ -35,7 +38,7 @@ export function pastaDasFotos(pastaDaCopia: string): string {
 }
 
 /** Os caminhos (dentro de /uploads) de todas as fotos que a cópia usa, sem repetir. */
-export async function fotosDaCopia(pool: pg.Pool): Promise<string[]> {
+export async function fotosDaCopia(pool: Pool): Promise<string[]> {
   const caminhos = new Set<string>();
   for (const f of FOTOS_DA_COPIA) {
     try {
@@ -103,7 +106,7 @@ async function baixarFoto(nuvem: string, rel: string, destino: string): Promise<
  * baixou e quantas ainda faltam (para a tela e o registro).
  */
 export async function rodadaDeFotos(
-  pool: pg.Pool,
+  pool: Pool,
   o: { nuvem: string; pasta: string; faltouNaNuvem: Map<string, number>; registro: (l: string) => void },
 ): Promise<{ baixadas: number; faltam: number; total: number }> {
   const todas = await fotosDaCopia(pool);
