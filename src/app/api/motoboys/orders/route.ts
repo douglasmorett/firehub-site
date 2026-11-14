@@ -51,8 +51,13 @@ export async function GET(req: NextRequest) {
 
     const storeOwner = await prisma.user.findUnique({
       where: { id: storeId },
-      select: { storeTimezone: true, printerConfig: true, appMotoboyConfig: true, timeAlertConfig: true }
+      select: { storeTimezone: true, printerConfig: true, appMotoboyConfig: true, timeAlertConfig: true, storeName: true }
     });
+    // O nome da loja do pedido (a lista só traz pedido de franchiseeId = storeId,
+    // então é esta mesma loja, também num grupo). Vai na mensagem do WhatsApp:
+    // "Sou o entregador da loja" fazia o cliente responder "de que loja?
+    // não comprei nada" (Vânia, 13/11/2026).
+    const nomeDaLoja = storeOwner?.storeName?.trim() || null;
     const tz = storeOwner?.storeTimezone || "America/Sao_Paulo";
     // O que o dono configurou para a hora da entrega (lembrar bebidas, pedir
     // o código do iFood). Vai junto com os pedidos, como as palavras de bebida.
@@ -234,6 +239,7 @@ export async function GET(req: NextRequest) {
         cobrarNaEntrega: cobranca && cobranca.cobrar ? cobranca : null,
         cancelado,
         podeInformarEntregue,
+        nomeDaLoja,
       };
       if (!formatoDoApp) return pedido;
       return {

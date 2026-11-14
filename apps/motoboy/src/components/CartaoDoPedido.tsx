@@ -80,8 +80,14 @@ export function CartaoDoPedido({
   // O telefone já vem pronto do servidor: o 0800 do iFood sem o localizador,
   // o ID à parte e o WhatsApp só para celular.
   const tel = pedido.telefone;
+  // Com o nome da loja: "Sou o entregador da loja" fazia o cliente responder
+  // "de que loja? não comprei nada" (Vânia, 13/11/2026). Servidor antigo não
+  // manda o nome: fica o texto de antes.
+  const saudacao = pedido.nomeDaLoja
+    ? `Olá! Sou o entregador da *${pedido.nomeDaLoja}* e estou a caminho com o seu pedido!`
+    : "Olá! Sou o entregador da loja e estou a caminho do seu endereço!";
   const whatsapp = tel?.whatsapp
-    ? `https://wa.me/${tel.whatsapp}?text=${encodeURIComponent("Olá! Sou o entregador da loja e estou a caminho do seu endereço!")}`
+    ? `https://wa.me/${tel.whatsapp}?text=${encodeURIComponent(saudacao)}`
     : null;
   // Liga para o 0800 e, depois de uma pausa, digita o ID do pedido (como o
   // outro app que o Lucas usa).

@@ -1286,7 +1286,13 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
             // discar o 0800 e mostrar o ID. WhatsApp só para celular — o 0800
             // ia para o wa.me e não abria conversa nenhuma.
             const telefone = telefoneDoCliente(order.customerPhone);
-            const waLink = telefone?.whatsapp ? `https://wa.me/${telefone.whatsapp}?text=Olá!%20Sou%20o%20entregador%20da%20loja%20e%20estou%20a%20caminho%20do%20seu%20endereço!` : null;
+            // Com o nome da loja: "Sou o entregador da loja" fazia o cliente
+            // responder "de que loja? não comprei nada" (Vânia, 13/11/2026).
+            const nomeDaLoja = (order as any).nomeDaLoja || null;
+            const saudacao = nomeDaLoja
+              ? `Olá! Sou o entregador da *${nomeDaLoja}* e estou a caminho com o seu pedido!`
+              : "Olá! Sou o entregador da loja e estou a caminho do seu endereço!";
+            const waLink = telefone?.whatsapp ? `https://wa.me/${telefone.whatsapp}?text=${encodeURIComponent(saudacao)}` : null;
             // Cor da urgência, a mesma régua do KDS (lib/app-motoboy/urgencia.ts).
             const urgencia = urgenciaDaEntrega((order as any).previsaoEntrega?.em, agora, alertaDeTempo);
             const corUrg = urgencia ? CORES_DA_URGENCIA[urgencia.faixa] : null;
