@@ -169,6 +169,9 @@ export const pedidoJaEstaPronto = (order: any): boolean => {
  */
 const ESPERA_DA_CAIXA_DO_PINO_MS = 1000;
 
+/** "14,10" — o troco e os valores da rota saíam "14.10" (toFixed puro). */
+const reais = (v: number) => (Number(v) || 0).toFixed(2).replace(".", ",");
+
 /**
  * O que aparece ao passar o mouse no pino do mapa.
  *
@@ -219,8 +222,8 @@ export const popupDoPedido = (
     entregarAte
       ? `<b style="color:#B45309;">⏰ Entregar até ${entregarAte.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</b>${prazoEstimado ? ` <span style="color:#94A3B8;font-weight:400;">(estimado)</span>` : ""}`
       : "",
-    `💰 R$ ${Number(order.totalAmount || 0).toFixed(2)}${taxa > 0 ? ` · entrega R$ ${taxa.toFixed(2)}` : ""}${taxaMotoboy > 0 ? ` · entregador R$ ${taxaMotoboy.toFixed(2)}` : ""}`,
-    pag.methodRaw ? `💳 ${esc(pag.methodRaw)}${pag.changeNeeded > 0 ? ` — troco R$ ${pag.changeNeeded.toFixed(2)}` : ""}` : "",
+    `💰 R$ ${reais(order.totalAmount)}${taxa > 0 ? ` · entrega R$ ${reais(taxa)}` : ""}${taxaMotoboy > 0 ? ` · entregador R$ ${reais(taxaMotoboy)}` : ""}`,
+    pag.methodRaw ? `💳 ${esc(pag.methodRaw)}${pag.changeNeeded > 0 ? ` — troco R$ ${reais(pag.changeNeeded)}` : ""}` : "",
     // O que o entregador precisa na porta do cliente, sem sair do mapa.
     (order as any).openDeliveryReference && /99/i.test(String(order.source || order.openDeliveryChannel || ""))
       ? `🔑 Localizador ${esc((order as any).food99Locator || (order as any).openDeliveryReference)}`
@@ -4167,7 +4170,7 @@ ${mapsUrl}`;
                         <b>#{getOrderDisplayNumber(o)}</b> — {o.customerName} ({o.neighborhood || "Centro"})
                       </div>
                       <span style={{ fontSize: "0.72rem", fontWeight: 700, color: pInfo.isCash ? "#C92E09" : pInfo.isCardOnDelivery ? "#1C1917" : "#0F766E" }}>
-                        {pInfo.isCash ? `💵 Troco: R$ ${pInfo.changeNeeded.toFixed(2)}` : pInfo.isCardOnDelivery ? "💳 Cartão" : "✅ Pago Online"}
+                        {pInfo.isCash ? `💵 Troco: R$ ${reais(pInfo.changeNeeded)}` : pInfo.isCardOnDelivery ? "💳 Cartão" : "✅ Pago Online"}
                       </span>
                     </div>
                   );
@@ -4184,7 +4187,7 @@ ${mapsUrl}`;
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span>💵 Troco Total a Levar no Caixa:</span>
                   <b style={{ fontSize: "0.95rem", color: routePaymentSummary.totalChangeToCarry > 0 ? "#C92E09" : "#0F766E" }}>
-                    {routePaymentSummary.totalChangeToCarry > 0 ? `R$ ${routePaymentSummary.totalChangeToCarry.toFixed(2)}` : "Sem troco (R$ 0,00)"}
+                    {routePaymentSummary.totalChangeToCarry > 0 ? `R$ ${reais(routePaymentSummary.totalChangeToCarry)}` : "Sem troco (R$ 0,00)"}
                   </b>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>

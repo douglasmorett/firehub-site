@@ -90,6 +90,15 @@ ok("o crédito entra quando foi entregue, não quando foi feito",
 ok("resgate limitado a 50% dos produtos", C.resgateMaximo(regra, 30, 40) === 20);
 ok("resgate limitado ao saldo", C.resgateMaximo(regra, 5, 40) === 5);
 ok("sem saldo, sem resgate", C.resgateMaximo(regra, 0, 40) === 0);
+// O campo "Limite de Resgate" vazio grava 0 e a tela mostra "50" (placeholder);
+// o cardápio usa 50% (CustomerStorePage). O servidor tem que abater o mesmo
+// que o cliente viu — antes lia 0% e o total gravado não batia com o da tela.
+const semLimite = C.lerCashback({ cashbackActive: true, rate: 5, maxRedeemPercent: 0 });
+ok("limite vazio (0) vale 50%, como o cardápio mostra", semLimite.maxResgatePct === 50, semLimite.maxResgatePct);
+ok("limite vazio: o resgate é o mesmo do cardápio", C.resgateMaximo(semLimite, 30, 40) === 20);
+ok("limite ausente vale 50%", C.lerCashback({ cashbackActive: true, rate: 5 }).maxResgatePct === 50);
+ok("limite 100% continua 100%", C.lerCashback({ cashbackActive: true, rate: 5, maxRedeemPercent: 100 }).maxResgatePct === 100);
+ok("limite 20% continua 20%", C.lerCashback({ cashbackActive: true, rate: 5, maxRedeemPercent: 20 }).maxResgatePct === 20);
 
 // ── gasto em 30 dias (VIP)
 ok("gasto em 30 dias ignora cancelado e pedido velho", C.gastoEm30Dias([
