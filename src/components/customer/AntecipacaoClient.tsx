@@ -9,6 +9,7 @@
  */
 import React, { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CalendarDays, ChevronDown, ChevronUp, Clock, Info, PartyPopper, Printer, RefreshCw } from "lucide-react";
+import { IlustracaoDaAntecipacao } from "./IlustracaoDaAntecipacao";
 
 type Linha = { chave: string; nome: string; combo: boolean; porDia: number[]; media: number; sugerido: number; porHora: number[] };
 type Base = Linha & { serve: string; lanches: { nome: string; media: number }[] };
@@ -147,8 +148,8 @@ export default function AntecipacaoClient() {
         <div style={{ minWidth: 0 }}>
           <h1 style={{ margin: 0, fontSize: "1.6rem", fontWeight: 900, letterSpacing: "-0.01em" }}>Antecipação de produção</h1>
           <p style={{ margin: "4px 0 0", fontSize: "0.92rem", color: "var(--fh-t4)", maxWidth: 720 }}>
-            O que deixar pronto antes do pedido chegar: a média do que saiu nos <strong>dois últimos {dados ? DIAS[dados.diaSemana].toLowerCase() + "s" : "dias iguais da semana"}</strong>
-            {dados?.lojas.length ? <> em <strong>{dados.lojas.join(", ")}</strong></> : null}. O que vem dentro dos combos já está somado em cada lanche.
+            O que deixar pronto antes do pedido chegar: a média dos <strong>dois últimos {dados ? DIAS[dados.diaSemana].toLowerCase() + "s" : "dias iguais da semana"}</strong>
+            {dados?.lojas.length ? <> em <strong>{dados.lojas.join(", ")}</strong></> : null}.
           </p>
         </div>
         <div className="fh-sem-impressao" style={{ display: "flex", gap: 8 }}>
@@ -156,6 +157,8 @@ export default function AntecipacaoClient() {
           <button type="button" className="fh-btn fh-btn--secundario" onClick={() => window.print()}><Printer size={16} /> Imprimir</button>
         </div>
       </header>
+
+      <div className="fh-sem-impressao" style={{ marginBottom: 16 }}><IlustracaoDaAntecipacao pctDoFeriado={dados?.feriado.pct} /></div>
 
       {/* ── O QUE E QUANDO ── */}
       <section className="fh-card fh-sem-impressao" style={{ padding: 18, marginBottom: 16 }}>

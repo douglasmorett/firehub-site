@@ -15,6 +15,7 @@ import MaquininhasClient from "@/components/admin/MaquininhasClient";
 import AppNaMaquininha from "@/components/admin/AppNaMaquininha";
 import TefDoTotemClient from "@/components/admin/TefDoTotemClient";
 import { MES_DO_TOTEM_NOVO, precoDoTotem } from "@/lib/firehub-billing";
+import { IlustracaoDoTotem } from "./IlustracaoDoTotem";
 
 export default function TotemModuleClient({ store, categories }: { store: any, categories?: any[] }) {
   const router = useRouter();
@@ -187,15 +188,36 @@ export default function TotemModuleClient({ store, categories }: { store: any, c
       </div>
 
       {!store.totemEnabled ? (
-        <div style={{ 
-          textAlign: "center", padding: "64px", background: "#F8FAFC", 
-          borderRadius: "16px", border: "1px dashed #CBD5E1" 
+        <div style={{
+          display: "grid", gap: "20px", padding: "16px 12px", background: "#F8FAFC",
+          borderRadius: "16px", border: "1px dashed #CBD5E1"
         }}>
-          <Monitor size={64} color="#94A3B8" style={{ margin: "0 auto 16px auto", opacity: 0.5 }} />
-          <h2 style={{ fontSize: "20px", fontWeight: 700, margin: "0 0 8px 0" }}>Autoatendimento Desativado</h2>
-          <p style={{ color: "#64748B", maxWidth: "400px", margin: "0 auto" }}>
-            Ative o módulo totem para criar licenças, gerenciar dispositivos e reduzir filas na sua loja.
-          </p>
+          <IlustracaoDoTotem />
+          <div style={{ textAlign: "center" }}>
+            <p style={{ margin: 0, fontSize: "28px", fontWeight: 800 }}>
+              {reais(precoAgora)} <span style={{ fontSize: "15px", fontWeight: 600, color: "#64748B" }}>por totem, por mês</span>
+            </p>
+            {precoNovo !== precoAgora && (
+              <p style={{ margin: "6px 0 0 0", color: "#64748B", fontSize: "13px" }}>
+                A partir de 01/12/2026: {reais(precoNovo)} por totem
+              </p>
+            )}
+            <p style={{ color: "#64748B", maxWidth: "400px", margin: "12px auto 16px" }}>
+              Ative o módulo totem para criar licenças, gerenciar dispositivos e reduzir filas na sua loja.
+            </p>
+            <button
+              onClick={handleToggleModule}
+              disabled={loading}
+              style={{
+                padding: "12px 24px", borderRadius: "12px", fontWeight: 700, border: "none",
+                cursor: loading ? "not-allowed" : "pointer", background: "#0F766E", color: "white",
+                display: "inline-flex", alignItems: "center", gap: "8px", opacity: loading ? 0.7 : 1
+              }}
+            >
+              <Power size={18} />
+              Ativar Módulo
+            </button>
+          </div>
         </div>
       ) : (
         <>

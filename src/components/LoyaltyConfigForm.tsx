@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import {
-  Gift, Info, TrendingUp, Award, Users, Cake, Crown, Check, Sparkles, AlertCircle, HelpCircle
+  Gift, Info, Award, Users, Cake, Crown, Check, Sparkles, AlertCircle, HelpCircle
 } from "lucide-react";
 import AvisoDownloadWindows from "@/components/AvisoDownloadWindows";
 import {
@@ -21,6 +21,7 @@ import {
 } from "@/lib/trilha-premiada";
 import TrilhaPremiadaEditor from "@/components/trilha/TrilhaPremiadaEditor";
 import PainelDoCashback from "@/components/cashback/PainelDoCashback";
+import { IlustracaoDoCashback } from "@/components/cashback/IlustracaoDoCashback";
 import {
   CANAIS_DO_CASHBACK,
   CANAIS_DO_CASHBACK_PADRAO,
@@ -265,10 +266,6 @@ export default function LoyaltyConfigForm({
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
   };
-
-  const exampleOrder = 80;
-  const exampleCashback = config.cashbackActive && exampleOrder >= config.minOrderValue
-    ? (exampleOrder * config.rate) / 100 : 0;
 
   return (
     <div style={{ background: "#fff", borderRadius: "20px", border: "1.5px solid #E2E8F0", overflow: "hidden", boxShadow: "0 4px 20px rgba(0,0,0,0.05)" }}>
@@ -681,32 +678,10 @@ export default function LoyaltyConfigForm({
               </button>
             </div>
 
-            {/* Simulation Card */}
-            <div
-              style={{
-                background: config.cashbackActive ? "#F8FAFC" : "#F8FAFC",
-                border: `1.5px solid ${config.cashbackActive ? "#E2E8F0" : "#CBD5E1"}`,
-                borderRadius: 14,
-                padding: "14px 16px",
-                marginBottom: 20,
-                display: "flex",
-                alignItems: "center",
-                gap: 14,
-              }}
-            >
-              <div style={{ width: 44, height: 44, borderRadius: 12, background: config.cashbackActive ? "#475569" : "#94A3B8", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <TrendingUp size={22} color="#fff" />
-              </div>
-              <div>
-                <strong style={{ fontSize: "0.9rem", color: config.cashbackActive ? "#334155" : "#475569", display: "block" }}>
-                  Simulador de Exemplo: Pedido de R$ {exampleOrder},00
-                </strong>
-                <span style={{ fontSize: "0.78rem", color: "#64748B" }}>
-                  {config.cashbackActive
-                    ? `O cliente ganha ${fmt(exampleCashback)} de volta (${config.rate}% do pedido) para gastar em compras futuras.`
-                    : "Ative o Cashback Automático para ver o cálculo."}
-                </span>
-              </div>
+            {/* O "como funciona" desenhado, com a %, o mínimo, o limite e a expiração digitados abaixo. */}
+            <div style={{ marginBottom: 20 }}>
+              <IlustracaoDoCashback taxa={config.rate} minimo={config.minOrderValue} limiteDeResgate={config.maxRedeemPercent}
+                validadeDias={config.expiresInDays} site={config.cashbackCanais.site} whatsapp={config.cashbackCanais.whatsapp} />
             </div>
 
             {/* Inputs Grid */}

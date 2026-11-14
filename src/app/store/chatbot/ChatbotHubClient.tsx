@@ -34,6 +34,7 @@ import {
 import FaixaDoVinculo from "./FaixaDoVinculo";
 import ApresentacaoDisparoOficial, { ChamadaDaRecuperacaoOficial } from "@/components/ApresentacaoDisparoOficial";
 import PixDaLojaNoRobo from "./PixDaLojaNoRobo";
+import { IlustracaoDoChatbot } from "./IlustracaoDoChatbot";
 import { linkDeAvaliacaoNoGoogle } from "@/lib/avaliacao-no-google";
 import { lerCupom } from "@/lib/cupons";
 import { textoDasFormasDoCupom } from "@/lib/cupom-por-forma";
@@ -936,6 +937,11 @@ export default function ChatbotHubClient() {
             </div>
           </div>
         </div>
+
+        {/* O "como funciona" desenhado, uma vez só e aqui no banner (o 1º quadro é
+            conectar): ao lado do QR de verdade, um QR desenhado confundiria quem vai
+            ler. Some depois de conectar. */}
+        {!config.connected && <div style={{ marginTop: "20px" }}><IlustracaoDoChatbot /></div>}
 
         {/* NAVEGAÇÃO DE ABAS INTERNAS */}
         <div style={{ display: "flex", gap: "8px", marginTop: "24px", flexWrap: "wrap" }}>

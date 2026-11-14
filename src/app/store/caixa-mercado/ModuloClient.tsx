@@ -14,6 +14,7 @@ import { PRECO_POR_COMPUTADOR, DIAS_DE_TESTE_DO_CAIXA } from "@/lib/caixa-mercad
 import { montarEtiqueta, type FormatoDaEtiqueta } from "@/lib/caixa-mercado/etiqueta";
 import { fetchAssistente } from "@/lib/fetch-assistente";
 import { PORTAS_DO_ASSISTENTE } from "@/lib/tef-no-assistente";
+import { IlustracaoDoCaixa } from "./IlustracaoDoCaixa";
 
 type Terminal = { id: string; numero: number; nome: string; ultimoSinal: string | null };
 type Config = { etiqueta: FormatoDaEtiqueta; margemPadrao: number; emitirNfce: boolean };
@@ -162,6 +163,8 @@ export default function ModuloClient() {
         {estado.ativo && <span style={S.selo}>{estado.isento ? "Liberado" : estado.emTeste ? `Teste grátis até ${data(estado.testeAte)}` : "Ativo"}</span>}
       </div>
       <p style={S.sub}>Frente de caixa para mercado dentro do FireHub: cada venda dá baixa no estoque e cai no financeiro, nos relatórios e na NFC-e.</p>
+
+      {!estado.ativo && <div style={{ marginTop: 16 }}><IlustracaoDoCaixa /></div>}
 
       <div style={S.recursos}>
         {recursos.map((r) => (

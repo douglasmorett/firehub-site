@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import InterruptorDoModulo from "@/components/modulos/InterruptorDoModulo";
 import ResumoDaCobranca from "@/components/modulos/ResumoDaCobranca";
 import { CLAUSULAS_DO_TERMO_DA_BALANCA, TITULO_DO_TERMO_DA_BALANCA, VERSAO_DO_TERMO_DA_BALANCA } from "@/lib/balanca/termo";
+import { IlustracaoDaBalanca } from "./IlustracaoDaBalanca";
 
 type Estado = { ativo: boolean; cobradoEsteMes: boolean; testeAte: string | null; emTeste: boolean; jaTestou: boolean; isento: boolean; desligaEm: string | null; fimDoMes: string | null };
 type ProdutoDoCardapio = { id: string; nome: string; categoria: string; precoDoQuilo: number };
@@ -130,7 +131,7 @@ export default function BalancaClient() {
         <Oferta dados={dados} salvando={salvando} onAtivar={() => setTermoAberto(true)} />
       )}
 
-      <ComoFunciona />
+      <div style={{ marginTop: 16 }}><IlustracaoDaBalanca /></div>
       <Equipamento />
 
       {termoAberto && (
@@ -290,30 +291,7 @@ function ProdutosPorQuilo({ dados, onProdutos, onAviso }: { dados: Dados; onProd
   );
 }
 
-// ─── Como funciona e equipamento ─────────────────────────────────────────
-
-function ComoFunciona() {
-  const passos = [
-    ["🎫", "Na entrada", "O cliente pega um cartão de comanda numerado."],
-    ["🍽️", "Na balança", "Serve o prato e põe na balança. A tela espera o peso firmar."],
-    ["📟", "Passa o cartão", "O leitor lê o código do cartão e o valor do prato cai na comanda."],
-    ["💳", "No caixa", "Passa o cartão, a conta abre com tudo o que ele consumiu, e fecha como uma mesa."],
-  ];
-  return (
-    <section style={cartao}>
-      <h2 style={h2}>Como funciona no salão</h2>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
-        {passos.map(([icone, titulo, t]) => (
-          <div key={titulo} style={{ background: "#F8FAFC", borderRadius: 12, padding: 14 }}>
-            <div style={{ fontSize: 26 }}>{icone}</div>
-            <div style={{ fontWeight: 800, color: "#0F172A", marginTop: 4 }}>{titulo}</div>
-            <div style={{ fontSize: 13, color: "#475569", marginTop: 2, lineHeight: 1.5 }}>{t}</div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
+// ─── Equipamento (o "como funciona no salão" é o desenho de ./IlustracaoDaBalanca) ─
 
 /** O que indicamos (pesquisa no Mercado Livre de 06/11/2026: vendedor com reputação, peça certa para a Web Serial). */
 const EQUIPAMENTO: [string, string, string | null][] = [
