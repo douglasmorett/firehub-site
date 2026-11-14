@@ -19,6 +19,7 @@ import { documentoNoPedido } from "@/lib/fiscal-modo";
 import { lerConfigDeAgendamento } from "@/lib/agendamento";
 import { lojaFechadaPelaQueda } from "@/lib/loja-sem-conexao-no-banco";
 import { lojaBloqueadaPorMensalidade } from "@/lib/loja-bloqueada";
+import { lerUpsellConfig } from "@/lib/upsell-config";
 
 export const SELECT_DA_LOJA_NO_CARDAPIO = {
   id: true,
@@ -78,13 +79,19 @@ export async function propsDoCardapio(franchisee: any, canal: CanalDoCardapio) {
   // fila, eram ~10 idas ao banco antes de a página começar a responder, e no
   // pico cada ida custa 100–300 ms no servidor. O resultado é o mesmo.
   const lojaId = franchisee.id;
-  const [fiscal, semConexaoBruto, bloqueada, estoqueDaLoja, ordem] = await Promise.all([
+  const [fiscal, semConexaoBruto, bloqueada, estoqueDaLoja, ordem, upsellBruto] = await Promise.all([
     prisma.user.findUnique({ where: { id: lojaId }, select: { fiscalConfig: true } }).catch(() => null),
     franchisee.storeOpen === false ? lojaFechadaPelaQueda(lojaId) : Promise.resolve(false),
     canal === "delivery" && franchisee.storeOpen !== false ? lojaBloqueadaPorMensalidade(lojaId) : Promise.resolve(false),
     estoqueDaLojaOuVazio(lojaId),
     orderByCardapio(),
+    // O upsell da sacola (lib/upsell-config.ts) é só do delivery. Lido à
+    // parte e com catch: coluna ausente deixa o site sem a janela, nunca 500.
+    canal === "delivery"
+      ? prisma.user.findUnique({ where: { id: lojaId }, select: { upsellConfig: true } as any }).catch(() => null)
+      : Promise.resolve(null),
   ]);
+  const upsell = lerUpsellConfig((upsellBruto as any)?.upsellConfig);
   const notaFiscal = documentoNoPedido(normalizarConfigFiscal(fiscal?.fiscalConfig));
 
   // "Site aberto" desligado pela proteção de LOJA SEM CONEXÃO
@@ -300,6 +307,7 @@ export async function propsDoCardapio(franchisee: any, canal: CanalDoCardapio) {
       storeCoupons: cuponsComCampanha(franchisee.storeCoupons, franchisee.storeLoyalty),
       notaFiscal,
       semConexao,
+      upsell: upsell.ativo && upsell.itens.length > 0 ? upsell : null,
     } as any,
     menuProducts: menuComPrecoDoCanal as any,
     storeCategories: storeCategories as any,
