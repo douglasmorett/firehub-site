@@ -131,5 +131,23 @@ const carregou = (v: VezDaRajada) => (v.papel === "carrega" ? v : null);
     assert.equal(r.tamanho(), 0);
   });
 
+  await caso("quem carrega sabe a chegada mais NOVA que leva (a conferência entre processos parte dela)", async () => {
+    const r = criarRajadas<ItemDaRajada>();
+    const primeira = await chega(r, 0, { texto: "oi", chegouEm: 1000 }, 10);
+    const pendentes = Promise.all([
+      chega(r, 0, { texto: "Ville de France bloco 8", chegouEm: 2000 }, 30),
+      chega(r, 50, { texto: "Pix", chegouEm: 3000 }, 30),
+    ]);
+    await espera(120);
+    carregou(primeira)!.liberar();
+    const quem = (await pendentes).map(carregou).find(Boolean)!;
+    assert.equal(quem.primeiraChegada, 2000);
+    // Leva o "Pix", que chegou DEPOIS da mensagem que carrega: mensagem do
+    // cliente até 3000 já está nesta resposta; só depois disso ela fica velha.
+    assert.equal(quem.ultimaChegada, 3000);
+    quem.liberar();
+    await espera(5);
+  });
+
   console.log(`\n${ok} ok`);
 })().catch((e) => { console.error(e); process.exit(1); });

@@ -8,7 +8,7 @@
  * Na versão antiga as regras com `.*` e `\d+...\w*` voltavam quadráticas: o
  * texto de 200 mil caracteres abaixo segurava o processo por minutos.
  */
-import { detectarProblemaNoPedido, ehPerguntaSobreOPedido } from "../src/lib/problema-no-pedido";
+import { detectarProblemaNoPedido, ehPerguntaSobreOPedido, soPedeCancelamento, desistenciaDoCliente } from "../src/lib/problema-no-pedido";
 
 export {};
 
@@ -49,6 +49,23 @@ confere("pergunta sobre o pedido", ehPerguntaSobreOPedido("o motoboy já saiu?")
 confere("pergunta de quem nem pediu não é queixa", !detectarProblemaNoPedido("quanto tempo demora?").escalar);
 confere("coca gelada não é queixa", !detectarProblemaNoPedido("quero uma coca gelada").escalar);
 
+// ── "Cancela" sem pedido na loja (Charlie Brown, 11 e 12/11/2026) ─────────
+const rascunho = [{ status: "CRIANDO_IA", notes: "🤖 Pedido sendo montado pela IA no WhatsApp" }];
+const naCozinha = [{ status: "ACEITO", notes: "" }];
+const esperandoALoja = [{ status: "CRIANDO_IA", notes: "🙋 AGUARDANDO A LOJA: conferir o pedido do robô · 🤖 Pedido sendo montado" }];
+confere("'Cancela obrigada' com rascunho: cancela o rascunho", desistenciaDoCliente("Cancela obrigada", rascunho) === "cancelar-rascunho");
+confere("'Cancela por favor' com rascunho: cancela o rascunho", desistenciaDoCliente("Cancela por favor", rascunho) === "cancelar-rascunho");
+confere("'pode cancelar o pedido, obg' com rascunho", desistenciaDoCliente("pode cancelar o pedido, obg", rascunho) === "cancelar-rascunho");
+confere("'cancela a borda' com rascunho: é mexer no pedido, fica com o robô", desistenciaDoCliente("cancela a borda", rascunho) === "com-o-robo");
+confere("'Cancela' sem pedido nenhum: com o robô", desistenciaDoCliente("Cancela", []) === "com-o-robo");
+confere("'Pode cancelar o guaraná' com pedido na cozinha: equipe (07/11)", desistenciaDoCliente("Pode cancelar o guaraná por favor", naCozinha) === "escalar");
+confere("'cancela' com o rascunho esperando a loja aceitar: equipe", desistenciaDoCliente("cancela", esperandoALoja) === "escalar");
+confere("rascunho cancelado + pedido entregue hoje: equipe", desistenciaDoCliente("cancela", [{ status: "CANCELADO" }, { status: "ENTREGUE" }]) === "escalar");
+confere("'cancela, tá demorando' é reclamação de verdade", desistenciaDoCliente("cancela, tá demorando demais", rascunho) === "escalar");
+confere("soPedeCancelamento: 'quero cancelar'", soPedeCancelamento("quero cancelar"));
+confere("soPedeCancelamento: 'não chegou, cancela' não é só cancelar", !soPedeCancelamento("não chegou, cancela"));
+confere("soPedeCancelamento: sem a palavra", !soPedeCancelamento("quero uma calabresa"));
+
 // ── Texto longo de propósito responde rápido ─────────────────────────────
 const N = 200_000;
 const ataques: Record<string, string> = {
@@ -58,11 +75,15 @@ const ataques: Record<string, string> = {
   "esper esper…": "esper ".repeat(N / 6),
   "onde entrega…": "onde entrega ".repeat(N / 13),
   "cade + espaços": "cade" + " ".repeat(N),
+  "cancela + espaços": "cancela" + " ".repeat(N) + "x",
+  "cancela + vírgulas e 'ok'": "cancela" + ", ok".repeat(N / 4) + "x",
 };
 for (const [nome, texto] of Object.entries(ataques)) {
   const t0 = performance.now();
   detectarProblemaNoPedido(texto, [{ sender: "user", text: texto }]);
   ehPerguntaSobreOPedido(texto);
+  desistenciaDoCliente(texto, [{ status: "CRIANDO_IA" }]);
+  desistenciaDoCliente("cancela" + texto, [{ status: "CRIANDO_IA" }]);
   const ms = performance.now() - t0;
   confere(`texto longo "${nome}" em menos de 1 s`, ms < 1000, `${ms.toFixed(0)} ms`);
 }

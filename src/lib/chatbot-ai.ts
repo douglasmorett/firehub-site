@@ -4,6 +4,7 @@ import { estadoDaLoja, instrucaoDeHorario } from "@/lib/loja-aberta";
 import { lojaFechadaPelaQueda } from "@/lib/loja-sem-conexao-no-banco";
 import { avaliarEntrega, bairroCadastrado, bairrosAtendidos, descreverVeredicto, minimoDaZona, modoDaArea, type LojaParaEntrega, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
 import { bairrosComMinimoProprio, minimoDaEntregaNoBairro } from "@/lib/minimo-do-bairro";
+import { lerApelidos } from "@/lib/bairro-pelo-endereco";
 import { limitesDeAtendimento } from "@/lib/limite-de-atendimento";
 import { distanciaDoVeredicto } from "@/lib/distancia-da-entrega";
 import { lerRegraDeRepasse, repasseDoPedido } from "@/lib/repasse-do-entregador";
@@ -1512,7 +1513,11 @@ ${(() => {
       // Mínimo próprio do bairro, ao lado da taxa: é onde o modelo olha ao cotar.
       const minimo = minimoDaZona(z);
       const doMinimo = minimo == null ? "" : minimo > 0 ? ` · pedido mínimo R$ ${minimo.toFixed(2)}` : " · sem pedido mínimo";
-      return `- ${z.name}: R$ ${Number(z.fee || 0).toFixed(2)}${tempoDaZona(z)}${doMinimo}`;
+      // Outros nomes do mesmo bairro (condomínio, loteamento): o cliente diz
+      // "Ville de France" e o modelo precisa saber que é o Country Club.
+      const apelidos = lerApelidos(z);
+      const tambem = apelidos.length ? ` (também chamado: ${apelidos.join(", ")})` : "";
+      return `- ${z.name}${tambem}: R$ ${Number(z.fee || 0).toFixed(2)}${tempoDaZona(z)}${doMinimo}`;
     }).join("\n") +
       "\n- A LOJA SÓ ENTREGA NESTES BAIRROS. Bairro fora da lista: NÃO anote entrega nem cote taxa — ofereça retirada ou peça outro endereço. O sistema recusa a gravação de entrega fora da lista.";
   } else if (modoDaAreaDaLoja === "POLIGONO") {

@@ -56,6 +56,12 @@ export type VezDaRajada =
       mensagemAnteriorEm: number | null | undefined;
       /** A chegada mais antiga da rajada: dali em diante, o que o banco tem do cliente já vai neste texto. */
       primeiraChegada: number | undefined;
+      /**
+       * A chegada mais NOVA da rajada (a mensagem pode levar pedaços que chegaram
+       * depois dela). Mensagem do cliente depois disto, em outro processo, deixa a
+       * resposta velha (webhook, "a conversa andou").
+       */
+      ultimaChegada: number | undefined;
       liberar: () => void;
     };
 
@@ -93,6 +99,7 @@ export async function esperarAVezDaRajada(o: {
     quantas: itens.length,
     mensagemAnteriorEm: itens[0].mensagemAnteriorEm,
     primeiraChegada: itens.reduce<number | undefined>((menor, i) => (i.chegouEm !== undefined && (menor === undefined || i.chegouEm < menor) ? i.chegouEm : menor), undefined),
+    ultimaChegada: itens.reduce<number | undefined>((maior, i) => (i.chegouEm !== undefined && (maior === undefined || i.chegouEm > maior) ? i.chegouEm : maior), undefined),
     liberar,
   };
 }

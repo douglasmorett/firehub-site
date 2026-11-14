@@ -371,6 +371,27 @@ export async function lojistaFalouDesde(
   }
 }
 
+/**
+ * O CLIENTE escreveu de novo DEPOIS de `desde` (a chegada mais nova que esta
+ * resposta leva)? É a conferência de antes de enviar, entre os processos: a
+ * rajada do webhook é de UM processo, e com PROCESSOS_DO_SITE > 1 a mensagem
+ * seguinte cai em outro e espera a vez lá — invisível para `temPendente`.
+ * Charlie Brown, 11/11/2026: "Ville de France bloco 8" e "Pix" chegaram
+ * enquanto a IA respondia "Entrega"; saíram "Me informa a sua rua", "Qual é o
+ * seu bairro?" duas vezes e a taxa duas vezes, em 80 s, com o bairro já dito.
+ * `lastMessageAt` é gravado aqui, em `evaluate`, para toda mensagem liberada.
+ * Nunca lança: na dúvida, a resposta sai, como antes.
+ */
+export async function clienteEscreveuDepois(userId: string, remoteJid: string, desde: number): Promise<boolean> {
+  try {
+    const state = await readState(userId, remoteJid);
+    const em = state?.lastMessageAt ? state.lastMessageAt.getTime() : 0;
+    return Number.isFinite(desde) && em > desde;
+  } catch {
+    return false;
+  }
+}
+
 async function evaluate(input: LoopGuardInput): Promise<LoopDecision> {
   const { userId, remoteJid, text, verifiedBizName, isAudio, now } = input;
 
