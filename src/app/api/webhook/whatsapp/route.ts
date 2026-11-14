@@ -17,8 +17,10 @@ import {
   passarParaAtendimentoHumano,
   conversaEstaComHumano,
   lojistaFalouDesde,
+  clienteEscreveuDepois,
+  HUMAN_TAKEOVER_SILENCE_MS,
 } from '@/lib/loop-guard';
-import { detectarProblemaNoPedido, FRASE_DE_TRANSFERENCIA } from '@/lib/problema-no-pedido';
+import { detectarProblemaNoPedido, FRASE_DE_TRANSFERENCIA, soPedeCancelamento, desistenciaDoCliente, FRASE_DO_RASCUNHO_CANCELADO } from '@/lib/problema-no-pedido';
 import { numeroEstaNaListaDeIgnorados, numeroDaEquipeDoFireHub } from '@/lib/numeros-ignorados';
 import { ehConversaDeCliente, conversaOriginalEhDeCliente, tipoDoJid } from '@/lib/jid-de-cliente';
 import { contaOficialDoWhatsApp } from '@/lib/contas-oficiais-whatsapp';
@@ -1270,7 +1272,49 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
   const escalarPorProblema = chatbotConfig.escalateOnComplaint !== false && !ehODono;
   if (escalarPorProblema) {
     const historicoAtual = conversationCache.get(user.id + "_" + remoteJid) || [];
-    const problema = detectarProblemaNoPedido(textoDigitado, historicoAtual.map((m) => ({ ...m, text: semLinhaDaLocalizacao(m.text) })), now);
+    let problema = detectarProblemaNoPedido(textoDigitado, historicoAtual.map((m) => ({ ...m, text: semLinhaDaLocalizacao(m.text) })), now);
+
+    // "Cancela" sem pedido na loja não é reclamação (lib/problema-no-pedido.ts,
+    // desistenciaDoCliente): o rascunho que o robô montava sai aqui mesmo, sem
+    // chamar a equipe nem avisar o dono; o resto ("cancela a borda") é do robô.
+    if (problema.escalar && soPedeCancelamento(textoDigitado) && cleanPhone.length >= 8) {
+      const recentes = await prisma.customerOrder.findMany({
+        where: {
+          franchiseeId: user.id,
+          customerPhone: { endsWith: cleanPhone.slice(-8) },
+          createdAt: { gte: new Date(now - 6 * 60 * 60 * 1000) },
+        },
+        select: { id: true, status: true, notes: true },
+        orderBy: { createdAt: "desc" },
+      }).catch(() => null);
+      let decisao = recentes ? desistenciaDoCliente(textoDigitado, recentes) : "escalar";
+      // Com uma pessoa da loja na conversa, o robô não fala por cima: segue o
+      // caminho normal, e o anti-loop (mais abaixo) o deixa calado. Mensagem
+      // do cliente há menos de 30 s pode estar com a IA agora (a resposta dela
+      // sairia depois do "cancelei"): vai pela fila da conversa, com o robô.
+      if (decisao === "cancelar-rascunho" && (
+        (await conversaEstaComHumano(user.id, remoteJid)) ||
+        (await lojistaFalouDesde(user.id, remoteJid, now - HUMAN_TAKEOVER_SILENCE_MS)) ||
+        (await clienteEscreveuDepois(user.id, remoteJid, now - 30_000))
+      )) decisao = "com-o-robo";
+      if (decisao === "cancelar-rascunho") {
+        const rascunhos = (recentes || []).filter((p) => String(p.status).toUpperCase() === "CRIANDO_IA").map((p) => p.id);
+        await prisma.customerOrder.updateMany({
+          where: { id: { in: rascunhos }, status: "CRIANDO_IA" },
+          data: {
+            status: "CANCELADO",
+            cancelledBy: "CUSTOMER",
+            cancelReason: "Cliente desistiu/cancelou no WhatsApp com a IA",
+            notes: "🤖 Rascunho cancelado pelo cliente no WhatsApp",
+          },
+        }).catch((e) => console.error("[WhatsApp Webhook] Falha ao cancelar o rascunho:", e));
+        console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] ❌ ${mascararTelefone(remoteJid)} desistiu do pedido que o robô montava: rascunho cancelado, sem chamar a equipe.`);
+        await registrarMensagemDoCliente(user.id, remoteJid, textoDoClienteParaOPainel, now);
+        await replyToCustomer(user.id, remoteJid, FRASE_DO_RASCUNHO_CANCELADO, remoteJid || data.from || "").catch(() => {});
+        return;
+      }
+      if (decisao === "com-o-robo") problema = { escalar: false };
+    }
 
     // Já entregue à equipe: só atualiza a fila. Repetir "vou chamar alguém" a
     // cada nova mensagem de quem está bravo é piorar o atendimento, e o alerta
@@ -1880,9 +1924,17 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
       ) {
         const rajadas = rajadasDoRobo();
         const chaveDaRajada = `${user.id}_${remoteJid}`;
-        if (rajadas.temPendente(chaveDaRajada) && (descartesSeguidos.get(chaveDaRajada) || 0) < 2) {
+        // A mensagem nova pode estar esperando a vez em OUTRO processo
+        // (PROCESSOS_DO_SITE > 1): a rajada daqui não a vê, o banco vê. Lá ela
+        // lê o histórico do banco depois da vez — com o texto desta, gravado
+        // abaixo antes de soltar a vez — e responde as duas juntas.
+        const pendenteAqui = rajadas.temPendente(chaveDaRajada);
+        const escreveuEmOutroProcesso = !pendenteAqui &&
+          (descartesSeguidos.get(chaveDaRajada) || 0) < 2 &&
+          (await clienteEscreveuDepois(user.id, remoteJid, vezDaRajada.ultimaChegada ?? now));
+        if ((pendenteAqui || escreveuEmOutroProcesso) && (descartesSeguidos.get(chaveDaRajada) || 0) < 2) {
           descartesSeguidos.set(chaveDaRajada, (descartesSeguidos.get(chaveDaRajada) || 0) + 1);
-          rajadas.devolver(chaveDaRajada, { texto: textMessage, barreira: false, mensagemAnteriorEm: vezDaRajada.mensagemAnteriorEm ?? null, chegouEm: primeiraChegada });
+          if (pendenteAqui) rajadas.devolver(chaveDaRajada, { texto: textMessage, barreira: false, mensagemAnteriorEm: vezDaRajada.mensagemAnteriorEm ?? null, chegouEm: primeiraChegada });
           await registrarMensagemDoCliente(user.id, remoteJid, textoDoClienteParaOPainel, now);
           registrarTrace({
             instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace, estagio: "juntada",

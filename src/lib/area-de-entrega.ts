@@ -48,6 +48,7 @@ import { comPrazoDaExtensao } from "@/lib/prazo-automatico";
 import { pontoDaRuaPelasEntregasDaLoja } from "@/lib/rua-das-entregas-servidor";
 import { enderecoNoIbge, type PedidoAoIbge } from "@/lib/enderecos-ibge-servidor";
 import { estadoPeloEndereco } from "@/lib/geocodificacao";
+import { lerApelidos } from "@/lib/bairro-pelo-endereco";
 
 export type LojaParaEntrega = {
   /** O id da loja: com ele, a rua que o mapa não tem sai das entregas dela (lib/rua-das-entregas.ts). */
@@ -90,7 +91,14 @@ export type AreaDesenhada = {
 };
 
 /** `minimo`: pedido mínimo deste bairro; null = vale o da loja (lib/minimo-do-bairro.ts). */
-export type BairroAtendido = { name: string; fee: number; time: number; minimo?: number | null };
+export type BairroAtendido = {
+  name: string;
+  fee: number;
+  time: number;
+  minimo?: number | null;
+  /** Outros nomes do MESMO bairro (`aliases` na zona: condomínio, loteamento, nome antigo). */
+  aliases?: string[];
+};
 
 /** O mínimo gravado no bairro: número ≥ 0, ou null quando a linha não tem (vazio, lixo, negativo). */
 export function minimoDaZona(z: any): number | null {
@@ -317,7 +325,7 @@ export function modoDaArea(loja: LojaParaEntrega): ModoDaArea {
 export function bairrosAtendidos(loja: LojaParaEntrega): BairroAtendido[] {
   return zonas(loja)
     .filter((z) => z && z.name)
-    .map((z) => ({ name: String(z.name).trim(), fee: Number(z.fee) || 0, time: Number(z.time) || 45, minimo: minimoDaZona(z) }))
+    .map((z) => ({ name: String(z.name).trim(), fee: Number(z.fee) || 0, time: Number(z.time) || 45, minimo: minimoDaZona(z), aliases: lerApelidos(z) }))
     .filter((z) => z.name);
 }
 
@@ -351,8 +359,11 @@ export function bairroCadastrado(texto: unknown, lista: BairroAtendido[] | LojaP
   const alvo = normalizarTexto(texto);
   if (!alvo) return null;
   const bairros = Array.isArray(lista) ? lista : bairrosAtendidos(lista);
+  // O apelido do bairro vale como o nome ("Ville de France" → Country Club,
+  // Charlie Brown 11/11/2026): casa igual, e quem volta é o bairro cadastrado,
+  // com a taxa dele. Antes os apelidos só serviam ao mapa (bairro-pelo-endereco).
   const candidatos = bairros
-    .map((b) => ({ ...b, norm: normalizarTexto(b.name) }))
+    .flatMap((b) => [b.name, ...(b.aliases || [])].map((texto) => ({ ...b, norm: normalizarTexto(texto) })))
     .filter((b) => b.norm);
 
   const exato = candidatos.find((b) => b.norm === alvo);

@@ -35,6 +35,9 @@
  * cada caractere é varrido uma vez e as frases detectadas são as mesmas
  * (scripts/teste-problema-no-pedido-redos.ts compara com a versão antiga).
  */
+/** "Cancelar" sozinho: só é problema com pedido que a loja já tem (desistenciaDoCliente). */
+const CANCELAMENTO = /\bcancel(ar|a|amento|e)\b/i;
+
 const RECLAMACAO = [
   // Demora e atraso. Só as formas que descrevem algo JÁ acontecendo ou passado:
   // "demora" cru é pergunta de quem nem pediu ainda ("quanto tempo demora?").
@@ -66,7 +69,7 @@ const RECLAMACAO = [
   /(comida|lanche|pedido)\s+(estragad|azed|queimad|podre)/i,
 
   // Cancelamento, estorno e escalada formal
-  /\bcancel(ar|a|amento|e)\b/i,
+  CANCELAMENTO,
   /reclama(r|[çc][ãa]o)/i,
   /\bprocon\b/i,
   /(estorn|dinheiro\s+de\s+volta|meu\s+dinheiro\s+de\s+volta|reembols)/i,
@@ -142,6 +145,55 @@ export function detectarProblemaNoPedido(
     ? { escalar: true, motivo: "cobranca_repetida", gatilho: cobrandoAgora }
     : SEM_PROBLEMA;
 }
+
+/** A queixa da mensagem é SÓ "cancelar" — nenhuma outra regra de reclamação bate junto? */
+export function soPedeCancelamento(texto: string): boolean {
+  if (typeof texto !== "string" || !CANCELAMENTO.test(texto)) return false;
+  return !bate(RECLAMACAO.filter((r) => r !== CANCELAMENTO), texto);
+}
+
+/**
+ * Desiste do pedido INTEIRO, sem apontar item: "cancela", "pode cancelar por
+ * favor", "cancela o pedido, obrigada". "Cancela o guaraná" não é isto: é
+ * mexer no pedido, e fica com o robô.
+ */
+const DESISTE_DE_TUDO =
+  /^\s*(ent[ãa]o\s+|pode\s+|quero\s+|vou\s+|melhor\s+)?cancel(ar|a|e)(\s+(o\s+|meu\s+)*(pedido|tudo))?([\s,.!]*(por\s+favor|pfvr|pfv|pf|obrigad[ao]|obg|t[áa]|ok))*[\s,.!]*$/i;
+
+export type PedidoDoCliente = { status?: unknown; notes?: unknown };
+
+/**
+ * "Cancela" do cliente: chamar a equipe, ou é com o robô?
+ *
+ * Charlie Brown, 11 e 12/11/2026: "Cancela obrigada" e "Cancela por favor" no
+ * meio do pedido que o robô ainda montava. Nada tinha ido para a loja, mas o
+ * detector tratou como reclamação: "Poxa, sinto muito por isso! 🙏", alerta de
+ * problema para o dono e o robô fora da conversa por 12 h. Cancelar só é caso
+ * da equipe quando a loja já tem o pedido (enviado, aceito, na cozinha,
+ * entregue, ou o rascunho esperando a loja aceitar).
+ *
+ * - "escalar": como sempre (há outra queixa junto, ou a loja já tem o pedido);
+ * - "cancelar-rascunho": desistiu do pedido inteiro que o robô montava;
+ * - "com-o-robo": nada na loja — o robô responde ("cancela a borda").
+ */
+export function desistenciaDoCliente(
+  texto: string,
+  pedidosRecentes: PedidoDoCliente[],
+): "escalar" | "cancelar-rascunho" | "com-o-robo" {
+  if (!soPedeCancelamento(texto)) return "escalar";
+  const status = (p: PedidoDoCliente) => String(p?.status || "").toUpperCase();
+  const esperandoALoja = (p: PedidoDoCliente) => /^🙋 AGUARDANDO A LOJA/.test(String(p?.notes || ""));
+  const naLoja = pedidosRecentes.some(
+    (p) => (status(p) !== "CRIANDO_IA" && status(p) !== "CANCELADO") || (status(p) === "CRIANDO_IA" && esperandoALoja(p)),
+  );
+  if (naLoja) return "escalar";
+  const temRascunho = pedidosRecentes.some((p) => status(p) === "CRIANDO_IA");
+  return temRascunho && DESISTE_DE_TUDO.test(texto) ? "cancelar-rascunho" : "com-o-robo";
+}
+
+/** O que o cliente lê quando desiste do pedido que o robô montava. */
+export const FRASE_DO_RASCUNHO_CANCELADO =
+  "Tudo bem, cancelei o pedido que a gente estava montando. Se quiser pedir depois, é só chamar! 😊";
 
 /**
  * A única frase que o robô diz antes de sair de cena.
