@@ -55,8 +55,32 @@ function acharCsv(): string {
 type Endereco = { tipo: string; titulo: string; nome: string; loc: string; num: number; cep: string; lat: number; lng: number; nv: number };
 
 function lerCnefe(caminho: string) {
-  const linhas = readFileSync(caminho, "latin1").split(/\r?\n/);
-  const cab = linhas[0].split(";");
+  // O CSV de São Paulo tem 945 MB: maior que a maior string do Node (~512 MB).
+  // Lido como bytes, linha a linha; só as colunas usadas viram texto, e o texto
+  // repetido (tipo, nome, localidade, CEP) fica uma vez só na memória.
+  const b = readFileSync(caminho);
+  const repetidos = new Map<string, string>();
+  const unico = (t: string) => repetidos.get(t) ?? (repetidos.set(t, t), t);
+  const linhaEm = (ini: number, fim: number) => {
+    const v: string[] = [];
+    for (let k = ini, de = ini; k <= fim; k++) {
+      if (k === fim || b[k] === 0x3b) {
+        v.push(b.toString("latin1", de, k));
+        de = k + 1;
+      }
+    }
+    return v;
+  };
+  const linhas = function* () {
+    for (let ini = 0; ini < b.length; ) {
+      let fim = b.indexOf(0x0a, ini);
+      if (fim < 0) fim = b.length;
+      yield linhaEm(ini, fim > ini && b[fim - 1] === 0x0d ? fim - 1 : fim);
+      ini = fim + 1;
+    }
+  };
+  const iter = linhas();
+  const cab = iter.next().value as string[];
   const c = (n: string) => {
     const i = cab.indexOf(n);
     if (i < 0) throw new Error(`coluna ${n} não está no CSV`);
@@ -64,13 +88,12 @@ function lerCnefe(caminho: string) {
   };
   const C = { mun: c("COD_MUNICIPIO"), cep: c("CEP"), loc: c("DSC_LOCALIDADE"), tipo: c("NOM_TIPO_SEGLOGR"), tit: c("NOM_TITULO_SEGLOGR"), nome: c("NOM_SEGLOGR"), num: c("NUM_ENDERECO"), lat: c("LATITUDE"), lng: c("LONGITUDE"), nv: c("NV_GEO_COORD") };
   const out: Endereco[] = [];
-  for (let i = 1; i < linhas.length; i++) {
-    const v = linhas[i].split(";");
+  for (const v of iter) {
     if (v.length < 20 || Number(v[C.mun]) !== CODIGO) continue;
     const lat = Number(v[C.lat]);
     const lng = Number(v[C.lng]);
     if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat === 0) continue;
-    out.push({ tipo: normalizar(v[C.tipo]) || "rua", titulo: v[C.tit].trim(), nome: v[C.nome].trim(), loc: v[C.loc].trim() || "SEM LOCALIDADE", num: Number(v[C.num]) || 0, cep: v[C.cep].trim(), lat, lng, nv: Number(v[C.nv]) || 0 });
+    out.push({ tipo: unico(normalizar(v[C.tipo]) || "rua"), titulo: unico(v[C.tit].trim()), nome: unico(v[C.nome].trim()), loc: unico(v[C.loc].trim() || "SEM LOCALIDADE"), num: Number(v[C.num]) || 0, cep: unico(v[C.cep].trim()), lat, lng, nv: Number(v[C.nv]) || 0 });
   }
   return out;
 }

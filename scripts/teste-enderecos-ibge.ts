@@ -44,6 +44,8 @@ function confere(nome: string, cond: boolean, detalhe?: unknown) {
   confere("abreviado pelo cliente vale (Getúlio → Getúlio Vargas)", ib.casamentoDoNome("getulio", "getulio vargas") === 1);
   confere("IBGE curto dentro do escrito não vale (Agenor Medeiros × Medeiros)", ib.casamentoDoNome("agenor medeiros", "medeiros") === 0);
   confere("duas palavras em comum valem", ib.casamentoDoNome("moacir moreira", "moacir santos moreira") === 1);
+  // Pizzaria do Costa (São Paulo, 13/11/2026): o cliente escreveu "Dante"; o CNEFE tem Rua Vicenzo Danti.
+  confere("uma letra em nome longo (Vicenzo Dante × Danti)", ib.casamentoDoNome(ib.chaveDoNome("Vicenzo Dante"), ib.chaveDoNome("VICENZO DANTI")) === 2);
 
   console.log("Bairro");
   confere("prefixo Vila sai", ib.mesmoBairro("Monte Alegre", "VILA MONTE ALEGRE"));
@@ -112,6 +114,17 @@ function confere(nome: string, cond: boolean, detalhe?: unknown) {
   confere("tipo diferente sem bairro, rua única perto da loja → vale", h?.porque === "unica" && h?.precisao === "casa");
   confere("nome genérico ('Rua sem saída') nunca casa", ib.acharNoIbge({ logradouros: ["Rua sem saída"], numero: null, bairro: "Gamboa" }, [rua("rua", "SEM SAIDA", "GAMBOA", -22.858, -42.03, [1])], regua) === null);
   confere("nome curto só no bairro escrito", ib.acharNoIbge({ logradouros: ["Beco 1"], numero: null, bairro: null }, [rua("beco", "1", "PERO", -22.86, -41.99, [1])], regua) === null);
+
+  // A rua do CNEFE em três localidades coladas (São Paulo); 315 não existe, o vizinho é o 300.
+  const danti = [
+    rua("rua", "VICENZO DANTI", "PARQUE REGINA", -23.6375, -46.758, [9, 39, 91, 115]),
+    rua("rua", "VICENZO DANTI", "JARDIM NOVO ORIENTE", -23.6375, -46.758, [16, 104, 194, 300]),
+    rua("rua", "VICENZO DANTI", "JARDIM CATANDUVA", -23.6375, -46.758, [14, 200, 337, 611]),
+  ];
+  const reguaSp = { centroDoBairro: () => ({ lat: -23.636, lng: -46.758 }), loja: { lat: -23.6298, lng: -46.7582 }, limiteKm: 6 };
+  const dt = ib.acharNoIbge({ logradouros: ["Rua Vicenzo Dante"], numero: 315, bairro: "Parque Regina" }, danti, reguaSp);
+  confere("Rua Vicenzo Dante, 315 - Parque Regina → Rua Vicenzo Danti, vizinho 300", dt?.casamento === 2 && dt?.porque === "bairro" && dt?.precisao === "vizinho", dt && { ...dt, rua: undefined });
+  confere("com outra rua de nome igual ao escrito, a de uma letra não vale", ib.acharNoIbge({ logradouros: ["Rua Vicenzo Dante"], numero: 315, bairro: "Parque Regina" }, [...danti, rua("rua", "VICENZO DANTE", "PARQUE REGINA", -23.64, -46.76, [300])], reguaSp)?.casamento === 3);
 
   console.log("Trechos da mesma rua em dois bairros");
   const longa = [
