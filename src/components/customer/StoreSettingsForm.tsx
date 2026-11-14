@@ -1397,6 +1397,30 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                       </div>
                     )}
 
+                    {/* ── TAXA DA MAQUININHA POR BANDEIRA (brand.rate) ───────
+                        Pedido do Lucas (14/11/2026): o redesenho em chips tirou
+                        o campo e a loja não tinha onde digitar a taxa. É o que a
+                        maquininha cobra DA LOJA — o cliente não vê. Os
+                        relatórios de lucro usam a média das bandeiras ativas
+                        (lib/financeiro/dre.ts, taxaDaForma). */}
+                    {brands.some((b: any) => b.active) && (
+                      <div style={{ marginTop: "0.95rem", padding: "10px 14px", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 10 }}>
+                        <p style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: 4 }}>Taxa que a maquininha cobra de você</p>
+                        <p style={{ fontSize: "0.74rem", color: "#64748B", marginBottom: 8, lineHeight: 1.45 }}>
+                          Só para o relatório de lucro (DRE, fluxo de caixa, contas a receber). O cliente não paga isso.
+                        </p>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem 1rem" }}>
+                          {brands.map((brand: any, idx: number) => brand.active && (
+                            <label key={`${brand.name}-${idx}`} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.82rem", fontWeight: 600, color: "#475569" }}>
+                              {brand.name}
+                              <CampoDePercentual valor={Number(brand.rate) || 0} maximo={30} onMudar={(n) => updateBrand(idx, 'rate', n)} />
+                              %
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* ── ACRÉSCIMO PARA O CLIENTE NO CRÉDITO ───────────────
                         lib/acrescimo-no-credito.ts. NÃO é a taxa da bandeira
                         (o que a maquininha cobra da loja, para o lucro): é o
