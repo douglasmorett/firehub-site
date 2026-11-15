@@ -206,6 +206,10 @@ export default function VendaPresencialPage() {
   /** Dentro do Balcão: o cliente leva ou come aqui (lib/balcao-levar-ou-local.ts). */
   const [consumo, setConsumo] = useState<ConsumoNoBalcao>(CONSUMO_PADRAO);
   const [loading, setLoading] = useState(false);
+  // Trava do Finalizar que vale NA HORA: `loading` só desabilita o botão no
+  // próximo render, e dois toques rápidos na tela touch entravam os dois
+  // (NIK Brasília, #29 e #30 iguais, 15/11/2026).
+  const enviandoRef = useRef(false);
   const [msg, setMsg] = useState("");
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("Todos");
@@ -621,6 +625,16 @@ export default function VendaPresencialPage() {
   };
 
   const handleSubmit = async () => {
+    if (enviandoRef.current) return;
+    enviandoRef.current = true;
+    try {
+      await enviarPedido();
+    } finally {
+      enviandoRef.current = false;
+    }
+  };
+
+  const enviarPedido = async () => {
     // O caixa é a primeira pergunta: de nada adianta conferir o carrinho de um
     // pedido que não vai poder ser registrado. Quem barra de verdade é a API
     // (lib/caixa-aberto.ts) — aqui é para o atendente não perder a viagem.
