@@ -397,6 +397,16 @@ export async function deductStockForOrder(orderId: string) {
 
       let deducted = false;
 
+      // ── UMA LINHA POR INSUMO NO PEDIDO INTEIRO ───────────────────────────
+      //
+      // A chave única é `sale:<pedido>:<insumo>`. Gravando item a item, o
+      // segundo item que usa o mesmo insumo (duas esfihas → "RECEITA MASSA
+      // ESFIHA" duas vezes) batia na chave, o P2002 era lido como "corrida
+      // evitada" e a transação INTEIRA voltava atrás: o pedido ficava sem baixa
+      // nenhuma, calado. Na NIK, 15/11/2026: 96 de 179 pedidos de um dia sem
+      // baixa. Agora soma por insumo no pedido todo e grava uma vez só.
+      const totalPorInsumo = new Map<string, { nome: string; unidade: string; quantidade: number }>();
+
       for (const item of order.items) {
         const menuProduct = item.menuProduct;
         const rotuloDoItem = menuProduct?.name || item.productName || "produto removido";
@@ -654,6 +664,13 @@ export async function deductStockForOrder(orderId: string) {
             `[Stock] Deduzindo ${amountToDeduct}${consumo.unidade} de "${consumo.nome}" para ${item.quantity}x "${rotuloDoItem}" (${consumo.origens.join(" + ")})`
           );
 
+          const total = totalPorInsumo.get(stockItemId);
+          if (total) total.quantidade += amountToDeduct;
+          else totalPorInsumo.set(stockItemId, { nome: consumo.nome, unidade: consumo.unidade, quantidade: amountToDeduct });
+        }
+      }
+
+      for (const [stockItemId, { quantidade: amountToDeduct }] of totalPorInsumo) {
           // ── A GARANTIA DE UMA VEZ SÓ MORA NO ÍNDICE, NÃO NA BUSCA ────────
           //
           // A idempotência era um `notes: { contains: "id: " + orderId }`:
@@ -719,7 +736,6 @@ export async function deductStockForOrder(orderId: string) {
           }
 
           deducted = true;
-        }
       }
 
       return { skipped: false, deducted };
