@@ -291,45 +291,21 @@ export async function avisarDono(
  * conectado), para o `notificationPhone` da conta `isFireHubSystem`. Sem número
  * cadastrado lá, grita no log — que é o único lugar que sobra.
  */
-export async function avisarAdminDoSistema(userIdQueEnvia: string, mensagem: string): Promise<boolean> {
-  try {
-    const matriz = await prisma.user.findFirst({
-      where: { isFireHubSystem: true },
-      select: { notificationPhone: true },
-    });
-    const numero = (matriz?.notificationPhone || "").replace(/\D/g, "");
-    if (!numero || numero.length < 10) {
-      console.error(
-        `[Alertas] 🔥 ALERTA DE SISTEMA SEM DESTINO: a conta matriz não tem "WhatsApp do Proprietário". Mensagem: ${mensagem.replace(/\s+/g, " ").slice(0, 300)}`
-      );
-      return false;
-    }
-    // O robô não avisa a si mesmo — a mesma guarda de `avisarDono`. Se o número
-    // do administrador for o que está conectado ao robô da loja que envia, a
-    // mensagem voltaria como mensagem recebida: conversa do robô com ele mesmo.
-    const lojaQueEnvia = await prisma.user.findUnique({
-      where: { id: userIdQueEnvia },
-      select: { chatbotConfig: true },
-    });
-    const numeroDoRobo = String((lojaQueEnvia?.chatbotConfig as any)?.phone || "").replace(/\D/g, "");
-    if (numeroDoRobo && numeroDoRobo.slice(-10) === numero.slice(-10)) {
-      console.warn("[Alertas] Alerta de sistema não enviado por esta loja: o número do administrador é o próprio número do robô dela.");
-      return false;
-    }
-
-    const jid = `${numero.startsWith("55") ? numero : `55${numero}`}@s.whatsapp.net`;
-    await registerBotReply(userIdQueEnvia, jid, mensagem).catch(() => {});
-    // O retorno é o do envio DE VERDADE: quem chama solta o freio de uma hora
-    // quando não saiu, para a próxima loja tentar — devolver `true` sempre
-    // deixava o administrador sem aviso por uma hora se a primeira loja a
-    // sentir a queda estivesse com o gateway recusando envio.
-    const saiu = await sendEvolutionMessage(userIdQueEnvia, jid, mensagem);
-    if (!saiu) console.error("[Alertas] 🔥 Alerta de sistema NÃO saiu (o gateway recusou o envio). Outra loja vai tentar.");
-    return Boolean(saiu);
-  } catch (err: any) {
-    console.error("[Alertas] Falha ao avisar o administrador do sistema:", err?.message);
-    return false;
-  }
+/**
+ * Alerta de SISTEMA para o administrador do FireHub (IA fora do ar, pagamento
+ * online sem split…). Só fica no log.
+ *
+ * Até 15/11/2026 saía pelo WhatsApp da loja que sentiu o problema primeiro —
+ * o Douglas recebia "IA do robô FORA DO AR" do número da Pizzaria Bom Cheff.
+ * Ele: "tem que parar de me mandar isso pelo telefone dos clientes… você
+ * (o atendimento) que tem que me notificar". A conta matriz não tem WhatsApp
+ * conectado, então não há número do FireHub para isso: o incidente da IA fica
+ * em SaudeDaIa e o atendimento do Claude Code confere na ronda e avisa ele.
+ * Devolve `true` para quem chama manter o freio de uma hora (não tentar de novo).
+ */
+export async function avisarAdminDoSistema(_userIdQueEnvia: string, mensagem: string): Promise<boolean> {
+  console.error(`[Alertas] 🔥 ALERTA DE SISTEMA (só no log; o atendimento avisa o administrador): ${mensagem.replace(/\s+/g, " ").slice(0, 500)}`);
+  return true;
 }
 
 /** Texto do alerta de cliente que ficou sem robô e precisa de gente. */
