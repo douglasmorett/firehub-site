@@ -330,11 +330,11 @@ const jobs = [
     intervalMs: 24 * 60 * 60_000, // 1 dia
   },
   {
-    // Robô de loja há 7 dias sem pedido (fora do teste) desliga sozinho
-    // (src/lib/robo-parado.ts).
+    // Robô de loja há 7 dias sem pedido (fora do teste) desliga sozinho e
+    // religa quando ela volta a vender (src/lib/robo-parado.ts).
     name: 'robo-parado',
     path: '/api/cron/robo-parado',
-    intervalMs: 24 * 60 * 60_000, // 1 dia
+    intervalMs: 60 * 60_000, // 1 hora
   },
   {
     name: 'billing-close',
