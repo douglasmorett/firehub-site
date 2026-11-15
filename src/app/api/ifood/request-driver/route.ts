@@ -45,6 +45,9 @@ const SELECT_PEDIDO = {
   ifoodDriverName: true, ifoodDriverPhone: true, ifoodDriverVehicle: true, ifoodDriverPhotoUrl: true,
   customerName: true, customerPhone: true, customerAddress: true, customerLatLng: true,
   totalAmount: true, deliveryFee: true, paymentMethod: true, changeAmount: true, dailyOrderNumber: true,
+  // O Pix pago pelo site grava só "PIX" + o id da cobrança: sem este campo o
+  // pedido pago parecia "cobrar na entrega" e o botão sumia (Troppy, 15/11/2026).
+  gatewayPaymentId: true,
   franchisee: { select: { city: true, storeName: true, storePhone: true, storeAddress: true, storeLatLng: true } },
 } as const;
 
