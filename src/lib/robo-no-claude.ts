@@ -12,7 +12,7 @@
  *
  * ── Como liga ───────────────────────────────────────────────────────────────
  *
- * Loja a loja: `chatbotConfig.modeloDoRobo = "claude-haiku-5-5"`
+ * Padrão de toda loja desde 15/11/2026; `chatbotConfig.modeloDoRobo = "gemini"` tira a loja
  * (scripts/robo-no-claude.ts liga e desliga; a tela do lojista não mexe no
  * campo) E a chave da Anthropic: ANTHROPIC_API_KEY no servidor ou, como a do
  * Gemini, `anthropicApiKey` no chatbotConfig da conta matriz (isFireHubSystem;
@@ -60,9 +60,20 @@ export async function chaveDoClaude(): Promise<string | null> {
   }
 }
 
-/** A loja responde pelo Claude: marcada no chatbotConfig e com a chave da Anthropic. */
+/**
+ * O Claude é o PADRÃO desde 15/11/2026: só fica no Gemini a loja marcada com
+ * `modeloDoRobo: "gemini"`. Antes era o contrário (marca loja a loja) e as 17
+ * lojas que entraram depois de 29/10 nasceram no Gemini sem ninguém ver — no
+ * dia em que o crédito do Gemini acabou, só elas ficaram sem robô.
+ */
+export const MODELO_GEMINI_DO_ROBO = "gemini";
+export function marcadaNoClaude(chatbotConfig: any): boolean {
+  return chatbotConfig?.modeloDoRobo !== MODELO_GEMINI_DO_ROBO;
+}
+
+/** A loja responde pelo Claude: não marcada para o Gemini e com a chave da Anthropic. */
 export function lojaNoClaude(chatbotConfig: any, chave: string | null): boolean {
-  return chatbotConfig?.modeloDoRobo === MODELO_CLAUDE && Boolean(chave);
+  return marcadaNoClaude(chatbotConfig) && Boolean(chave);
 }
 
 type Parte = { text?: string; inlineData?: { data: string; mimeType: string } };

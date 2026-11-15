@@ -38,7 +38,7 @@ async function main() {
       continue;
     }
     const cfg = (loja.chatbotConfig as any) || {};
-    console.log(`\n${loja.storeName || loja.name} (${loja.id}): robô ${cfg.modeloDoRobo === MODELO_CLAUDE ? "NO CLAUDE" : "no Gemini"}`);
+    console.log(`\n${loja.storeName || loja.name} (${loja.id}): robô ${cfg.modeloDoRobo !== "gemini" ? "NO CLAUDE" : "no Gemini"}`);
     if (!ligar && !desligar) continue;
 
     const pasta = path.join(os.homedir(), "firehub-backups");
@@ -51,10 +51,10 @@ async function main() {
       const valor = JSON.stringify({ modeloDoRobo: MODELO_CLAUDE });
       await prisma.$executeRaw`UPDATE "User" SET "chatbotConfig" = COALESCE("chatbotConfig", '{}'::jsonb) || ${valor}::jsonb WHERE id = ${loja.id}`;
     } else {
-      await prisma.$executeRaw`UPDATE "User" SET "chatbotConfig" = "chatbotConfig" - 'modeloDoRobo' WHERE id = ${loja.id}`;
+      await prisma.$executeRaw`UPDATE "User" SET "chatbotConfig" = COALESCE("chatbotConfig", '{}'::jsonb) || ${JSON.stringify({ modeloDoRobo: "gemini" })}::jsonb WHERE id = ${loja.id}`;
     }
     const depois = await prisma.user.findUnique({ where: { id: loja.id }, select: { chatbotConfig: true } });
-    console.log(`  agora: robô ${(depois?.chatbotConfig as any)?.modeloDoRobo === MODELO_CLAUDE ? "NO CLAUDE" : "no Gemini"}`);
+    console.log(`  agora: robô ${(depois?.chatbotConfig as any)?.modeloDoRobo !== "gemini" ? "NO CLAUDE" : "no Gemini"}`);
   }
 }
 

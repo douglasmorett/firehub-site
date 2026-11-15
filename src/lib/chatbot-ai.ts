@@ -53,7 +53,7 @@ import { classificarFalhaDaIa, falhaQueManda, mensagemDeIaForaDoAr, mensagemDeIn
 import { ehPerguntaSobreOPedido } from "./problema-no-pedido";
 import { escolhasDoItem, opcoesPagasSemPar, trocoEObservacaoDoPedido } from "./item-do-robo";
 import { escolherModeloDoRobo, LEMBRETE_DO_MODELO_BARATO, LEMBRETE_DO_MODELO_BARATO_SO_REFERENCIA, MODELO_BARATO, MODELO_DE_PEDIDO } from "./modelo-do-robo";
-import { chaveDoClaude, lojaNoClaude, MODELO_CLAUDE, respostaDoClaude } from "./robo-no-claude";
+import { chaveDoClaude, lojaNoClaude, marcadaNoClaude, MODELO_CLAUDE, respostaDoClaude } from "./robo-no-claude";
 import { regrasDoRobo } from "./regras-do-robo";
 import { cardapioParaORobo } from "./cardapio-para-o-robo";
 import { lojasDoGrupo } from "./loja-ativa";
@@ -1691,7 +1691,7 @@ Lembre-se: conversa curta e contínua de WhatsApp, sem emoji automático nem rep
       });
       // Loja marcada para o Claude (lib/robo-no-claude.ts): o Haiku responde e o
       // 3.6 fica de reserva na mesma mensagem. O modo dono continua no Gemini.
-      const chaveClaude = !ownerContext && chatbotConfig?.modeloDoRobo === MODELO_CLAUDE ? await chaveDoClaude() : null;
+      const chaveClaude = !ownerContext && marcadaNoClaude(chatbotConfig) ? await chaveDoClaude() : null;
       const modelNames = !ownerContext && lojaNoClaude(chatbotConfig, chaveClaude)
         ? [MODELO_CLAUDE, MODELO_DE_PEDIDO]
         : escolhaDoModelo.modelo === MODELO_BARATO

@@ -35,6 +35,7 @@ import { ehNumeroDoDono } from '@/lib/numeros-do-dono';
 import { detectarPedidoDeAtendente, FRASE_DE_CHAMAR_ATENDENTE } from '@/lib/pedido-de-atendente';
 import { pausarRobo, roboEstaPausado, retomarRobo } from '@/lib/pausa-do-robo';
 import { registrarIncidenteDaIa, registrarSucessoDaIa } from '@/lib/saude-da-ia';
+import { marcadaNoClaude } from '@/lib/robo-no-claude';
 import {
   acrescentarDoCliente,
   chamadoDaConversa,
@@ -1795,7 +1796,7 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
       if (!falhaDaIa && !donoNaQueda && !callHuman && !ehODono) {
         const enxuta = enxugarResposta(replyText, {
           historico: history, mensagemDoCliente: transcription || textMessage,
-          tomNatural: chatbotConfig?.modeloDoRobo === "claude-haiku-5-5",
+          tomNatural: marcadaNoClaude(chatbotConfig),
         });
         if (enxuta.cortes.length) {
           console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] ✂️ Resposta enxugada para ${remoteJid}: ${[...new Set(enxuta.cortes)].join(", ")}.`);

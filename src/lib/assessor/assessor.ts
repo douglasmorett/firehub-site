@@ -26,7 +26,7 @@ import { hojeNaLoja, NOMES_DOS_DIAS } from "@/lib/relatorios/base";
 import { gravarFala, historicoParaOModelo } from "./conversa";
 import { oQueMudouNaLoja } from "./o-que-mudou";
 import { DECLARACOES_DO_ASSESSOR, FERRAMENTAS_QUE_GRAVAM, executarFerramentaDoAssessor, type ContextoDoAssessor } from "./ferramentas";
-import { chaveDoClaude, lojaNoClaude, MODELO_CLAUDE } from "@/lib/robo-no-claude";
+import { chaveDoClaude, lojaNoClaude, marcadaNoClaude, MODELO_CLAUDE } from "@/lib/robo-no-claude";
 import { rodarAssessorNoClaude } from "./assessor-no-claude";
 
 export const MODELOS_DO_ASSESSOR = ["gemini-3.6-flash", "gemini-2.5-flash"];
@@ -195,7 +195,7 @@ export async function conversarComOAssessor(
   let ouviDoClaude: string | null = null;
   // Loja com o robô no Claude (lib/robo-no-claude.ts): o assessor também, com o Gemini de reserva.
   const loja = await prisma.user.findUnique({ where: { id: ctx.franchiseeId }, select: { chatbotConfig: true } });
-  const chaveClaude = (loja?.chatbotConfig as any)?.modeloDoRobo === MODELO_CLAUDE ? await chaveDoClaude() : null;
+  const chaveClaude = marcadaNoClaude(loja?.chatbotConfig) ? await chaveDoClaude() : null;
   const modelos = opcoes?.modelos || (lojaNoClaude(loja?.chatbotConfig, chaveClaude) ? [MODELO_CLAUDE, ...MODELOS_DO_ASSESSOR] : MODELOS_DO_ASSESSOR);
   let modeloUsado = modelos[0];
   const uso = { entrada: 0, saida: 0, pensamento: 0, cache: 0 };

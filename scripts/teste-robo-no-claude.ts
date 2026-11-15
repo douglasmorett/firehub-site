@@ -89,8 +89,9 @@ async function main() {
 
   // 5. A marca da loja só vale com a chave; a do ambiente vem antes da matriz.
   assert.equal(lojaNoClaude({ modeloDoRobo: MODELO_CLAUDE }, "sk-teste"), true);
-  assert.equal(lojaNoClaude({}, "sk-teste"), false);
-  assert.equal(lojaNoClaude(null, "sk-teste"), false);
+  assert.equal(lojaNoClaude({}, "sk-teste"), true); // Claude é o padrão desde 15/11
+  assert.equal(lojaNoClaude(null, "sk-teste"), true);
+  assert.equal(lojaNoClaude({ modeloDoRobo: "gemini" }, "sk-teste"), false);
   assert.equal(lojaNoClaude({ modeloDoRobo: MODELO_CLAUDE }, null), false);
   assert.equal(await chaveDoClaude(), "sk-teste");
 
