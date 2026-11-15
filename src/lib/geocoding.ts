@@ -1230,7 +1230,19 @@ export async function verifyStoreDeliveryAddress(
       // muito além da área de entrega é homônimo: fica valendo a rua.
       const longeDaLoja = Math.max(30, 3 * maxRadiusKm);
       if (haversineDistanceKm(loja.lat, loja.lng, v.lat, v.lng) > longeDaLoja) return { ok: true, valor: null };
-      const ehOBairro = v.nivel === "area" || (!!nomeDeBairro(v.bairro || "") && bairroConfere(neigh, v.bairro));
+      // ── PRAÇA COM O NOME DO BAIRRO NÃO É O BAIRRO ──────────────────────
+      // Pizzaria do Costa (São Paulo, 15/11/2026): "Rua João Simões de Souza,
+      // 430" com o bairro dos Correios "Parque Rebouças" (CEP 05734-140), que o
+      // OSM não conhece. "Parque Rebouças, sao paulo" voltou a Praça Alexandre
+      // Francisco Rebouças (um parque, no Jardim Apurá), a 11,7 km — e ela,
+      // tida como área, virou o centro do bairro: a rua do cliente, achada a
+      // 1,5 km da loja (Vila Andrade), saiu "longe do bairro" e a cotação deu
+      // FORA. Lugar que se chama praça, rua, largo... é logradouro, não bairro:
+      // só vale se o bairro dele no mapa for o escrito (a "Praça Seca" do Rio).
+      const nomeDoLugar = normalizarParaComparar(v.displayName.split(",")[0] || "");
+      const ehOBairro =
+        (v.nivel === "area" && !TIPO_DE_VIA.test(nomeDoLugar)) ||
+        (!!nomeDeBairro(v.bairro || "") && bairroConfere(neigh, v.bairro));
       return ehOBairro ? r : { ok: true, valor: null };
     };
 

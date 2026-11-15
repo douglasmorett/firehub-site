@@ -688,6 +688,38 @@ async function main() {
   conferir("rua DENTRO do bairro escrito ainda é a régua do bairro (a rua do cliente longe dela não é aceita calada)",
     noBairroV.ponto?.lat === ruaComONomeDoBairro.lat && noBairroV.ponto?.origem === "bairro", noBairroV);
 
+  // Pizzaria do Costa (São Paulo, 15/11/2026): o bairro dos Correios "Parque
+  // Rebouças" não existe no OSM; perguntado por ele, o mapa devolve um PARQUE
+  // (leisure=park, "Praça Alexandre Francisco Rebouças") de outro bairro, a
+  // 11,7 km. A praça não é o centro do bairro: vale a rua do cliente.
+  zerar();
+  const joaoSimoes = aoSul(1.1, 0.0023);
+  const pracaRebougas = aoSul(7.5, 0.04);
+  const ruaJoaoSimoes = () => nominatim.set(`${norm("Rua João Simões de Souza")}|${norm("Cabo Frio")}`, { status: 200, corpo: [
+    lugar(joaoSimoes, { road: "Rua João Simões de Souza", suburb: "Comunidade Travinhas" }),
+  ] });
+  const pracaNoBairro = (suburb: string) => nominatim.set(norm("Parque Rebouças, Cabo Frio"), { status: 200, corpo: [
+    lugar(pracaRebougas, { suburb, classe: "leisure", tipo: "park",
+      display: `Praça Alexandre Francisco Rebouças, ${suburb}, Cabo Frio, Rio de Janeiro, Brasil` }),
+  ] });
+  ruaJoaoSimoes();
+  pracaNoBairro("Jardim Apurá");
+  osrm.set(chave4(joaoSimoes), osrmOk(1500));
+  const partesJoao = { street: "Rua João Simões de Souza", number: "430", neighborhood: "Parque Rebouças", city: "Cabo Frio" };
+  const joaoV = await avaliarEntrega(divinos, { endereco: "Rua João Simões de Souza, 430 - Parque Rebouças", partes: partesJoao });
+  conferir("praça com o NOME do bairro em outro bairro não é o centro do bairro: vale a rua do cliente (1,5 km)",
+    joaoV.resultado === "ATENDE" && joaoV.ponto?.lat === joaoSimoes.lat && joaoV.distanciaKm === 1.5 && joaoV.peloBairro !== true, joaoV);
+
+  // A praça que FICA no bairro escrito (a "Praça Seca" do Rio) continua sendo a
+  // régua: a rua do cliente longe dela não é aceita calada.
+  zerar();
+  ruaJoaoSimoes();
+  pracaNoBairro("Parque Rebouças");
+  osrm.set(chave4(pracaRebougas), osrmOk(9000));
+  const pracaNoBairroV = await avaliarEntrega(divinos, { endereco: "Rua João Simões de Souza, 430 - Parque Rebouças", partes: partesJoao });
+  conferir("praça DENTRO do bairro escrito ainda é a régua do bairro",
+    pracaNoBairroV.ponto?.lat === pracaRebougas.lat && pracaNoBairroV.ponto?.origem === "bairro", pracaNoBairroV);
+
   // ════════════════════════════════════════════════════════════════════════
   console.log("\n== Duas ruas no texto e rua homônima pelo bairro (Divinos, 25/09/2026, 20h34) ==");
   // Medido no OSM: a Travessa Pantanal existe em DOIS lugares de Cabo Frio — a
