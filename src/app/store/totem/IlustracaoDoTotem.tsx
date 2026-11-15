@@ -40,7 +40,7 @@ export function IlustracaoDoTotem() {
               </div>
               <Botao style={{ marginTop: "auto" }}>Adicionar ao carrinho</Botao>
             </Totem>
-            <span className="ilu-pula" aria-hidden style={{ position: "absolute", left: 60, bottom: 58, fontSize: 24, filter: "drop-shadow(0 3px 4px rgba(0,0,0,.3))" }}>👆</span>
+            <span className="ilu-pula" aria-hidden style={{ position: "absolute", left: 128, bottom: 26, fontSize: 24, filter: "drop-shadow(0 3px 4px rgba(0,0,0,.3))" }}>👆</span>
           </div>
         ),
       },
