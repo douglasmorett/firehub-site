@@ -97,6 +97,21 @@ function nomeComparavel(nome: unknown): string {
 }
 
 /**
+ * O nome que ESTE PC dá à impressora cadastrada. A mesma impressora
+ * compartilhada aparece como "\\trailer\DARUMA BOBINA" no PC do caixa e como
+ * "DARUMA BOBINA" no PC onde ela está ligada; o Assistente procura pelo nome
+ * exato e, sem achar, imprime na padrão do Windows (Speed Burguer, 16/11/2026:
+ * o fechamento do caixa saía na cozinha pelo Assistente do trailer). Sem lista
+ * do PC, ou sem equivalente nela, devolve o nome cadastrado.
+ */
+export function nomeNestePc(nome: string, impressorasDestePc?: string[] | null): string {
+  const lista = (impressorasDestePc || []).map((n) => String(n || "")).filter(Boolean);
+  if (!nome || lista.length === 0 || lista.includes(nome)) return nome;
+  const alvo = nomeComparavel(nome);
+  return lista.find((n) => nomeComparavel(n) === alvo) || nome;
+}
+
+/**
  * A impressora que recebe o papel do caixa, entre as cadastradas na loja.
  * `impressorasNoPc` (o que o Windows do PC do caixa enxerga, contado pelo
  * Assistente) serve para não escolher uma impressora que não existe lá: se a

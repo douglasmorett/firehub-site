@@ -4,7 +4,7 @@ import { camposDoAcrescimoParaImpressao } from "@/lib/acrescimo-no-credito";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { destinosDoPedido, impressoraDaViaDoEntregador, itensQueContamParaAVia, pedidoEhSoBebida, restoDoPedido, SUFIXO_DA_VIA_DO_ENTREGADOR } from "@/lib/roteamento-de-impressao";
-import { impressorasDaContaDaMesa, impressoraDoCaixa, impressoraUnicaDoPc } from "@/lib/impressao-da-conta";
+import { impressorasDaContaDaMesa, impressoraDoCaixa, impressoraUnicaDoPc, nomeNestePc } from "@/lib/impressao-da-conta";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { camposDeEntregaParaImpressao } from "@/lib/entrega-parceira";
@@ -1195,9 +1195,13 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
     // Uma impressora cadastrada → nela; várias → a da conta da mesa, senão a
     // que tira a comanda inteira; nenhuma cadastrada → a única de verdade que o
     // Windows do PC enxerga; várias no PC → sem destino (a padrão do Assistente).
-    const impressorasNoPc: string[] = Array.isArray((owner as any)?.printQueueEstado?.impressoras)
-      ? (owner as any).printQueueEstado.impressoras.map((n: unknown) => String(n))
-      : [];
+    // O PC que está perguntando AGORA vem primeiro: com dois Assistentes na
+    // loja, o estado salvo é o do último que passou, que pode ser o outro PC.
+    const impressorasNoPc: string[] = (estadoDoAssistente as any)?.impressoras?.length
+      ? (estadoDoAssistente as any).impressoras.map((n: unknown) => String(n))
+      : Array.isArray((owner as any)?.printQueueEstado?.impressoras)
+        ? (owner as any).printQueueEstado.impressoras.map((n: unknown) => String(n))
+        : [];
     const cadastradaDoCaixa = impressoraDoCaixa(printers, impressorasNoPc);
     const unicaDoPc = cadastradaDoCaixa ? null : impressoraUnicaDoPc(impressorasNoPc);
     const destinoDoCaixa: any = cadastradaDoCaixa || (unicaDoPc ? { name: unicaDoPc } : null);
@@ -1300,7 +1304,14 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
     // para o pedido, a via do entregador e a reimpressão; o que não é pedido
     // (conta, caixa, DANFE) passa intacto. Na dúvida, o job segue como veio.
     const comCamposDoSite = (job: any) => { try { return trabalhoParaOAssistente(job); } catch { return job; } };
-    return NextResponse.json({ jobs: [...jobs, ...jobsDaChegada, ...jobsDasVias, ...jobsDoCancelamento, ...jobsAvulsos, ...jobsDoCaixa, ...jobsReimpressos, ...jobsDanfe].map(comCamposDoSite).map(comBebidaCerta) });
+    // Cada destino com o nome que ESTE PC dá à impressora (compartilhada na rede
+    // = "\maquina\NOME" num PC e "NOME" no outro). Ver nomeNestePc.
+    const destesPc: string[] = Array.isArray((estadoDoAssistente as any)?.impressoras) ? (estadoDoAssistente as any).impressoras : [];
+    const comNomeDestePc = (job: any) => {
+      if (!destesPc.length || !Array.isArray(job?.destinos)) return job;
+      return { ...job, destinos: job.destinos.map((d: any) => (d && typeof d.printer === "string" ? { ...d, printer: nomeNestePc(d.printer, destesPc) } : d)) };
+    };
+    return NextResponse.json({ jobs: [...jobs, ...jobsDaChegada, ...jobsDasVias, ...jobsDoCancelamento, ...jobsAvulsos, ...jobsDoCaixa, ...jobsReimpressos, ...jobsDanfe].map(comCamposDoSite).map(comBebidaCerta).map(comNomeDestePc) });
   } catch (err: any) {
     // Sem autenticação neste GET: a mensagem crua do Prisma (com caminho de
     // arquivo do servidor e nome de coluna) não pode sair para quem chamar.
