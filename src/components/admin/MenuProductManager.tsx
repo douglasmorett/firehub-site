@@ -1418,7 +1418,9 @@ export default function MenuProductManager({
     if (isCombo && !editingId && !duplicandoDe && quantidadeDeItensNaComposicao(comboGroups, products) < 2) {
       setAbaForm("perguntas"); alert(ERRO_COMBO_SEM_COMPOSICAO); return;
     }
-    if (!name || !description) { setAbaForm("sobre"); alert("Preencha nome e descrição."); return; }
+    // A descrição é opcional: produto que veio do iFood/99/cópia nasce sem ela, e o lojista
+    // que só quer mudar o preço não pode ficar preso nesta trava (Divinos Burguer, 16/11/2026).
+    if (!name) { setAbaForm("sobre"); alert("Preencha o nome do produto."); return; }
     if (!price) { setAbaForm("preco"); alert("Preencha o preço de venda."); return; }
     // O servidor recusa isto com 400 de qualquer jeito (api/admin/menu-products);
     // aqui o lojista descobre antes de perder o resto do formulário.
@@ -1910,7 +1912,6 @@ export default function MenuProductManager({
   const avancarPasso = () => {
     if (abaForm === "sobre") {
       if (!name.trim()) { alert("Dê um nome ao produto."); return; }
-      if (!description.trim()) { alert("Escreva a descrição: é o que o cliente lê no cardápio."); return; }
       if (dynCategories.length === 0 || !category) { alert("Escolha a categoria."); return; }
     }
     if (abaForm === "preco") {
