@@ -66,7 +66,14 @@ class GarcomActivity : AppCompatActivity() {
     // ------------------------------------------------------------- telas
 
     /** Mesa com conta aberta, como as telas a carregam de uma para outra. */
-    private data class MesaAberta(val tableId: String, val sessaoId: String, val numero: Int, val rotulo: String?)
+    private data class MesaAberta(
+        val tableId: String,
+        val sessaoId: String,
+        val numero: Int,
+        val rotulo: String?,
+        /** Nome do cliente na conta (TableSession.customerName). */
+        val cliente: String? = null,
+    )
 
     private class ItemDoCarrinho(
         val produto: Produto,
@@ -660,12 +667,21 @@ class GarcomActivity : AppCompatActivity() {
                 maxLines = 1
             },
         )
+        val cliente = sessao?.let { texto(it, "customerName") }?.takeIf { it.isNotBlank() }
+        if (cliente != null) {
+            caixa.addView(
+                pecas.texto(cliente, 12f, R.color.texto_fraco, centralizado = true).apply {
+                    maxLines = 1
+                    ellipsize = android.text.TextUtils.TruncateAt.END
+                },
+            )
+        }
 
         caixa.setOnClickListener {
             val tableId = texto(mesa, "id") ?: return@setOnClickListener
             if (sessao != null) {
                 val id = texto(sessao, "id") ?: return@setOnClickListener
-                abrir(Tela.Mesa(MesaAberta(tableId, id, numeroDaMesa, rotulo)))
+                abrir(Tela.Mesa(MesaAberta(tableId, id, numeroDaMesa, rotulo, cliente)))
             } else {
                 perguntarSeAbre(tableId, numeroDaMesa, rotulo)
             }
@@ -674,17 +690,38 @@ class GarcomActivity : AppCompatActivity() {
     }
 
     private fun perguntarSeAbre(tableId: String, numeroDaMesa: Int, rotulo: String?) {
+        val campo = campoDoNomeDoCliente(null)
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.garcom_abrir_titulo, numeroDaMesa))
             .setMessage(R.string.garcom_abrir_texto)
+            .setView(emVolta(campo))
             .setNegativeButton(R.string.garcom_nao, null)
-            .setPositiveButton(R.string.garcom_abrir_sim) { _, _ -> abrirMesa(tableId, numeroDaMesa, rotulo) }
+            .setPositiveButton(R.string.garcom_abrir_sim) { _, _ ->
+                abrirMesa(tableId, numeroDaMesa, rotulo, campo.text.toString().trim().ifEmpty { null })
+            }
             .show()
     }
 
-    /** POST /api/store/table-sessions { tableId }, como o garçom web abre a mesa. */
-    private fun abrirMesa(tableId: String, numeroDaMesa: Int, rotulo: String?) {
+    /** Campo do nome do cliente (opcional), nos diálogos de abrir a mesa e de trocar o nome. */
+    private fun campoDoNomeDoCliente(atual: String?): EditText =
+        pecas.campo(
+            getString(R.string.garcom_nome_cliente_dica),
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS,
+            maximo = 80,
+            margemTopo = 0,
+        ).also { it.setText(atual ?: "") }
+
+    /** O campo encostaria na borda do diálogo sem esta margem. */
+    private fun emVolta(campo: View): View =
+        android.widget.FrameLayout(this).apply {
+            setPadding(pecas.dp(20), pecas.dp(8), pecas.dp(20), 0)
+            addView(campo)
+        }
+
+    /** POST /api/store/table-sessions { tableId, customerName? }, como o garçom web abre a mesa. */
+    private fun abrirMesa(tableId: String, numeroDaMesa: Int, rotulo: String?, cliente: String?) {
         val corpo = JSONObject().put("tableId", tableId)
+        if (cliente != null) corpo.put("customerName", cliente)
         chamar(
             getString(R.string.garcom_abrindo_mesa),
             { c -> ApiDoGarcom.post("/api/store/table-sessions", corpo, c) },
@@ -704,9 +741,31 @@ class GarcomActivity : AppCompatActivity() {
             if (id == null) {
                 mostrar(Tela.Mesas)
             } else {
-                abrir(Tela.Mesa(MesaAberta(tableId, id, numeroDaMesa, rotulo)))
+                abrir(Tela.Mesa(MesaAberta(tableId, id, numeroDaMesa, rotulo, cliente)))
             }
         }
+    }
+
+    /** PATCH /api/store/table-sessions/[id] { customerName } — o mesmo ✏️ do painel. Vazio apaga. */
+    private fun trocarNomeDoCliente(tela: Tela.Mesa) {
+        val mesa = tela.mesa
+        val campo = campoDoNomeDoCliente(mesa.cliente)
+        AlertDialog.Builder(this)
+            .setTitle(R.string.garcom_nome_cliente_titulo)
+            .setView(emVolta(campo))
+            .setNegativeButton(R.string.garcom_nao, null)
+            .setPositiveButton(R.string.garcom_nome_cliente_salvar) { _, _ ->
+                val novo = campo.text.toString().trim()
+                val caminho = "/api/store/table-sessions/" + ApiDoGarcom.codificar(mesa.sessaoId)
+                chamar(
+                    getString(R.string.garcom_nome_cliente_salvando),
+                    { c -> ApiDoGarcom.patch(caminho, JSONObject().put("customerName", novo), c) },
+                ) {
+                    informar(getString(R.string.garcom_nome_cliente_salvo))
+                    trocarPor(Tela.Mesa(mesa.copy(cliente = novo.ifEmpty { null })))
+                }
+            }
+            .show()
     }
 
     // ================================================================= MESA
@@ -821,6 +880,21 @@ class GarcomActivity : AppCompatActivity() {
             })
             conteudo.addView(caixa)
         }
+
+        val cliente = pecas.cartao()
+        cliente.addView(pecas.texto(getString(R.string.garcom_nome_cliente_rotulo), 15f, R.color.texto_fraco, negrito = true))
+        cliente.addView(
+            if (mesa.cliente.isNullOrBlank()) pecas.texto(getString(R.string.garcom_nome_cliente_vazio), 17f, R.color.texto_fraco, margemTopo = 4)
+            else pecas.texto(mesa.cliente, 19f, negrito = true, margemTopo = 4),
+        )
+        cliente.addView(
+            pecas.botao(
+                getString(if (mesa.cliente.isNullOrBlank()) R.string.garcom_nome_cliente_por else R.string.garcom_nome_cliente_trocar),
+                principal = false,
+                alturaDp = 48,
+            ) { trocarNomeDoCliente(tela) },
+        )
+        conteudo.addView(cliente)
 
         val itens = pecas.cartao()
         itens.addView(pecas.texto(getString(R.string.garcom_itens_lancados), 15f, R.color.texto_fraco, negrito = true))

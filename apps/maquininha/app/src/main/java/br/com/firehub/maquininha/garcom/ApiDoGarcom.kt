@@ -89,6 +89,10 @@ object ApiDoGarcom {
     fun post(caminho: String, corpo: JSONObject, cookie: String): Resposta =
         executar(caminho, "POST", corpo.toString(), cookie)
 
+    /** O HttpURLConnection do Android (okhttp por baixo) aceita PATCH; o do Java puro, não. */
+    fun patch(caminho: String, corpo: JSONObject, cookie: String): Resposta =
+        executar(caminho, "PATCH", corpo.toString(), cookie)
+
     fun delete(caminho: String, cookie: String): Resposta = executar(caminho, "DELETE", null, cookie)
 
     fun codificar(valor: String): String = URLEncoder.encode(valor, "UTF-8")

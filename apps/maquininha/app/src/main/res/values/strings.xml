@@ -131,6 +131,15 @@
     <string name="garcom_abrir_titulo">Abrir a mesa %1$d?</string>
     <string name="garcom_abrir_texto">A mesa fica no seu nome e já dá para lançar os itens.</string>
     <string name="garcom_abrir_sim">Abrir mesa</string>
+    <string name="garcom_nome_cliente_dica">Nome do cliente (opcional)</string>
+    <string name="garcom_nome_cliente_rotulo">CLIENTE</string>
+    <string name="garcom_nome_cliente_vazio">Sem nome</string>
+    <string name="garcom_nome_cliente_por">Pôr nome do cliente</string>
+    <string name="garcom_nome_cliente_trocar">Trocar nome</string>
+    <string name="garcom_nome_cliente_titulo">Nome do cliente</string>
+    <string name="garcom_nome_cliente_salvar">Salvar</string>
+    <string name="garcom_nome_cliente_salvando">Salvando o nome…</string>
+    <string name="garcom_nome_cliente_salvo">Nome salvo</string>
     <string name="garcom_abrindo_mesa">Abrindo a mesa…</string>
     <string name="garcom_mesa_ja_aberta">Esta mesa acabou de ser aberta por outra pessoa.</string>
     <string name="garcom_mesa_fechada">Esta mesa foi fechada no caixa.</string>
