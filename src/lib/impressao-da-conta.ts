@@ -87,7 +87,13 @@ export function impressorasDaContaDaMesa<T extends ImpressoraDaConta>(
 
 /** O nome do Windows, sem caixa nem espaço sobrando, para comparar. */
 function nomeComparavel(nome: unknown): string {
-  return String(nome || "").trim().toLowerCase();
+  // Impressora compartilhada na rede aparece no Windows como "\\maquina\NOME"
+  // e a loja cadastra só "NOME": comparar o último pedaço. Speed Burguer
+  // (16/11/2026): "\\trailer\DARUMA BOBINA" × "DARUMA BOBINA" tirava a do
+  // caixa da disputa e a abertura do caixa saía na cozinha.
+  const texto = String(nome || "").trim();
+  const semRede = texto.startsWith("\\\\") ? texto.slice(texto.lastIndexOf("\\") + 1) : texto;
+  return semRede.trim().toLowerCase();
 }
 
 /**
