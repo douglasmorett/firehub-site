@@ -257,6 +257,22 @@ console.log("\n10) Localização do aparelho x endereço digitado DEPOIS dela");
   const quebrado = async (p) => { if (!p.coords) throw new Error("mapa fora"); return avaliar(p); };
   const r6 = await avaliarEntregaDoRobo(quebrado, { endereco: "Rua X", gps: GPS_CASA, textoDepoisDoPonto: "Rua X" });
   conferir("o texto falhou no mapa: segue pela localização", r6.coords && r6.veredito.ponto.origem === "gps", r6);
+
+  // Divinos, 15/11/2026: localização ao lado da loja, o robô pede a rua e o
+  // número, a cliente responde "Rua diamante,53" — e o mapa acha "com certeza"
+  // a Rua Diamante HOMÔNIMA da Gamboa, longe. Só a rua não tira o ponto.
+  mapa.set("Rua diamante,53", achou(longe, { taxa: 12 }));
+  mapa.set("Rua diamante, 53, Cabo Frio", achou(longe, { taxa: 12 }));
+  mapa.set("Rua Diamante, 53 - Gamboa", achou(longe, { taxa: 12 }));
+  const cabo = (t) => ({ endereco: t, partes: partesDoEnderecoDigitado(t, "Cabo Frio"), gps: GPS_CASA, textoDepoisDoPonto: t });
+  const d1 = await avaliarEntregaDoRobo(avaliar, cabo("Rua diamante,53"));
+  conferir("Divinos: só a rua e o número, achada LONGE com certeza → fica a LOCALIZAÇÃO (R$ 5, não R$ 12)",
+    !d1.trocouPeloTexto && d1.coords?.lat === GPS_CASA.lat && d1.veredito.taxa === 5 && d1.veredito.ponto.origem === "gps", d1);
+  const d2 = await avaliarEntregaDoRobo(avaliar, cabo("Rua diamante, 53, Cabo Frio"));
+  conferir("… a cidade escrita não é bairro: fica a localização", !d2.trocouPeloTexto && d2.coords?.lat === GPS_CASA.lat, d2);
+  const d3 = await avaliarEntregaDoRobo(avaliar, cabo("Rua Diamante, 53 - Gamboa"));
+  conferir("com o BAIRRO escrito e longe: o cliente disse onde é, vale o texto",
+    d3.trocouPeloTexto && d3.coords === null && d3.veredito.taxa === 12, d3);
 }
 
 console.log("\n11) Quem só mandou a localização: entrega ou retirada?");

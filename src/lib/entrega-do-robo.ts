@@ -365,7 +365,8 @@ export function semBairroInformado(
  *
  * Com a localização do cliente e um endereço digitado depois dela, as duas
  * medidas correm juntas (o mesmo prazo, não o dobro) e `pontoDaEntregaDoRobo`
- * escolhe. `coords` devolvido é o ponto do cliente que ficou valendo (null se
+ * escolhe — desde que o texto diga mais que a rua (rua sem bairro fica no
+ * ponto). `coords` devolvido é o ponto do cliente que ficou valendo (null se
  * o texto venceu): é ele que decide se ainda se pede localização e o que vai
  * gravado no pedido.
  */
@@ -390,7 +391,16 @@ export async function avaliarEntregaDoRobo(
     avaliar({ ...base, endereco: texto, coords: null }).catch(() => null),
     avaliar({ ...base, coords: gps }),
   ]);
-  if (peloTexto && pontoDaEntregaDoRobo(peloTexto, gps) === "texto") {
+  // Só a RUA (e o número), sem bairro, não tira o ponto do aparelho: é a
+  // resposta ao "me passa a rua e o número" que o robô pede depois da
+  // localização, e nome de rua se repete pela cidade. Divinos, 15/11/2026: a
+  // cliente mandou a localização ao lado da loja, respondeu "Rua diamante,53"
+  // e o mapa achou "com certeza" a Rua Diamante da Gamboa, a 2 km dali — o robô
+  // "corrigiu" a taxa de R$ 5 para R$ 12. Para trocar, o cliente diz onde é
+  // (o bairro) ou a frase de mudança (`clienteIndicaOutroLugar`).
+  const doTexto = partesDoEnderecoDigitado(texto, pedido.partes?.city);
+  const soARua = Boolean(doTexto?.street) && !doTexto?.neighborhood;
+  if (peloTexto && !soARua && pontoDaEntregaDoRobo(peloTexto, gps) === "texto") {
     return { veredito: peloTexto, coords: null, trocouPeloTexto: true };
   }
   return { veredito: peloPonto, coords: gps, trocouPeloTexto: false };

@@ -18,7 +18,9 @@
  *   3. a loja sem ponto no mapa não faz o robô pedir a localização do cliente;
  *   4. sem localização, a conversa e a gravação decidem igual (partes/bairro
  *      nos dois lados — R1);
- *   5. a oferta da regra 18a não conta como "já pedi a localização".
+ *   5. a oferta da regra 18a não conta como "já pedi a localização";
+ *   6. só a rua e o número (sem bairro), achados com certeza longe — a rua
+ *      homônima —, não tiram a localização (Divinos, 15/11/2026).
  *
  * Sem rede e sem banco: Prisma falso, Nominatim e roteador no `fetch`.
  */
@@ -252,6 +254,35 @@ async function main() {
   conferir("… pelo centro do bairro: os dois fecham PELO BAIRRO, sem pedir a localização",
     c6.pedirLocalizacao === null && g6.pedirLocalizacao === null && c6.veredito.peloBairro === true && g6.veredito.peloBairro === true,
     { c: c6.pedirLocalizacao, g: g6.pedirLocalizacao, pelo: [c6.veredito.peloBairro, g6.veredito.peloBairro] });
+
+  // ════════════════════════════════════════════════════════════════════════
+  console.log("\n== 6. Localização ao lado da loja → \"Rua diamante,53\" achada com certeza LONGE (homônima): fica a localização ==");
+  // Divinos, 15/11/2026: o robô "corrigiu" a taxa de R$ 5 para R$ 12 pela Rua
+  // Diamante da Gamboa. A cliente só respondeu a rua e o número que ele pediu.
+  zerar();
+  const aoLado = { lat: -22.85314, lng: -42.02884 };
+  ruas.set(chave4(aoLado), 300);
+  const gamboa = { lat: -22.872838, lng: -42.029142 };
+  ruas.set(chave4(gamboa), 4700);
+  regrasDoMapa.push({ contem: "rua diamante", resposta: [lugar(gamboa, { road: "Rua Diamante", suburb: "Gamboa" })] });
+  const ruaDiamante = "Rua diamante,53";
+  const soADiamante = await avaliarEntrega(DIVINOS as any, { endereco: ruaDiamante, partes: robo.partesDoEnderecoDigitado(ruaDiamante, "Cabo Frio") });
+  conferir("(o mapa acha a Rua Diamante da Gamboa com certeza: sozinha ela daria R$ 20)",
+    soADiamante.resultado === "ATENDE" && soADiamante.taxa === 20 && !soADiamante.pedeConfirmacao && !soADiamante.aproximado && soADiamante.ponto?.origem === "mapa", soADiamante);
+  const conversaDivinos = [
+    { sender: "user", text: "quero 1 x-tudo pra entrega" },
+    { sender: "user", text: whats.textoDaLocalizacao(aoLado) },
+    { sender: "bot", text: "Recebi sua localização, e a loja atende esse endereço! Taxa R$ 5,00. Me passa a rua e o número?" },
+    { sender: "user", text: "Ao lado da igreja azul" },
+    { sender: "user", text: "Aqui no afg" },
+    { sender: "bot", text: "Perfeito! Me diz o nome da rua e o número da casa?" },
+  ];
+  const c7 = await cotacaoDaConversa(DIVINOS, conversaDivinos, ruaDiamante);
+  conferir("a rua digitada fica como complemento da localização", c7.estado.localizacao?.lat === aoLado.lat && c7.estado.localizacao?.enderecoDigitadoDepois === ruaDiamante, c7.estado);
+  conferir("cotação: R$ 5 pela LOCALIZAÇÃO, sem 'corrigir' a taxa pela rua homônima",
+    !c7.trocouPeloTexto && c7.veredito.taxa === 5 && c7.veredito.ponto?.origem === "gps" && c7.coords?.lat === aoLado.lat && c7.pedirLocalizacao === null, { veredito: c7.veredito, trocou: c7.trocouPeloTexto });
+  const g7 = await gravacao(DIVINOS, { address: "Rua Diamante, 53", street: "Rua Diamante", number: "53" }, c7.estado.localizacao);
+  conferir("gravação igual: R$ 5, ponto 'gps' do aparelho", !g7.trocouPeloTexto && g7.veredito.taxa === 5 && g7.ponto?.origem === "gps" && g7.ponto?.lat === aoLado.lat, g7.ponto);
 
   console.log(`\n${ok} ok, ${falhou} falharam`);
   process.exit(falhou ? 1 : 0);
