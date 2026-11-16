@@ -112,5 +112,20 @@ console.log("\n8) Sem nada para cortar, o texto sai idêntico");
   conferir("idêntico", r.texto === t && r.cortes.length === 0, JSON.stringify(r));
 }
 
+console.log("\n9) Charlie Brown, 15/11: 'Manda a chave' é Pix — não pergunta a forma de pagamento de novo");
+{
+  const pergunta = "Anotado! Total de 62 reais. Vai pagar por Pix, cartão ou dinheiro?";
+  const r = enx(pergunta, [cli("Manda a chave")], "Av. João Pinheiro, 2835");
+  conferir("'Manda a chave' no histórico → a pergunta sai", !/cart[aã]o ou dinheiro/i.test(r.texto) && /62 reais/.test(r.texto), r.texto);
+  const r2 = enx(pergunta, [], "Manda a chave");
+  conferir("'Manda a chave' agora → a pergunta sai", !/cart[aã]o ou dinheiro/i.test(r2.texto), r2.texto);
+  const r3 = enx(pergunta, [], "qual a chave pix?");
+  conferir("'qual a chave pix?' também é Pix", !/cart[aã]o ou dinheiro/i.test(r3.texto), r3.texto);
+  const r4 = enx(pergunta, [], "Me passa a chave");
+  conferir("'Me passa a chave' também", !/cart[aã]o ou dinheiro/i.test(r4.texto), r4.texto);
+  const r5 = enx(pergunta, [], "Deixa na portaria que perdi a chave do portão");
+  conferir("'perdi a chave do portão' NÃO é pagamento", /Pix, cartão ou dinheiro\?/.test(r5.texto), r5.texto);
+}
+
 console.log(falhas === 0 ? "\nTUDO CERTO\n" : `\n${falhas} FALHA(S)\n`);
 process.exit(falhas === 0 ? 0 : 1);

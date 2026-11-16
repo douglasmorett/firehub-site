@@ -106,6 +106,13 @@ const PUXA_VENDA =
 /** A forma de pagamento dita pelo cliente (não a pergunta "aceita cartão?"). */
 const FORMA_DE_PAGAMENTO = palavra("pix|dinheiro|esp[eé]cie|cart[aã]o|cr[eé]dito|d[eé]bito|maquininha|vale[- ]refei[cç][aã]o|vr|ticket|alelo|sodexo");
 const PERGUNTA_DO_CLIENTE = /\?|^\s*(aceita|aceitam|voc[eê]s aceitam|pode|posso|tem|d[aá] pra|da pra)(?!\p{L})/iu;
+/**
+ * "Manda a chave", "me passa a chave", "qual a chave pix?": o cliente pediu a
+ * chave Pix — escolheu Pix, mesmo perguntando. "Perdi a chave do portão" não
+ * conta (Charlie Brown 15/11/2026: o robô repetiu "Pix, cartão ou dinheiro?").
+ */
+const PEDE_A_CHAVE =
+  /(?<!\p{L})(?:manda|mande|me\s+manda|passa|me\s+passa|envia|me\s+envia|me\s+d[aá]|qual\s+(?:[eé]\s+)?a|cad[eê])\s+(?:a\s+|sua\s+|tua\s+)?chave(?!\p{L})|^\s*(?:a\s+)?chave(?:\s+pix)?[\s.!?]*$/iu;
 
 /** A pergunta do robô sobre como o cliente vai pagar. */
 const PERGUNTA_DE_PAGAMENTO =
@@ -214,7 +221,7 @@ export function enxugarResposta(
   // Pagamento dito: em qualquer linha da mensagem atual ou do histórico que
   // não seja pergunta dele ("aceita cartão?").
   const linhasDoCliente = doCliente.flatMap((t) => t.split(/\n+/u));
-  const pagamentoDito = linhasDoCliente.some((t) => FORMA_DE_PAGAMENTO.test(t) && !PERGUNTA_DO_CLIENTE.test(t));
+  const pagamentoDito = linhasDoCliente.some((t) => (FORMA_DE_PAGAMENTO.test(t) && !PERGUNTA_DO_CLIENTE.test(t)) || PEDE_A_CHAVE.test(t));
   const trocoDito = linhasDoCliente.some((t) => TROCO_DITO.test(t));
   const roboJaPerguntouOutroPedido = (o.historico || []).some(
     (m) => m && m.sender === "bot" && PERGUNTA_DE_OUTRO_PEDIDO.test(String(m.text || "")) && /\?/.test(String(m.text || "")),
