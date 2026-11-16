@@ -5,7 +5,7 @@ import { getAsaasKey } from "@/lib/asaas";
  * EMBAIXADOR DO CURSO "O Jogo da Recorrência" (Douglas, 11/11/2026).
  *
  * O aluno se cadastra sozinho pelo link que só existe dentro do curso e já sai
- * embaixador ativo, com 20% recorrente. É a exceção ao "ninguém vira embaixador
+ * embaixador ativo, com 30% recorrente. É a exceção ao "ninguém vira embaixador
  * por formulário" de /seja-embaixador — e só é seguro por duas travas:
  *
  *   1. O endereço tem um código que só o curso tem (`CODIGO_DO_CURSO`). Vazou?
@@ -22,7 +22,7 @@ import { getAsaasKey } from "@/lib/asaas";
  */
 
 export const CODIGO_DO_CURSO = "jdr-7q4m9x2k";
-export const COMISSAO_DO_CURSO = 20;
+export const COMISSAO_DO_CURSO = 30; // 30% desde 16/11/2026 (Douglas: "libera 30% pra ele no firehub")
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
