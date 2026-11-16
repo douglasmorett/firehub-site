@@ -92,6 +92,26 @@ export function ehGrupoDeFracao(priceRule: unknown): boolean {
   return r === "MAIOR" || r === "MEDIA";
 }
 
+/**
+ * Os sabores de uma pizza da Wabiz, pelo nome que a tradução monta
+ * (lib/wabiz-traducao.ts): "Pizza Calabresa", "Pizza 1/2 Calabresa + 1/2
+ * Portuguesa (G)", às vezes com " | opções" atrás. Cada sabor vem com a sua
+ * fração da pizza, porque a ficha do sabor é a da pizza inteira (ver
+ * ehGrupoDeFracao). Meio a meio com alguma parte fora do "n/d Sabor" não
+ * devolve nada: melhor sem baixa que baixa inventada.
+ */
+export function saboresDaPizzaDaWabiz(nome: string): { sabor: string; fracao: number }[] {
+  const base = String(nome || "").split(" | ")[0].trim()
+    .replace(/^pizza\s+/i, "")
+    .replace(/\s*\([^()]*\)$/, "")
+    .trim();
+  const partes = base.split(" + ").map((p) => p.trim());
+  if (partes.length === 1) return base ? [{ sabor: base, fracao: 1 }] : [];
+  const fracoes = partes.map((p) => p.match(/^(\d+)\/(\d+)\s+(.+)$/));
+  if (fracoes.some((m) => !m || Number(m[2]) <= 0)) return [];
+  return fracoes.map((m) => ({ sabor: m![3].trim(), fracao: Number(m![1]) / Number(m![2]) }));
+}
+
 function chaveNormalizada(valor: string): string {
   return valor.trim().toLowerCase();
 }
@@ -479,13 +499,43 @@ export async function deductStockForOrder(orderId: string) {
               },
             },
           });
+          // ── A PIZZA DA WABIZ É O(S) SABOR(ES) ──────────────────────────
+          //
+          // A Wabiz vira "Pizza Calabresa" ou "Pizza 1/2 Calabresa + 1/2
+          // Portuguesa" (lib/wabiz-traducao.ts), e a ficha está no sabor
+          // ("Calabresa"): pelo nome inteiro nunca casava, e a pizza da Wabiz
+          // não baixava nada (NIK, 16/11/2026). Cada sabor entra com a sua
+          // fração — meia ficha de cada no meio a meio.
+          const ehWabiz = order.source === "WABIZ" || String(item.menuProductId || "").startsWith("wabiz-");
+          if (!real && ehWabiz) {
+            const dosSabores: typeof receita = [];
+            for (const { sabor, fracao } of saboresDaPizzaDaWabiz(rotuloDoItem)) {
+              const doSabor = await tx.menuProduct.findFirst({
+                where: {
+                  franchiseeId: order.franchiseeId,
+                  active: true,
+                  name: { equals: sabor, mode: "insensitive" },
+                  NOT: { id: { startsWith: "ifood-" } },
+                  recipeItems: { some: {} },
+                },
+                select: { id: true, recipeItems: SELECT_DA_OPCAO.menuProduct.select.recipeItems },
+              });
+              for (const r of doSabor?.recipeItems ?? []) {
+                dosSabores.push({ ...r, quantityConsumed: r.quantityConsumed * fracao } as (typeof receita)[number]);
+              }
+            }
+            if (dosSabores.length > 0) {
+              receita = dosSabores;
+              console.log(`[Stock] "${rotuloDoItem}" (Wabiz) baixando pela ficha do(s) sabor(es).`);
+            }
+          }
           if (real) {
             receita = real.recipeItems as typeof receita;
             console.log(
               `[Stock] "${rotuloDoItem}" veio do marketplace sem ficha própria; ` +
                 `usando a ficha técnica do produto do cardápio (${real.id}).`
             );
-          } else if (menuProduct && !menuProduct.recipeItems?.length) {
+          } else if (receita.length === 0 && menuProduct && !menuProduct.recipeItems?.length) {
             console.warn(
               `[Stock] ⚠️ "${rotuloDoItem}" (pedido ${order.id}) não tem ficha técnica e ` +
                 `não achei produto de mesmo nome no cardápio — nada foi baixado por este item.`
