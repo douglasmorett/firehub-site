@@ -204,5 +204,36 @@ confere(
   { BALCAO: ["Item avulso"], "COZINHA PIZZA": ["Item avulso"], "COZINHA ENTREGA RAGNA": ["Thor", "Item avulso"], BAR: ["Caipiroska", "Item avulso"] }
 );
 
+console.log("\n— Delivery lançado no PDV segue o delivery (Speed Burguer, 16/11/2026) —");
+const SPEED: ImpressoraConfigurada[] = [
+  { name: "DARUMA", modulos: ["salao"], categories: [] },
+  { name: "CAIXA2", modulos: ["delivery"], categories: [] },
+];
+confere(
+  "PDV com entrega (DELIVERY) vai na CAIXA2 (delivery), não na DARUMA (salão)",
+  papel(SPEED, pedido("PRESENCIAL", [["Burger", "Lanches"]], { deliveryType: "DELIVERY" })),
+  { CAIXA2: ["Burger"] }
+);
+confere(
+  "PDV balcão (RETIRADA) continua no salão",
+  papel(SPEED, pedido("PRESENCIAL", [["Burger", "Lanches"]], { deliveryType: "RETIRADA" })),
+  { DARUMA: ["Burger"] }
+);
+confere(
+  "PDV sem deliveryType continua no salão (regra de sempre)",
+  papel(SPEED, pedido("PRESENCIAL", [["Burger", "Lanches"]])),
+  { DARUMA: ["Burger"] }
+);
+confere(
+  "totem nunca vira delivery, mesmo com o tipo",
+  papel(SPEED, pedido("TOTEM", [["Burger", "Lanches"]], { deliveryType: "DELIVERY" })),
+  { DARUMA: ["Burger"] }
+);
+confere(
+  "loja sem módulo escolhido (lista vazia) segue recebendo o delivery do PDV nas duas",
+  papel([{ name: "A", categories: [] }, { name: "B", categories: [] }], pedido("PRESENCIAL", [["Burger", "Lanches"]], { deliveryType: "DELIVERY" })),
+  { A: ["Burger"], B: ["Burger"] }
+);
+
 console.log(falhas ? `\n❌ ${falhas} falha(s)` : "\n✅ tudo certo");
 process.exit(falhas ? 1 : 0);

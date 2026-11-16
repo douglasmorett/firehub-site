@@ -698,7 +698,7 @@ export async function printOrder(
   // roteamento-de-impressao.ts → impressorasPeloTipoDoPedido).
   printersToUse = impressorasPeloTipoDoPedido(printersToUse, order as any);
 
-  const modulo = moduloDoPedido((order as any).source);
+  const modulo = moduloDoPedido((order as any).source, (order as any).deliveryType);
   const doModulo = printersToUse.filter(p => impressoraAtendeModulo(p.modulos, modulo));
 
   // Nenhuma impressora configurada para este mundo: imprime em todas, em vez

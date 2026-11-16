@@ -36,9 +36,15 @@ export const FONTES_DO_SALAO = ["PRESENCIAL", "PDV", "BALCAO", "MESA", "TOTEM"];
  * que precisa de endereço e de via do entregador, e imprimir demais é menos
  * grave do que a comanda de uma origem nova não sair de lugar nenhum.
  */
-export function moduloDoPedido(source: string | null | undefined): ModuloDePedido {
+export function moduloDoPedido(source: string | null | undefined, deliveryType?: string | null): ModuloDePedido {
   const s = (source || "").trim().toUpperCase();
-  return FONTES_DO_SALAO.includes(s) ? "salao" : "delivery";
+  if (!FONTES_DO_SALAO.includes(s)) return "delivery";
+  // Entrega lançada no PDV/balcão (cliente que ligou) é DELIVERY: precisa da via
+  // com endereço e vai para a impressora de delivery, não para a do salão
+  // (Speed Burguer, 16/11/2026: o delivery do PDV saía na DARUMA, só de salão).
+  // Só vale com o tipo explícito; sem `deliveryType` segue a regra de sempre.
+  if (s !== "TOTEM" && s !== "MESA" && String(deliveryType ?? "").trim().toUpperCase() === "DELIVERY") return "delivery";
+  return "salao";
 }
 
 /**

@@ -195,7 +195,7 @@ export function itensParaImpressora<T extends ItemDoPedido>(
   pedido: { source?: unknown; items?: T[] | null },
   pedidas?: Set<string>
 ): T[] | null {
-  const modulo: ModuloDePedido = moduloDoPedido(pedido?.source as any);
+  const modulo: ModuloDePedido = moduloDoPedido(pedido?.source as any, (pedido as any)?.deliveryType);
   if (!impressoraAtendeModulo(impressora.modulos as any, modulo)) return null;
   return itensDaImpressora(impressora, pedido, pedidas);
 }
@@ -470,7 +470,7 @@ export function impressorasPeloPedidoSoDeBebida<P extends ImpressoraConfigurada>
   pedido: { source?: unknown; items?: ItemDoPedido[] | null },
   palavrasDaLoja?: string | string[] | null
 ): P[] {
-  const modulo = moduloDoPedido(pedido?.source as any);
+  const modulo = moduloDoPedido(pedido?.source as any, (pedido as any)?.deliveryType);
   const deBebida = impressoras.filter((p) => p.pedidoSoDeBebida === true && impressoraAtendeModulo(p.modulos as any, modulo));
   if (deBebida.length > 0 && pedidoEhSoBebida(pedido, palavrasDaLoja)) return deBebida;
   const comBebida = deBebida.some((p) => p.pedidoComBebida === true) && pedidoTemBebida(pedido, palavrasDaLoja);
@@ -598,7 +598,7 @@ export function destinosDoPedido<T extends ItemDoPedido>(
   // robô e do site pelo painel roteado por categoria, e pela fila com
   // `destinos` vazio — uma via só, na impressora padrão do Assistente, sem a
   // cozinha. O mesmo pedido saía de dois jeitos conforme houvesse aba aberta.
-  const modulo = moduloDoPedido(pedido?.source as any);
+  const modulo = moduloDoPedido(pedido?.source as any, (pedido as any)?.deliveryType);
   const doModulo = candidatas.filter((imp) => impressoraAtendeModulo(imp.modulos as any, modulo));
   const atendem = doModulo.length > 0 ? doModulo : candidatas;
 
@@ -676,7 +676,7 @@ export function impressoraDaViaDoEntregador<T extends ImpressoraConfigurada>(
     impressorasPeloTipoDoPedido((impressoras || []).filter((p) => p && texto(p.name)), pedido as any),
     pedido
   );
-  const modulo = moduloDoPedido(pedido?.source as any);
+  const modulo = moduloDoPedido(pedido?.source as any, (pedido as any)?.deliveryType);
   const doModulo = daLoja.filter((imp) => impressoraAtendeModulo(imp.modulos as any, modulo));
   const candidatas = doModulo.length > 0 ? doModulo : daLoja;
   const marcadas = candidatas.filter((imp) => imp.viaDoEntregador === true);
