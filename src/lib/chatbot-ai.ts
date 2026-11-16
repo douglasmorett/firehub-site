@@ -2,7 +2,7 @@ import { montarResumoGerencial, resumoEmTexto } from "@/lib/painel-do-dono";
 import { caixaParaPedidoOnline } from "@/lib/caixa-aberto-servidor";
 import { estadoDaLoja, instrucaoDeHorario } from "@/lib/loja-aberta";
 import { lojaFechadaPelaQueda } from "@/lib/loja-sem-conexao-no-banco";
-import { avaliarEntrega, bairroCadastrado, bairrosAtendidos, descreverVeredicto, minimoDaZona, modoDaArea, type LojaParaEntrega, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
+import { avaliarEntrega, bairroNoEndereco, bairrosAtendidos, descreverVeredicto, minimoDaZona, modoDaArea, type LojaParaEntrega, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
 import { bairrosComMinimoProprio, minimoDaEntregaNoBairro } from "@/lib/minimo-do-bairro";
 import { lerApelidos } from "@/lib/bairro-pelo-endereco";
 import { limitesDeAtendimento } from "@/lib/limite-de-atendimento";
@@ -1161,8 +1161,10 @@ export async function processChatbotAI(
    */
   const ehRota = String((user as any).deliveryZoneType || "").toUpperCase() === "ROTA";
   // O bairro pode estar no endereço que o WhatsApp anexou ao ponto: aqui ele conta.
+  // O nome da RUA não conta ("Av. João Pinheiro" ≠ bairro Joao Pinheiro); uma
+  // fala por linha, para a rua de uma não engolir o bairro dito na seguinte.
   const bairroNoTexto = modoDaAreaDaLoja === "BAIRRO"
-    ? bairroCadastrado(falasRecentesDoCliente.map((t) => semCoordenadasDaLocalizacao(t)).join(" "), user)
+    ? bairroNoEndereco(falasRecentesDoCliente.map((t) => semCoordenadasDaLocalizacao(t)).join("\n"), user)
     : null;
   /** O endereço que o cliente escreveu: o mais recente (e o bairro que ele mandou em seguida). */
   const enderecoDigitado = enderecoDasFalas(digitadoPeloCliente.filter((t) => addressRegex.test(t)));

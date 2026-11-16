@@ -375,6 +375,29 @@ export function bairroCadastrado(texto: unknown, lista: BairroAtendido[] | LojaP
   return contidos[0] ? { name: contidos[0].name, fee: contidos[0].fee, time: contidos[0].time, minimo: contidos[0].minimo ?? null } : null;
 }
 
+/**
+ * O nome do logradouro: "Av. João Pinheiro" em "Av. João Pinheiro, 2835 - Centro".
+ * Vai do tipo (rua, av., travessa…) até a vírgula, o hífen, o número, a quebra
+ * de linha ou a palavra "bairro".
+ */
+const NOME_DO_LOGRADOURO =
+  /(^|[^\p{L}\p{N}])((?:rua|r\.|avenida|av\.?|travessa|trav\.|tv\.|alameda|al\.|rodovia|rod\.|estrada|estr?\.|pra[cç]a|p[cç]a\.|largo)\s+[^,\-–—\n\d;:!?()]+?)(?=\s*(?:[,\-–—\n\d;:!?()]|\bbairro\b|$))/giu;
+
+/**
+ * O bairro cadastrado que um ENDEREÇO indica: `bairroCadastrado` sem olhar o
+ * nome da rua. Charlie Brown 15/11/2026: "Av. João Pinheiro, 2835" casava o
+ * bairro "Joao Pinheiro" (R$ 8) e o robô cotou sem perguntar o bairro — o
+ * cliente era de outro (R$ 4). Sem bairro no resto do texto, o fluxo pergunta.
+ * O trecho que é, ele todo, um bairro cadastrado ("Praça Seca") fica.
+ */
+export function bairroNoEndereco(texto: unknown, lista: BairroAtendido[] | LojaParaEntrega): BairroAtendido | null {
+  const bairros = Array.isArray(lista) ? lista : bairrosAtendidos(lista);
+  const nomes = new Set(bairros.flatMap((b) => [b.name, ...(b.aliases || [])]).map(normalizarTexto));
+  const semRua = String(texto ?? "").replace(NOME_DO_LOGRADOURO, (tudo, antes: string, trecho: string) =>
+    nomes.has(normalizarTexto(trecho)) ? tudo : `${antes} `);
+  return bairroCadastrado(semRua, bairros);
+}
+
 /** Acima disto, o mapa achou um homônimo em outra cidade, não o cliente. */
 const DISTANCIA_ABSURDA_KM = 60;
 
@@ -668,7 +691,7 @@ async function avaliarEntregaNoMapa(
     const achado =
       bairroCadastrado(pedido.bairro, lista) ||
       bairroCadastrado(pedido.partes?.neighborhood, lista) ||
-      bairroCadastrado(endereco, lista);
+      bairroNoEndereco(endereco, lista);
     if (achado) {
       return {
         modo, resultado: "ATENDE", taxa: achado.fee, tempoMin: achado.time, bairro: achado.name,

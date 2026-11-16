@@ -82,7 +82,7 @@
  * scripts/teste-areas-de-entrega.ts.
  */
 import {
-  areasDesenhadas, bairroCadastrado, bairrosAtendidos, modoDaArea, normalizarTexto,
+  areasDesenhadas, bairroCadastrado, bairroNoEndereco, bairrosAtendidos, modoDaArea, normalizarTexto,
   type BairroAtendido, type LojaParaEntrega, type ModoDaArea,
 } from "@/lib/area-de-entrega";
 import { areaDeRiscoDoPonto, dentroDoPoligono } from "@/lib/area-de-risco";
@@ -544,7 +544,7 @@ export function areaDoPedido(pedido: PedidoParaAreas, cfg: ConfigDaLoja, vistos:
     // chamar de "fora" o bairro que a loja cadastrou seria mentir para ela.
     const grupo = bairroDoTexto ? chaveDeGrupo(bairroDoTexto) : "";
     const achado = bairroCadastrado(bairroDoTexto, cfg.bairros)
-      || bairroCadastrado(pedido.customerAddress, cfg.bairros)
+      || bairroNoEndereco(pedido.customerAddress, cfg.bairros)
       || (grupo ? cfg.bairros.find((b) => chaveDeGrupo(b.name) === grupo) || null : null);
     if (achado) {
       const ordem = cfg.bairros.findIndex((b) => b.name === achado.name);
