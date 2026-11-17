@@ -103,6 +103,18 @@ export function linkDoCardapioDaLoja(loja: { slug?: string | null; chatbotConfig
   return loja.slug ? `https://firehubfood.com.br/loja/${loja.slug}` : "";
 }
 
+/**
+ * A loja recebe o "oi" com o link de cara? O padrão é SIM (decisão do dono,
+ * 24/09/2026). A exceção é por loja, ligada pelo atendimento em
+ * `chatbotConfig.saudacaoSemLink`: Pizzaria Charles (Meruoca, 17/11/2026) —
+ * interior, o cliente para de responder quando recebe o link e quer pedir
+ * por aqui. Com a chave, o "oi" vai para o modelo, que segue o customPrompt
+ * da loja (perguntar o pedido; o cardápio digital fica como opção depois).
+ */
+export function lojaMandaLinkNaSaudacao(chatbotConfig: unknown): boolean {
+  return (chatbotConfig as { saudacaoSemLink?: unknown } | null)?.saudacaoSemLink !== true;
+}
+
 export type DadosDaBoasVindas = {
   primeiroNome?: string | null;
   nomeDoAtendente?: string | null;
