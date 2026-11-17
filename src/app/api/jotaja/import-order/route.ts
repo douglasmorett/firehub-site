@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { lojaBloqueadaPorMensalidade, MENSAGEM_CONTA_BLOQUEADA } from "@/lib/loja-bloqueada";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +22,12 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
     const targetFranchiseeId = user.ownerId || user.id;
+
+    // Conta bloqueada por mensalidade não importa pedido (lib/loja-bloqueada.ts),
+    // igual ao resgate do iFood (api/ifood/import-order).
+    if (await lojaBloqueadaPorMensalidade(targetFranchiseeId)) {
+      return NextResponse.json({ error: MENSAGEM_CONTA_BLOQUEADA }, { status: 403 });
+    }
     const body = await req.json();
 
     const {
