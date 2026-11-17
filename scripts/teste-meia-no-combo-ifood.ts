@@ -69,5 +69,20 @@ confere(
   ["Calabresa", "Bacon"],
 );
 
+// Hakim Centro, iFood #9215 (17/11/2026, Edu na cozinha): a pizza do card é uma
+// metade e o grupo "Quer meio a meio? Escolha a outra metade" traz UM sabor — a
+// outra metade. Saía "Bacon com Catupiry" como se fosse adicional.
+confere(
+  "pizza do card + 'outra metade' com 1 sabor: vira 1/2",
+  { id: "x8", name: "Pizza Frango com Bacon 35 cm (8 pedaços)", quantity: 1, options: [op("Bacon com Catupiry", "Quer meio a meio? Escolha a outra metade")] },
+  ["1/2 Bacon com Catupiry"],
+);
+
+confere(
+  "'outra metade' junto da borda: só o sabor vira 1/2",
+  { id: "x9", name: "Pizza Calabresa Grande", quantity: 1, options: [op("Portuguesa", "Meio a meio? Escolha a outra metade"), op("Borda de Catupiry", "Borda")] },
+  ["1/2 Portuguesa", "Borda de Catupiry"],
+);
+
 console.log(falhas ? `\n${falhas} falha(s)` : "\nTudo certo");
 process.exit(falhas ? 1 : 0);

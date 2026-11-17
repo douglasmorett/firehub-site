@@ -91,6 +91,16 @@ export function saboresQueSaoMeia(nomeDoItem: string, opcoes: any[]): Map<number
     if (grupo) grupos.set(grupo, [...(grupos.get(grupo) || []), idx]);
   });
   for (const [grupo, idxs] of grupos) {
+    // "Quer meio a meio? Escolha a outra metade" (Hakim Centro, iFood #9215,
+    // 17/11/2026): a pizza do card é uma metade e o grupo traz UM sabor, a
+    // outra. Saía sem fração e a cozinha lia como adicional. Um sabor = "1/2".
+    if (/meio a meio|outra metade/i.test(grupo)) {
+      const semFracao = idxs.filter((k) => !/^\s*\d+\s*\/\s*\d+/.test(String(opcoes[k]?.name || "")));
+      if (semFracao.length > 0 && idxs.every((k) => Number(opcoes[k]?.quantity || 1) === 1)) {
+        for (const k of semFracao) saida.set(k, `1/${idxs.length + 1} `);
+      }
+      continue;
+    }
     if (!/sabor/i.test(grupo) || /esf[ií]h?r?r?a|bebida|refri|suco/i.test(grupo)) continue;
     if (!/\bpizza\b/i.test(grupo) && !umaPizzaNoNome) continue;
     if (idxs.length < 2 || idxs.some((k) => Number(opcoes[k]?.quantity || 1) !== 1)) continue;
