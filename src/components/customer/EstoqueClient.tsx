@@ -18,6 +18,10 @@ import ControlaveisDoEstoque from "@/components/estoque/ControlaveisDoEstoque";
 import VisaoGeralDoEstoque from "@/components/estoque/VisaoGeralDoEstoque";
 import TabelaDeInsumos from "@/components/estoque/TabelaDeInsumos";
 import MargemDasFichas from "@/components/estoque/MargemDasFichas";
+import ResumoCustoDaFicha from "@/components/estoque/ResumoCustoDaFicha";
+import CustoDoIngrediente from "@/components/estoque/CustoDoIngrediente";
+import { resumirFicha, correspondeBusca, type CustosDosIngredientes } from "@/lib/estoque/custo-da-ficha";
+import type { MargemDoProduto } from "@/lib/estoque/analise-no-banco";
 import PausaPeloEstoque from "@/components/estoque/PausaPeloEstoque";
 import { MOTIVOS_DE_SAIDA } from "@/lib/relatorios/saidas-de-estoque";
 
@@ -123,6 +127,21 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
   
   // Search & Filter
   const [productSearch, setProductSearch] = useState<string>("");
+  const [custosFichas, setCustosFichas] = useState<{ produtos: MargemDoProduto[]; teto: number; custosDosIngredientes: CustosDosIngredientes } | null>(null);
+  const [custosCarregando, setCustosCarregando] = useState(false);
+  const [custosErro, setCustosErro] = useState("");
+  useEffect(() => {
+    if (activeTab !== "recipes" || !veControlaveis) return;
+    const controller = new AbortController();
+    setCustosCarregando(true); setCustosErro("");
+    fetch("/api/store/estoque/margens", { signal: controller.signal })
+      .then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d.error || "Não foi possível calcular os custos."); return d; })
+      .then((d) => { if (!controller.signal.aborted) setCustosFichas(d); })
+      .catch((e) => { if (!controller.signal.aborted) { setCustosFichas(null); setCustosErro(e.message); } })
+      .finally(() => { if (!controller.signal.aborted) setCustosCarregando(false); });
+    return () => controller.abort();
+  }, [activeTab, veControlaveis, versaoDosSaldos]);
+
   const [showOnlyWithoutRecipe, setShowOnlyWithoutRecipe] = useState<boolean>(false);
 
   // History Filters
@@ -571,6 +590,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
   const getTransactionBadge = (type: string) => {
     switch (type) {
       case "INPUT": return <span className="badge badge-success">Entrada</span>;
+      case "CUSTO": return <span className="badge badge-info">Ajuste de custo</span>;
       case "OUTPUT": return <span className="badge badge-error">Saída</span>;
       case "WASTE": return <span className="badge badge-warning">Desperdício</span>;
       case "SALE": return <span className="badge badge-sale">Venda</span>;
@@ -606,7 +626,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
   // Derived Filtered Data
 
   const filteredProducts = validProducts.filter(prod => {
-    const matchesSearch = prod.name.toLowerCase().includes(productSearch.toLowerCase());
+    const matchesSearch = correspondeBusca(`${prod.name} ${prod.category}`, productSearch);
     const matchesCoverage = showOnlyWithoutRecipe ? prod.recipeItems.length === 0 : true;
     return matchesSearch && matchesCoverage;
   });
@@ -693,7 +713,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           item={editando as InsumoEditavel}
           todos={items as InsumoEditavel[]}
           onFechar={() => setEditando(null)}
-          onSalvo={() => { setEditando(null); loadData(); }}
+          onSalvo={() => { setEditando(null); recarregarSaldos(); }}
         />
       )}
 
@@ -1158,7 +1178,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
                               {isNegative ? "" : "+"}
                               {formatQuantity(t.quantity, t.stockItem?.unit || "")}
                             </td>
-                            <td className="notes-col">{t.notes || "—"}</td>
+                            <td className="notes-col">{t.type === "CUSTO" ? "Custo editado na ficha técnica (sem alterar saldo)" : t.notes || "—"}</td>
                           </tr>
                         );
                       })}
@@ -1181,7 +1201,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           {activeTab === "recipes" && (
             <>
               {veControlaveis && (
-                <MargemDasFichas onAbrirFicha={(id) => { const p = products.find((x) => x.id === id); if (p) openRecipeEditor(p); }} />
+                <MargemDasFichas produtos={custosFichas?.produtos ?? null} teto={custosFichas?.teto ?? 40} erro={custosErro} carregando={custosCarregando} busca={productSearch} onBusca={setProductSearch} onAbrirFicha={(id) => { const p = products.find((x) => x.id === id); if (p) openRecipeEditor(p); }} />
               )}
               <div className="coverage-bar">
                 <div className="coverage-info">
@@ -1240,6 +1260,9 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
                         </button>
                       </div>
                       
+                      {veControlaveis && <ResumoCustoDaFicha
+                        resumo={custosFichas?.produtos.find((p) => p.id === prod.id) ?? (custosFichas ? resumirFicha(prod.recipeItems, custosFichas.custosDosIngredientes, prod.price, custosFichas.teto) : null)}
+                        teto={custosFichas?.teto ?? 40} carregando={custosCarregando} erro={custosErro} />}
                       <div className="card-body-recipe">
                         <h4>Ingredientes consumidos por unidade:</h4>
                         {prod.recipeItems.length === 0 ? (
@@ -1448,12 +1471,15 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
       )}
 
       {/* MODAL: FICHA TÉCNICA */}
-      {showRecipeModal && selectedProduct && (
+      {showRecipeModal && selectedProduct && !editando && (
         <div className="modal-overlay" onClick={() => setShowRecipeModal(false)}>
           <div className="modal-card modal-large" onClick={e => e.stopPropagation()}>
             <button className="btn-close" onClick={() => setShowRecipeModal(false)}><X size={20} /></button>
             <h2>Configurar Ficha Técnica</h2>
-            <p className="modal-subtitle">Produto: <strong>{selectedProduct.name}</strong></p>
+            <p className="modal-subtitle">Produto: <strong>{selectedProduct.name}</strong> · Venda: {formatCurrency(selectedProduct.price)}</p>
+            {veControlaveis && <ResumoCustoDaFicha resumo={custosFichas ? resumirFicha(recipeIngredients, custosFichas.custosDosIngredientes, selectedProduct.price, custosFichas.teto) : null}
+              teto={custosFichas?.teto ?? 40} carregando={custosCarregando} erro={custosErro} />}
+            {veControlaveis && <p style={{ fontSize: 12, color: "#64748b" }}>Prévia das quantidades abaixo. Salve a ficha para aplicar alterações na receita.</p>}
 
             <form onSubmit={handleSaveRecipe}>
               <div className="recipe-rows-container">
@@ -1462,6 +1488,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
                     <tr>
                       <th>Ingrediente Insumo</th>
                       <th>Qtd. Consumida por un. de venda</th>
+                      {veControlaveis && <th>Custo do ingrediente</th>}
                       <th style={{ width: 50 }}></th>
                     </tr>
                   </thead>
@@ -1504,6 +1531,12 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
                             </span>
                           </div>
                         </td>
+                        {veControlaveis && <td>
+                          {custosCarregando ? "Atualizando…" : custosErro ? "Custo indisponível" : <CustoDoIngrediente key={row.stockItemId || index}
+                            item={items.find((i) => i.id === row.stockItemId)} custo={custosFichas?.custosDosIngredientes[row.stockItemId]}
+                            quantidade={row.quantityConsumed} onSalvo={recarregarSaldos}
+                            onPreparo={() => setEditando(items.find((i) => i.id === row.stockItemId) || null)} />}
+                        </td>}
                         <td>
                           <button 
                             type="button" 
@@ -2487,7 +2520,9 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           overflow-y: auto;
         }
 
-        .modal-card.modal-large { max-width: 720px; }
+        .modal-card.modal-large { max-width: 940px; }
+        .recipe-rows-container { overflow-x: auto; }
+        .recipe-editor-table { min-width: 580px; }
 
         @keyframes slideUp {
           from { opacity: 0; transform: translateY(20px); }

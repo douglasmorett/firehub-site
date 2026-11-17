@@ -15,6 +15,7 @@ import { classesDaLoja, montarControlaveis } from "@/lib/cmv/controlaveis-no-ban
 import { classeDoInsumo, TITULO_DA_SECAO, type Classe, type ItemCaro } from "@/lib/cmv/controlaveis";
 import { montarPainel } from "@/lib/cmv/painel";
 import { lerMeta } from "@/lib/cmv/cmv-real";
+import type { CustosDosIngredientes } from "@/lib/estoque/custo-da-ficha";
 import { lerSemanaDoCmv, inicioDaSemanaDoCmv } from "@/lib/cmv/semana-do-cmv";
 import { desperdicioLancadoPorDia, prepararCustoDosItens } from "@/lib/financeiro/cmv-do-financeiro";
 import {
@@ -215,7 +216,7 @@ export type MargemDoProduto = {
 };
 
 /** Custo da ficha HOJE × preço de venda de cada produto do cardápio, e quanto vendeu em 30 dias. */
-export async function margensDasFichas(lojaId: string, tz: string, goals: unknown): Promise<{ teto: number; produtos: MargemDoProduto[] }> {
+export async function margensDasFichas(lojaId: string, tz: string, goals: unknown): Promise<{ teto: number; produtos: MargemDoProduto[]; custosDosIngredientes: CustosDosIngredientes }> {
   // Margem baixa: CMV teórico acima da meta de CMV da loja (Metas), ou 40% sem meta.
   const teto = lerMeta(goals, "cmvPct", 40);
   const hoje = naLoja(new Date(), tz).dia;
@@ -234,7 +235,7 @@ export async function margensDasFichas(lojaId: string, tz: string, goals: unknow
     }),
   ]);
   const qtd = new Map(vendidos.map((v) => [v.menuProductId as string, v._sum.quantity || 0]));
-  return { teto, produtos: produtos.map((p) => {
+  return { teto, custosDosIngredientes: custo.custosDosIngredientes(hoje), produtos: produtos.map((p) => {
     const preco = Number(p.price) || 0;
     const c = custo.custoDoItem({ produtoId: p.id, nome: p.name, quantidade: 1, preco, escolhas: null }, hoje);
     const m = margemDaFicha(preco, c.custo);

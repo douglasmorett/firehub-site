@@ -46,16 +46,25 @@ export async function insumosParaCusto(lojaId: string): Promise<(InsumoParaCusto
  */
 export async function entradasComCusto(lojaId: string, tz: string): Promise<EntradaComCusto[]> {
   const ts = await prisma.stockTransaction.findMany({
-    where: { franchiseeId: lojaId, type: "INPUT", unitCost: { not: null }, stockInvoiceId: { not: null } },
-    select: { stockItemId: true, unitCost: true, createdAt: true, stockInvoiceId: true },
+    where: { franchiseeId: lojaId, unitCost: { not: null }, OR: [{ type: "INPUT", stockInvoiceId: { not: null } }, { type: "CUSTO" }] },
+    select: { stockItemId: true, unitCost: true, createdAt: true, stockInvoiceId: true, type: true, notes: true },
   });
-  const ids = Array.from(new Set(ts.map((t) => t.stockInvoiceId as string)));
+  const ids = Array.from(new Set(ts.flatMap((t) => t.stockInvoiceId ? [t.stockInvoiceId] : [])));
   const compras = ids.length
     ? await prisma.stockInvoice.findMany({ where: { id: { in: ids } }, select: { id: true, dia: true, createdAt: true, canceladaEm: true, processedData: true } })
     : [];
   const porId = new Map(compras.map((c) => [c.id, c]));
   const saida: EntradaComCusto[] = [];
   for (const t of ts) {
+    // Ajuste manual com quantidade zero: entra somente na linha do tempo do
+    // custo. Não é compra, pagamento nem entrada/saída de mercadoria.
+    if (t.type === "CUSTO") {
+      let anterior: number | null | undefined;
+      try { anterior = JSON.parse(t.notes || "{}").custoAnterior; } catch { /* registro antigo */ }
+      saida.push({ stockItemId: t.stockItemId, dia: naLoja(t.createdAt, tz).dia,
+        em: t.createdAt.getTime(), unitCost: Number(t.unitCost), custoAnterior: anterior });
+      continue;
+    }
     const c = porId.get(t.stockInvoiceId as string);
     if (!c || c.canceladaEm) continue;
     const dia = c.dia || naLoja(c.createdAt, tz).dia;

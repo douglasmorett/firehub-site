@@ -24,6 +24,7 @@ import {
   type Catalogo, type CustoDoInsumo, type CustoDoItem, type ItemParaCusto, type ProdutoParaCusto,
 } from "@/lib/financeiro/custo-pela-ficha";
 import type { CmvRealDoPeriodo } from "@/lib/financeiro/dre";
+import type { CustosDosIngredientes } from "@/lib/estoque/custo-da-ficha";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -78,6 +79,7 @@ export async function cmvRealDoPeriodo(lojaId: string, de: string, ate: string):
 
 export type CustoDosItens = {
   custoDoItem: (item: ItemParaCusto, dia: string) => CustoDoItem;
+  custosDosIngredientes: (dia: string) => CustosDosIngredientes;
   usaFicha: boolean;
   usaEstoque: boolean;
 };
@@ -115,6 +117,7 @@ export async function prepararCustoDosItens(lojaId: string, tz: string): Promise
   };
   return {
     custoDoItem: (item, dia) => custoDoItem(item, catalogo, doDia(dia)),
+    custosDosIngredientes: (dia) => Object.fromEntries(insumos.map((i) => [i.id, doDia(dia)(i.id, i.nome)])),
     usaFicha: catalogo.usaFicha,
     usaEstoque: insumos.length > 0,
   };

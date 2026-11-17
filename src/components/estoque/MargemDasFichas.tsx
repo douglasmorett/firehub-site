@@ -7,8 +7,9 @@
  *
  * Dados de /api/store/estoque/margens (lib/estoque/analise-no-banco.ts).
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Settings } from "lucide-react";
+import { correspondeBusca } from "@/lib/estoque/custo-da-ficha";
 import type { MargemDoProduto } from "@/lib/estoque/analise-no-banco";
 
 type Coluna = "nome" | "preco" | "custo" | "margem" | "margemPct" | "cmvPct" | "vendidos30";
@@ -17,22 +18,13 @@ type Filtro = "todos" | "baixa" | "semFicha";
 const fmtR = (v: number | null | undefined) => (v == null ? "—" : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v));
 const fmtP = (v: number | null | undefined) => (v == null ? "—" : `${v.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`);
 
-export default function MargemDasFichas({ onAbrirFicha }: { onAbrirFicha: (produtoId: string) => void }) {
-  const [produtos, setProdutos] = useState<MargemDoProduto[] | null>(null);
-  const [teto, setTeto] = useState(40);
-  const [erro, setErro] = useState("");
+export default function MargemDasFichas({ onAbrirFicha, produtos, teto, erro, carregando, busca, onBusca }: {
+  onAbrirFicha: (produtoId: string) => void; produtos: MargemDoProduto[] | null; teto: number;
+  erro: string; carregando: boolean; busca: string; onBusca: (busca: string) => void;
+}) {
   const [aberto, setAberto] = useState(true);
   const [filtro, setFiltro] = useState<Filtro>("todos");
   const [ordem, setOrdem] = useState<{ col: Coluna; desc: boolean }>({ col: "vendidos30", desc: true });
-
-  useEffect(() => {
-    let vivo = true;
-    fetch("/api/store/estoque/margens")
-      .then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d?.error || "Não deu para carregar."); return d; })
-      .then((d) => { if (vivo) { setProdutos(d.produtos); setTeto(d.teto); } })
-      .catch((e) => vivo && setErro(e?.message));
-    return () => { vivo = false; };
-  }, []);
 
   const resumo = useMemo(() => {
     const l = produtos || [];
@@ -47,13 +39,13 @@ export default function MargemDasFichas({ onAbrirFicha }: { onAbrirFicha: (produ
   }, [produtos]);
 
   const visiveis = useMemo(() => {
-    const l = (produtos || []).filter((p) => filtro === "baixa" ? p.margemBaixa : filtro === "semFicha" ? !p.temFicha && p.vendidos30 > 0 : true);
+    const l = (produtos || []).filter((p) => correspondeBusca(`${p.nome} ${p.categoria}`, busca)).filter((p) => filtro === "baixa" ? p.margemBaixa : filtro === "semFicha" ? !p.temFicha && p.vendidos30 > 0 : true);
     return [...l].sort((a, b) => {
       const va = a[ordem.col], vb = b[ordem.col];
       const r = typeof va === "string" ? va.localeCompare(String(vb), "pt-BR") : (Number(va ?? -Infinity) - Number(vb ?? -Infinity));
       return ordem.desc ? -r : r;
     });
-  }, [produtos, filtro, ordem]);
+  }, [produtos, filtro, ordem, busca]);
 
   const th = (col: Coluna, rotulo: string, direita = true) => (
     <th style={{ textAlign: direita ? "right" : "left", cursor: "pointer", whiteSpace: "nowrap", userSelect: "none" }}
@@ -82,9 +74,12 @@ export default function MargemDasFichas({ onAbrirFicha }: { onAbrirFicha: (produ
             Custo da ficha hoje × preço de venda = quanto sobra em cada produto. Margem baixa = CMV acima da meta da loja (40% se não houver meta). Produto vendido sem ficha aparece em destaque.
           </p>
           {erro && <p style={{ color: "#B91C1C", fontSize: "0.85rem" }}>{erro}</p>}
-          {!produtos && !erro && <p style={{ color: "#94A3B8", fontSize: "0.85rem" }}>Calculando o custo das fichas...</p>}
-          {produtos && (
+          {carregando && !erro && <p style={{ color: "#94A3B8", fontSize: "0.85rem" }}>Calculando o custo das fichas...</p>}
+          {produtos && !carregando && !erro && (
             <>
+              <label style={{ display: "grid", gap: 4, marginBottom: 10, fontSize: 13, fontWeight: 700 }}>Pesquisar custos por produto ou categoria
+                <input type="search" value={busca} onChange={(e) => onBusca(e.target.value)} placeholder="Ex.: esfirra, queijo…" style={{ padding: 10, border: "1px solid #cbd5e1", borderRadius: 8 }} />
+              </label>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
                 {([["todos", `Todos · ${produtos.length}`], ["baixa", `Margem baixa · ${resumo.baixa}`], ["semFicha", `Vendido sem ficha · ${resumo.semFicha}`]] as [Filtro, string][]).map(([id, rotulo]) => (
                   <button key={id} type="button" onClick={() => setFiltro(id)}
@@ -108,6 +103,7 @@ export default function MargemDasFichas({ onAbrirFicha }: { onAbrirFicha: (produ
                     </tr>
                   </thead>
                   <tbody>
+                    {visiveis.length === 0 && <tr><td colSpan={8}>Nenhum produto encontrado para esta busca e filtro.</td></tr>}
                     {visiveis.map((p) => {
                       const semFichaVendido = !p.temFicha && p.vendidos30 > 0;
                       return (
@@ -132,7 +128,7 @@ export default function MargemDasFichas({ onAbrirFicha }: { onAbrirFicha: (produ
                 </table>
               </div>
               <p style={{ fontSize: "0.74rem", color: "#94A3B8", margin: "6px 0 0" }}>
-                Custo da ficha pelo custo de hoje de cada insumo (última compra). Vermelho: CMV teórico acima de {teto.toLocaleString("pt-BR")}% (a meta de CMV da loja; sem meta, 40%) ou margem negativa.
+                Custo da ficha pelo custo atual de cada insumo (compra ou ajuste de custo). Vermelho: CMV teórico acima de {teto.toLocaleString("pt-BR")}% (a meta de CMV da loja; sem meta, 40%) ou margem negativa.
                 Amarelo: vendido nos últimos 30 dias sem ficha técnica (o estoque não baixa).
               </p>
             </>
