@@ -1,6 +1,6 @@
 import * as Haptics from "expo-haptics";
 import type { ReactNode } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 
 import { cor, raio } from "./tema";
 
@@ -64,7 +64,7 @@ export function Botao({
     >
       <View style={s.conteudo}>
         {carregando ? <ActivityIndicator color={v.texto} /> : icone}
-        <Text style={[s.texto, pequeno && s.textoPequeno, { color: v.texto }]} numberOfLines={1}>
+        <Text style={[s.texto, pequeno && s.textoPequeno, { color: v.texto }]}>
           {titulo}
         </Text>
       </View>
@@ -78,10 +78,12 @@ const s = StyleSheet.create({
     borderRadius: raio.medio,
     borderWidth: 1.5,
     paddingHorizontal: 14,
+    paddingVertical: 10,
     justifyContent: "center",
   },
   pequeno: { minHeight: 44, borderRadius: raio.pequeno },
-  conteudo: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
-  texto: { fontSize: 16, fontWeight: "900" },
+  conteudo: { alignSelf: "stretch", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
+  // Medição com largura real disponível, sem elipse para esconder a ação.
+  texto: { flex: 1, textAlign: "center", fontSize: 16, fontWeight: "900", fontFamily: Platform.OS === "android" ? "sans-serif" : undefined },
   textoPequeno: { fontSize: 14, fontWeight: "800" },
 });
