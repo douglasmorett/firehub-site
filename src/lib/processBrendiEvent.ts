@@ -19,7 +19,7 @@
  *      Foi esse modo que, no 99Food, pegou o parser lendo campo errado com
  *      total zero ANTES de entrar em produção.
  */
-import { camposDoEspelho, ORIGENS } from "@/lib/espelho-de-integracao";
+import { camposDoEspelho, ORIGENS, produtoRealDoItem } from "@/lib/espelho-de-integracao";
 import { observacaoDoItem } from "@/lib/observacao-do-item";
 import { prisma } from "@/lib/prisma";
 import { lojaBloqueadaPorMensalidade } from "@/lib/loja-bloqueada";
@@ -758,7 +758,7 @@ export async function processBrendiEvent(
       // Espelhos que já existem e cujo nome precisa acompanhar o catálogo da
       // Brendi (lib/espelho-do-parceiro.ts) — corrigidos antes de gravar.
       const espelhos: { id: string; nome: string }[] = [];
-      const items = rawItemsList.map((i: any) => {
+      const items = await Promise.all(rawItemsList.map(async (i: any) => {
         const itemName = i.name || i.productName || i.title || i.label || "Item Brendi";
         const options = extrairOpcoesDoItem(i);
         const optionNames = options.map((o: any) => `${o.quantity > 1 ? o.quantity + 'x ' : ''}${o.name}`);
@@ -805,6 +805,12 @@ export async function processBrendiEvent(
         const itemId = i.id || i.externalId || i.externalCode ||
           `nome-${String(itemName).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").slice(0, 60)}`;
         espelhos.push({ id: `brendi-${itemId}`, nome: itemName });
+        const produtoReal = await produtoRealDoItem({
+          franchiseeId: franchisee!.id,
+          idDoEspelho: `brendi-${itemId}`,
+          codigoExterno: i.externalCode ?? null,
+          nomeDoItem: itemName,
+        });
 
         return {
           price: Math.round(itemPrice * 100) / 100,
@@ -818,7 +824,7 @@ export async function processBrendiEvent(
           // 19/09/2026. Mesma regra do iFood, agora num lugar só.
           notes: observacaoDoItem(i),
           comboSelections: comboSelectionsJson,
-          menuProduct: {
+          menuProduct: produtoReal ? { connect: { id: produtoReal } } : {
             // Produto fantasma: existe só para a comanda/relatório referenciar;
             // active:false para nunca aparecer no cardápio da loja.
             //
@@ -852,7 +858,7 @@ export async function processBrendiEvent(
             } as any,
           },
         };
-      });
+      }));
       // Espelho que já existe com outro nome (renomeado na Brendi, ou nascido
       // com as opções no nome): corrige antes de gravar o pedido.
       await Promise.all(espelhos.map((e) => corrigirNomeDoEspelho(e.id, e.nome, franchisee!.id, "Brendi")));

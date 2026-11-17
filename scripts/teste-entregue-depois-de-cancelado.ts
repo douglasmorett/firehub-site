@@ -94,6 +94,7 @@ const banco = { ordem: 0, pedidos: [] as Linha[], movimentos: [] as Linha[], ins
 const casa = (l: Linha, where: Linha = {}): boolean => Object.entries(where).every(([k, v]) => {
   if (v && typeof v === "object" && !(v instanceof Date)) {
     if ("contains" in v) return String(l[k] ?? "").includes(v.contains);
+    if ("endsWith" in v) return String(l[k] ?? "").endsWith(v.endsWith);
     if ("startsWith" in v) return String(l[k] ?? "").startsWith(v.startsWith);
     if ("gt" in v) return l[k] > v.gt;
     if ("in" in v) return v.in.includes(l[k]);
@@ -112,6 +113,7 @@ const aplicar = (l: Linha, data: Linha) => {
 // como no banco, e só a escrita condicional segura.
 const tique = () => new Promise((r) => setTimeout(r, 1));
 const falso: any = {
+  $queryRaw: async () => [],
   customerOrder: {
     findUnique: async ({ where }: any) => banco.pedidos.find((p) => p.id === where.id) ?? null,
     findFirst: async ({ where }: any) => { await tique(); return banco.pedidos.find((p) => casa(p, where)) ?? null; },
@@ -143,7 +145,7 @@ async function gravacao() {
   const { deductStockForOrder, tratarEstoqueDoCancelamento } = await import("../src/lib/stock");
   const { marcarEntregueDepoisDeCancelado } = await import("../src/lib/entregue-depois-de-cancelado-no-banco");
   banco.insumos.push({ id: "queijo", franchiseeId: "loja", name: "Queijo", unit: "g", quantity: 1000 });
-  const pizza = { quantity: 1, comboSelections: null, menuProductId: "p1", productName: "Pizza", menuProduct: { name: "Pizza", recipeItems: [{ stockItemId: "queijo", quantityConsumed: 200, stockItem: { name: "Queijo", unit: "g" } }] } };
+  const pizza = { quantity: 1, comboSelections: null, menuProductId: "p1", productName: "Pizza", menuProduct: { id: "p1", franchiseeId: "loja", name: "Pizza", recipeItems: [{ stockItemId: "queijo", quantityConsumed: 200, stockItem: { name: "Queijo", unit: "g" } }] } };
   const novo = (id: string, x: Linha = {}) => {
     const p: Linha = {
       id, franchiseeId: "loja", dailyOrderNumber: 7, franchisee: { storeTimezone: "America/Sao_Paulo" }, status: "ACEITO", source: "SITE",
@@ -207,8 +209,10 @@ async function gravacao() {
   confere("pedido que não está cancelado: 409", [rh.ok ? 0 : rh.status, ativo.status], [409, "SAIU_ENTREGA"]);
 
   console.log("\n— Loja e motoboy ao mesmo tempo —");
-  const f = novo("pf", { status: "CANCELADO", cancelledAt: new Date() });
-  await deductStockForOrder("pf"); // estava aceito antes de cancelar, sem devolução (cancelado agora)
+  const f = novo("pf");
+  await deductStockForOrder("pf");
+  f.status = "CANCELADO";
+  f.cancelledAt = new Date(); // Ainda sem devolução.
   const antesDoPar = saldo();
   const [x, y] = await Promise.all([marcar("pf", { forma: "Pix" }), marcar("pf", { forma: "Dinheiro", motoboyId: "mb1", quem: "Motoboy João" })]);
   const gravaram = [x, y].filter((r) => r.ok && !r.jaEstava).length;

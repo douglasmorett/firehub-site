@@ -313,6 +313,7 @@ export function telefoneDoCliente(receiveAddress: any): string {
 
 export interface ItemTraduzido {
   nome: string;
+  codigoPDV?: string | null;
   quantidade: number;
   precoUnitario: number;
   observacao: string;
@@ -353,6 +354,7 @@ export function traduzirItem(item: any): ItemTraduzido {
 
   return {
     nome: String(item?.name ?? "Item 99Food").trim() || "Item 99Food",
+    codigoPDV: String(item?.app_external_id ?? "").trim() || null,
     quantidade,
     precoUnitario,
     observacao: String(item?.remark ?? "").trim(),
@@ -622,11 +624,12 @@ export async function itens99ParaPrisma(
    */
   categorias?: Map<string, string>,
 ) {
-  // O 99Food não manda código do item, então o produto real só vem pelo
-  // vínculo manual gravado no espelho (lib/espelho-de-integracao.ts).
-  const reais = await Promise.all(
-    itens.map((i) => produtoRealDoItem({ franchiseeId: lojaId, idDoEspelho: `99food_${lojaId}_${i.nome}`.slice(0, 190) })),
-  );
+  const reais = await Promise.all(itens.map((i) => produtoRealDoItem({
+    franchiseeId: lojaId,
+    idDoEspelho: `99food_${lojaId}_${i.nome}`.slice(0, 190),
+    codigoExterno: i.codigoPDV,
+    nomeDoItem: i.nome,
+  })));
   return itens.map((i, idx) => ({
     price: i.precoUnitario,
     quantity: i.quantidade,
