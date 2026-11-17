@@ -610,8 +610,12 @@ export function cardapioParaORobo(produtos: any[], ctx: ContextoDoCardapio): { t
         dias.length > 0 && dias.length < 7 ? ` [só ${nomesDosDias(dias)}]` : "",
         restricaoDoCupom,
       ].join("");
+      // O mínimo já inclui escolhas obrigatórias. As opções aditivas usam a base.
+      const baseParaSomar = precoParaCotar > precoBase && perguntas.some((q) => !q.absoluto && !q.semAcrescimo)
+        ? ` [base para somar opções: R$ ${brl(precoBase)}]`
+        : "";
       const desc = descricaoCurta(p.description);
-      linhas.push({ nome, categoria, combo, perguntas, cabeca: `- ${nome} · ${preco}${precoDe}${extras}${desc ? ` — ${desc}` : ""}` });
+      linhas.push({ nome, categoria, combo, perguntas, cabeca: `- ${nome} · ${preco}${precoDe}${baseParaSomar}${extras}${desc ? ` — ${desc}` : ""}` });
       estat.produtos++;
       if (promo) promocoesDeHoje.push(`- ${nome} · ${preco}${precoDe}${restricaoDoCupom}`);
     }
@@ -671,7 +675,7 @@ export function cardapioParaORobo(produtos: any[], ctx: ContextoDoCardapio): { t
 
   const secoes: string[] = [
     `CARDÁPIO (dia: ${ctx.currentDayName})
-Como ler: "= R$ X" é o preço do produto com essa opção; "+R$ X" soma ao preço; "−R$ X" desconta; opção sem valor não muda o preço. "a partir de" = o preço final depende das escolhas. Na tag do pedido, o nome do produto e o de cada opção vão exatamente como escritos aqui. "L1" remete à seção LISTAS DE OPÇÕES; "tabela T1" à seção TABELAS DE SABORES.`,
+Como ler: "= R$ X" é o preço com a opção; "+R$ X" soma à base; "−R$ X" desconta. "A partir de" é o mínimo com as escolhas obrigatórias, nunca a base da soma. Na tag do pedido, use os nomes exatos daqui. "L1" remete à seção LISTAS DE OPÇÕES; "tabela T1" à seção TABELAS DE SABORES.`,
     `PROMOÇÕES DE HOJE (${ctx.currentDayName})\n${promocoesDeHoje.length ? promocoesDeHoje.join("\n") : "- nenhuma cadastrada para hoje"}`,
     `PROMOÇÕES DE AMANHÃ (${ctx.tomorrowDayName})\n${promocoesDeAmanha.length ? promocoesDeAmanha.join("\n") : "- nenhuma cadastrada para amanhã"}`,
     `CRONOGRAMA DE PROMOÇÕES\n${cronograma.length ? cronograma.join("\n") : "- sem cronograma cadastrado"}`,

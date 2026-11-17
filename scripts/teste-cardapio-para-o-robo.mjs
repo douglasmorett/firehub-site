@@ -250,6 +250,18 @@ console.log("\n3) Hamburgueria — lista compartilhada, promoção, dia da seman
   conferir("a tag do produto vai curta", texto.includes("- X-Promo · a partir de R$ 25 (de R$ 30) [PROMO]"));
 }
 
+// Divinos: a pergunta obrigatória aceita mais de uma opção, mas o mínimo já inclui a mais barata.
+{
+  const nuggets = produto("Nuggets de Frango", "Petiscos", 0, [
+    grupo("Escolha a sua entrada", 1, 5, [opcao("5 unidades", 10), opcao("10 unidades", 20)]),
+  ]);
+  const { texto } = cardapioParaORobo([nuggets], ctx);
+  conferir("Divinos: indica base zero separada do mínimo de R$ 10", texto.includes(
+    "Nuggets de Frango · a partir de R$ 10 [base para somar opções: R$ 0]",
+  ));
+  conferir("Divinos: cada escolha informa apenas seu acréscimo", texto.includes("5 unidades +R$ 10 | 10 unidades +R$ 20"));
+}
+
 // ── 4) NUGGET: base R$ 0 com o preço nas opções; horário, estoque, opção de combo ──
 console.log("\n4) Nugget — base zero, horário do produto, estoque, só-opção-de-combo");
 {
