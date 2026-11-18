@@ -10,7 +10,7 @@ import ts from "typescript";
 const js = ts.transpileModule(readFileSync("src/lib/saudacao-do-dia.ts", "utf8"), {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-const { ehSoUmaSaudacao, ehPrimeiraMensagemDoDia, linkDoCardapioDaLoja, mensagemDeBoasVindasDoDia } =
+const { ehSoUmaSaudacao, ehPrimeiraMensagemDoDia, linkDoCardapioDaLoja, lojaMandaLinkNaSaudacao, mensagemDeBoasVindasDoDia } =
   await import("data:text/javascript," + encodeURIComponent(js));
 
 let falhas = 0;
@@ -53,6 +53,10 @@ console.log("\n3) Primeira mensagem do dia");
 console.log("\n4) Link do cardápio da loja");
 conferir("slug vira link do site", linkDoCardapioDaLoja({ slug: "hakim-contato" }) === "https://firehubfood.com.br/loja/hakim-contato");
 conferir("link externo ganha do slug", linkDoCardapioDaLoja({ slug: "x", chatbotConfig: { externalMenuUrl: " https://meu.cardapio " } }) === "https://meu.cardapio");
+// Pizzaria Charles (17/11): o "oi" sem link é exceção por loja; o padrão continua com link.
+conferir("padrão: oi com link", lojaMandaLinkNaSaudacao({}) === true && lojaMandaLinkNaSaudacao(null) === true);
+conferir("saudacaoSemLink: true → oi vai para o modelo", lojaMandaLinkNaSaudacao({ saudacaoSemLink: true }) === false);
+conferir("saudacaoSemLink falso/texto → padrão", lojaMandaLinkNaSaudacao({ saudacaoSemLink: false }) === true && lojaMandaLinkNaSaudacao({ saudacaoSemLink: "true" }) === true);
 conferir("sem slug e sem externo → vazio", linkDoCardapioDaLoja({ slug: null, chatbotConfig: {} }) === "");
 
 console.log("\n5) O texto que vai para o cliente");

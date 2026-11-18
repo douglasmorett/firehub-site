@@ -47,7 +47,7 @@ import {
   JANELA_DO_ULTIMO_ENDERECO_DIAS, STATUS_SEM_ENDERECO_APROVEITAVEL, type UltimoEndereco,
 } from "./ultimo-endereco-do-cliente";
 import { horaDaLoja, inicioDoExpedienteDaLoja } from "./fuso";
-import { ehSoUmaSaudacao, ehPrimeiraMensagemDoDia, linkDoCardapioDaLoja, mensagemDeBoasVindasDoDia } from "./saudacao-do-dia";
+import { ehSoUmaSaudacao, ehPrimeiraMensagemDoDia, linkDoCardapioDaLoja, lojaMandaLinkNaSaudacao, mensagemDeBoasVindasDoDia } from "./saudacao-do-dia";
 import { tipoDoPedidoDoRobo, clientePediuRetirada } from "./tipo-do-pedido-do-robo";
 import { rotuloDeStatusParaOModelo, rotuloDoTipoDeEntrega, fraseDeStatusDeEmergencia } from "./status-para-o-cliente";
 import { classificarFalhaDaIa, falhaQueManda, mensagemDeIaForaDoAr, mensagemDeInstabilidadePassageira, type FalhaDaIa } from "./falha-da-ia";
@@ -299,7 +299,7 @@ export async function processChatbotAI(
       historico: history,
       inicioDoDia: inicioDoExpedienteDaLoja(user.storeTimezone),
     });
-  const linkDaSaudacao = linkDoCardapioDaLoja(user);
+  const linkDaSaudacao = lojaMandaLinkNaSaudacao(user.chatbotConfig) ? linkDoCardapioDaLoja(user) : "";
   if (primeiraMensagemDoDia && linkDaSaudacao && !audioData && !imagem && ehSoUmaSaudacao(message)) {
     const cfg = (user.chatbotConfig as any) || {};
     // O cupom de primeiro pedido vai junto do "oi" — só se a loja tem um
