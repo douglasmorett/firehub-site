@@ -4,7 +4,7 @@
  * GERADO por scripts/gerar-comanda-do-assistente.mjs — NÃO EDITE AQUI.
  *
  * É o código que monta a comanda no Assistente de Impressão
- * (firehub-print-assistant/server.js, versão 1.2.46), copiado para a prévia
+ * (firehub-print-assistant/server.js, versão 1.2.47), copiado para a prévia
  * de "Personalizar impressão" desenhar o papel com o MESMO código que imprime.
  * Mudou o server.js? Rode o script de novo; `--conferir` falha enquanto esta
  * cópia estiver velha.
@@ -803,8 +803,16 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // A palavra ao lado do numero. A loja pode troca-la (bloco numeroPedido,
   // chave "delivery"); trocada, vale para os tres tipos — quem escreve
   // "PEDIDO" ali quer "PEDIDO" no papel inteiro, nao so na entrega.
+  // Balcao "consumir no local" (consumoNoBalcao, 1.2.47): o topo diz NO
+  // LOCAL, nao RETIRADA — a cozinha le o topo grande, e RETIRADA ali queria
+  // dizer embalagem (Nike Esfirras, 17/11/2026). "NO LOCAL" cabe numa linha
+  // no corpo triplo (16 colunas); o "CONSUMIR NO LOCAL" inteiro sai logo
+  // abaixo, como antes. Para levar continua RETIRADA. A palavra que a loja
+  // escreveu no modelo ainda vence.
+  const consumoNoLocal = order.kind !== "CONTA_DA_MESA" && order.deliveryType !== "DELIVERY" && order.deliveryType !== "MESA"
+    && /^consumir no local$/i.test(String(order.consumoNoBalcao == null ? "" : order.consumoNoBalcao).trim());
   const deliveryTypeTag = R("numeroPedido", "delivery",
-    order.deliveryType === "DELIVERY" ? "DELIVERY" : order.deliveryType === "MESA" ? "MESA" : "RETIRADA");
+    order.deliveryType === "DELIVERY" ? "DELIVERY" : order.deliveryType === "MESA" ? "MESA" : consumoNoLocal ? "NO LOCAL" : "RETIRADA");
 
   // ── A MESA E O GARCOM ────────────────────────────────────────────────
   //
@@ -1871,10 +1879,10 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   return Buffer.from(res, "binary");
 }
 
-export const VERSAO_DO_ASSISTENTE = "1.2.46";
-export const ASSINATURA_DO_CODIGO = "24527b8a690e5fb3";
+export const VERSAO_DO_ASSISTENTE = "1.2.47";
+export const ASSINATURA_DO_CODIGO = "d946a3f871bdad64";
 
-/** Os bytes ESC/POS da comanda, como o Assistente 1.2.46 manda para a impressora. */
+/** Os bytes ESC/POS da comanda, como o Assistente 1.2.47 manda para a impressora. */
 export function comandaDoAssistente(order, storeName, columns, profile = "safe") {
   return buildEscPos(order, storeName, columns, profile);
 }

@@ -1,6 +1,6 @@
 // @ts-nocheck
 /* eslint-disable */
-// GERADO por scripts/gerar-comanda-do-celular.mjs a partir de firehub-print-assistant/server.js (Assistente 1.2.46).
+// GERADO por scripts/gerar-comanda-do-celular.mjs a partir de firehub-print-assistant/server.js (Assistente 1.2.47).
 // NÃO EDITE AQUI: mude no Assistente e rode o script de novo.
 
 function cleanAscii(str) {
@@ -792,8 +792,16 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   // A palavra ao lado do numero. A loja pode troca-la (bloco numeroPedido,
   // chave "delivery"); trocada, vale para os tres tipos — quem escreve
   // "PEDIDO" ali quer "PEDIDO" no papel inteiro, nao so na entrega.
+  // Balcao "consumir no local" (consumoNoBalcao, 1.2.47): o topo diz NO
+  // LOCAL, nao RETIRADA — a cozinha le o topo grande, e RETIRADA ali queria
+  // dizer embalagem (Nike Esfirras, 17/11/2026). "NO LOCAL" cabe numa linha
+  // no corpo triplo (16 colunas); o "CONSUMIR NO LOCAL" inteiro sai logo
+  // abaixo, como antes. Para levar continua RETIRADA. A palavra que a loja
+  // escreveu no modelo ainda vence.
+  const consumoNoLocal = order.kind !== "CONTA_DA_MESA" && order.deliveryType !== "DELIVERY" && order.deliveryType !== "MESA"
+    && /^consumir no local$/i.test(String(order.consumoNoBalcao == null ? "" : order.consumoNoBalcao).trim());
   const deliveryTypeTag = R("numeroPedido", "delivery",
-    order.deliveryType === "DELIVERY" ? "DELIVERY" : order.deliveryType === "MESA" ? "MESA" : "RETIRADA");
+    order.deliveryType === "DELIVERY" ? "DELIVERY" : order.deliveryType === "MESA" ? "MESA" : consumoNoLocal ? "NO LOCAL" : "RETIRADA");
 
   // ── A MESA E O GARCOM ────────────────────────────────────────────────
   //
