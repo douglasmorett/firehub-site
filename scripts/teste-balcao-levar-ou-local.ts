@@ -99,6 +99,13 @@ for (const colunas of [48, 32]) {
 }
 const papelLevar = linhas(bytes(levar));
 confere("para levar: \"PARA LEVAR\" logo abaixo do número", papelLevar[1]?.texto, "PARA LEVAR");
+// Nike Esfirras (Danilo, 17/11/2026): "lá em cima estava escrito RETIRADA" no
+// consumir no local. O topo grande diz NO LOCAL (cabe no corpo triplo); levar segue RETIRADA.
+confere("consumir no local: o topo diz NO LOCAL, não RETIRADA", linhas(bytes(local))[0]?.texto, "(12) NO LOCAL");
+confere("para levar: o topo continua RETIRADA", papelLevar[0]?.texto, "(12) RETIRADA");
+confere("sem escolha: o topo continua RETIRADA", linhas(bytes({ ...base, notes: "sem cebola" }))[0]?.texto, "(12) RETIRADA");
+const modeloComPalavra = blocosParaOAssistente(modeloPadrao().completo).map((b: any) => (b.tipo === "numeroPedido" ? { ...b, rotulos: { ...(b.rotulos || {}), delivery: "PEDIDO" } } : b));
+confere("a palavra que a loja escreveu no modelo ainda vence", linhas(bytes({ ...local, blocos: modeloComPalavra }))[0]?.texto, "(12) PEDIDO");
 
 // O modelo da loja (order.blocos): a linha anda com o bloco do número.
 const blocos = blocosParaOAssistente(modeloPadrao().completo);
