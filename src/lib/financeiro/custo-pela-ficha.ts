@@ -103,12 +103,19 @@ export type Catalogo = {
   porNome: Map<string, ProdutoParaCusto | null>;
   /** A loja tem alguma ficha técnica gravada. */
   usaFicha: boolean;
+  /**
+   * Espelho de integração → produto real que o lojista apontou em Cardápio ›
+   * Integrações (`MenuProduct.vinculadoA`). Fogo e Sabor (17/11/2026): os
+   * combos da 99/iFood com nome próprio ficavam "sem custo" no DRE mesmo depois
+   * de vinculados — o vínculo só valia para pedido novo.
+   */
+  vinculos: Map<string, string>;
 };
 
 const assinaturaDaFicha = (p: ProdutoParaCusto) =>
   p.ficha.map((l) => `${l.insumoId}:${l.quantidade}`).sort().join("|");
 
-export function montarCatalogo(produtos: ProdutoParaCusto[]): Catalogo {
+export function montarCatalogo(produtos: ProdutoParaCusto[], vinculos: Iterable<[string, string]> = []): Catalogo {
   const porId = new Map(produtos.map((p) => [p.id, p]));
   const porNome = new Map<string, ProdutoParaCusto | null>();
   const peso = (p: ProdutoParaCusto) => (p.ficha.length ? 2 : temCusto(p) || p.grupos.length ? 1 : 0);
@@ -124,7 +131,7 @@ export function montarCatalogo(produtos: ProdutoParaCusto[]): Catalogo {
       porNome.set(k, null);
     }
   }
-  return { porId, porNome, usaFicha: produtos.some((p) => p.ficha.length > 0) };
+  return { porId, porNome, usaFicha: produtos.some((p) => p.ficha.length > 0), vinculos: new Map(vinculos) };
 }
 
 // ── O custo do insumo no dia ────────────────────────────────────────────────
@@ -268,7 +275,9 @@ function acharOpcao(indice: IndiceDoCombo | null, e: EscolhaDoItem, cat: Catalog
  * divergirem.
  */
 function produtoDoItem(item: ItemParaCusto, cat: Catalogo): { proprio: ProdutoParaCusto | null; produto: ProdutoParaCusto | null; nome: string } {
-  const proprio = item.produtoId ? cat.porId.get(item.produtoId) ?? null : null;
+  // O espelho que o lojista vinculou vale como o produto real (cat.vinculos).
+  const vinculado = item.produtoId ? cat.vinculos.get(item.produtoId) : undefined;
+  const proprio = (vinculado && cat.porId.get(vinculado)) || (item.produtoId ? cat.porId.get(item.produtoId) ?? null : null);
   const nome = (item.nome || proprio?.nome || "Item sem nome").trim();
   const temEstrutura = (p: ProdutoParaCusto) => p.ficha.length > 0 || p.grupos.length > 0;
   let produto: ProdutoParaCusto | null = proprio && temEstrutura(proprio) ? proprio : null;

@@ -86,6 +86,11 @@ export type CustoDosItens = {
 
 /** O cardápio da loja no formato da conta (fichas, combos, custo digitado). Também da lista de compras e da previsão de insumos. */
 export async function carregarCatalogo(lojaId: string): Promise<Catalogo> {
+  // Espelho que o lojista vinculou ao produto real (Cardápio › Integrações).
+  const vinculados = await prisma.menuProduct.findMany({
+    where: { franchiseeId: lojaId, vinculadoA: { not: null } },
+    select: { id: true, vinculadoA: true },
+  });
   const produtos = await prisma.menuProduct.findMany({
     // Espelho de integração não é produto da loja (lib/espelho-de-integracao.ts).
     where: { franchiseeId: lojaId, ...SEM_ESPELHO },
@@ -99,7 +104,7 @@ export async function carregarCatalogo(lojaId: string): Promise<Catalogo> {
     id: p.id, nome: p.name || "", ativo: p.active !== false, custo: p.cost ?? null, combo: Boolean(p.isCombo),
     ficha: p.recipeItems.map((r) => ({ insumoId: r.stockItemId, nome: r.stockItem?.name || "insumo", quantidade: Number(r.quantityConsumed) || 0 })),
     grupos: p.comboGroups.map((g) => ({ id: g.id, opcoes: g.items.map((i) => ({ id: i.id, produtoId: i.menuProductId })) })),
-  })));
+  })), vinculados.map((v): [string, string] => [v.id, v.vinculadoA as string]));
 }
 
 /** Carrega o cardápio e o estoque da loja uma vez; o custo de cada insumo é calculado uma vez por dia. */
