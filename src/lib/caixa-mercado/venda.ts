@@ -22,6 +22,7 @@
  */
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { lojaBloqueadaPorMensalidade, MENSAGEM_CONTA_BLOQUEADA } from "@/lib/loja-bloqueada";
 import { precoDoCanal } from "@/lib/preco-por-canal";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { lerDocumentoDoCliente, normalizarDocumento, problemaDoDocumento } from "@/lib/documento-do-cliente";
@@ -124,6 +125,8 @@ export async function registrarVendaDoCaixa(opcoes: {
   const { quem, terminal, turno, corpo } = opcoes;
   if (!(await garantirEstruturaDoCaixa())) return erro(503, MENSAGEM_SEM_ESTRUTURA);
   const lojaId = terminal.lojaId;
+  // Conta bloqueada por mensalidade não vende, igual ao PDV (lib/venda-presencial.ts).
+  if (await lojaBloqueadaPorMensalidade(lojaId)) return erro(403, MENSAGEM_CONTA_BLOQUEADA);
 
   const precos = await precificarItens(lojaId, corpo?.itens || []);
   if (!precos.ok) return erro(400, precos.erro);

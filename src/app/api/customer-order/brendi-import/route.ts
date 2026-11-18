@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { lojaBloqueadaPorMensalidade, MENSAGEM_CONTA_BLOQUEADA } from "@/lib/loja-bloqueada";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { garantirColunasBrendi } from "@/lib/garantir-colunas";
 
@@ -41,6 +42,12 @@ export async function POST(req: NextRequest) {
 
     // Credencial e pedido moram no DONO da conta (filial aponta via ownerId).
     const targetFranchiseeId = user.ownerId || user.id;
+
+    // Conta bloqueada por mensalidade não importa pedido (lib/loja-bloqueada.ts),
+    // igual ao resgate do iFood (api/ifood/import-order).
+    if (await lojaBloqueadaPorMensalidade(targetFranchiseeId)) {
+      return NextResponse.json({ error: MENSAGEM_CONTA_BLOQUEADA }, { status: 403 });
+    }
 
     // Defensivo (custo zero após o 1º sucesso): a resolução de credencial e o
     // processador leem colunas brendi* que só existem se o boot ensure rodou.
