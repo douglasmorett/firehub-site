@@ -358,6 +358,18 @@ async function main() {
   confere("adicional pago que não é produto: sem custo", item({ produtoId: "p-carne", escolhas: [{ name: "Bacon extra", quantity: 1, price: 2 }] }).faltas, [{ motivo: "OPCAO_SEM_FICHA", nome: "Bacon extra" }]);
   confere("opção de combo que não é produto: sem custo", item({ produtoId: "ifood-123", nome: "Combo Imperial", escolhas: [{ name: "Esfirra Misteriosa", quantity: 2, price: 0 }] }).faltas, [{ motivo: "OPCAO_SEM_FICHA", nome: "Esfirra Misteriosa" }]);
   confere("“5 Queijos” como texto não vira 5 × Queijos", lerEscolhas(["5 Queijos", "2x Esfirra de Carne"]).map((e) => [e.nome, e.qtd]), [["5 Queijos", 1], ["Esfirra de Carne", 2]]);
+  // Fogo e Sabor (Gabriel, 17/11/2026): "Marmita - Strogonoff Frango & Fritas + $18,99 Leve Outra Marmita"
+  // vem da 99 com um nome que não existe no cardápio. O lojista vincula o espelho ao
+  // produto real em Cardápio › Integrações (`vinculadoA`) — e o DRE tem que usar o vínculo,
+  // inclusive nos pedidos que já entraram (o item continua apontando para o espelho).
+  const comVinculo = montarCatalogo(
+    [prod("p-xtudo", "X-Tudo", { custo: 8 }), prod("99food_loja_Marmita Promo", "Marmita Promo + $18,99 Leve Outra", { ativo: false, origemIntegracao: "99FOOD" })],
+    [["99food_loja_Marmita Promo", "p-xtudo"]],
+  );
+  const vinculado = custoDoItem({ produtoId: "99food_loja_Marmita Promo", nome: "Marmita Promo + $18,99 Leve Outra", quantidade: 2, preco: 20, escolhas: null }, comVinculo, noDia("2026-10-13"));
+  confere("item do app vinculado ao produto real: usa o custo do produto (pedido antigo também)", [vinculado.custo, vinculado.faltas], [16, []]);
+  const semVinculo = custoDoItem({ produtoId: "99food_loja_Marmita Promo", nome: "Marmita Promo + $18,99 Leve Outra", quantidade: 1, preco: 20, escolhas: null }, montarCatalogo([prod("p-xtudo", "X-Tudo", { custo: 8 })]), noDia("2026-10-13"));
+  confere("sem vínculo, continua sem custo e diz por quê", semVinculo.faltas, [{ motivo: "NOME_NAO_CASA", nome: "Marmita Promo + $18,99 Leve Outra" }]);
   const ambiguo = montarCatalogo([prod("a", "Esfirra", { ficha: ficha(["Massa", 1]) }), prod("b", "esfirra", { ficha: ficha(["Massa", 2]) })]);
   confere("dois produtos ativos com o mesmo nome e fichas diferentes: não chuta", ambiguo.porNome.get("esfirra"), null);
 
