@@ -4,6 +4,7 @@ import { diasDeTesteDoLink, TRIAL_PADRAO_DIAS } from "@/lib/trial-do-cadastro";
 import { useState, useEffect } from "react";
 import { VERSAO_DOS_TERMOS } from "@/lib/termos-versao";
 import { FIREHUB_PLAN } from "@/lib/firehub-billing";
+import { VALOR_DO_TESTE_GRATIS } from "@/lib/valor-do-teste-gratis";
 
 const API = "";
 const PORTAL = API;
@@ -210,7 +211,7 @@ export default function CadastroPage() {
       // junta os dois e conta uma vez só.
       if (typeof window !== "undefined" && (window as any).fbq) {
         const ids = data.metaEventIds || {};
-        (window as any).fbq("track", "StartTrial", { currency: "BRL", value: 0 }, ids.startTrial ? { eventID: ids.startTrial } : undefined);
+        (window as any).fbq("track", "StartTrial", { currency: "BRL", value: VALOR_DO_TESTE_GRATIS }, ids.startTrial ? { eventID: ids.startTrial } : undefined);
         (window as any).fbq("track", "CompleteRegistration", {}, ids.completeRegistration ? { eventID: ids.completeRegistration } : undefined);
       }
 

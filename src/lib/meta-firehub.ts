@@ -26,6 +26,7 @@
  * Eventos). Sem o token, nada é enviado e o log avisa uma vez.
  */
 import { hashParaMeta, telefoneParaHashMeta, VERSAO_DA_GRAPH_API } from "./meta-capi";
+import { VALOR_DO_TESTE_GRATIS } from "./valor-do-teste-gratis";
 
 export const PIXEL_DO_FIREHUB = "1508278337585097";
 
@@ -102,7 +103,7 @@ export function corpoDosEventosDoTrial(t: TrialIniciado): Record<string, unknown
     user_data: userData,
   };
   const data: Record<string, unknown>[] = [
-    { ...comum, event_name: "StartTrial", event_id: ids.startTrial, custom_data: { currency: "BRL", value: 0, predicted_ltv: 0 } },
+    { ...comum, event_name: "StartTrial", event_id: ids.startTrial, custom_data: { currency: "BRL", value: VALOR_DO_TESTE_GRATIS, predicted_ltv: VALOR_DO_TESTE_GRATIS } },
   ];
   if (t.origem === "website") data.push({ ...comum, event_name: "CompleteRegistration", event_id: ids.completeRegistration });
   const corpo: Record<string, unknown> = { data };
