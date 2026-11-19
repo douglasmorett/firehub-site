@@ -22,6 +22,24 @@ import { FRASE_DO_ACEITE, type AceiteDoRiscoQr } from "@/lib/disparo-em-massa";
 
 /** Os marcos da recuperação pelo QR, com as chaves que a rota grava (api/cron/recuperacao-clientes). */
 const MARCOS_QR = [
+  // 2º pedido e janela (Lucas, 11/11/2026 — lib/recuperacao-pelo-qr.ts). `dias: null`:
+  // não são os marcos do Disparo oficial, então nunca ficam parados por ele.
+  {
+    dias: null,
+    ligado: "autoRecuperacaoSegundo20d",
+    msg: "msgSegundo20d",
+    cupom: "couponSegundo20d",
+    titulo: "🥈 20 dias sem fazer o 2º pedido",
+    ajuda: "Só para quem fez UM pedido na loja e não voltou. Quem já é freguês não recebe.",
+  },
+  {
+    dias: null,
+    ligado: "autoRecuperacaoSegundo30d",
+    msg: "msgSegundo30d",
+    cupom: "couponSegundo30d",
+    titulo: "🥈 30 dias sem fazer o 2º pedido",
+    ajuda: "Só para quem fez UM pedido na loja e não voltou. Quem já é freguês não recebe.",
+  },
   { dias: 7, ligado: "autoRecuperation7d", msg: "msg7d", cupom: "coupon7d", titulo: "🔥 Cliente 7 dias sem pedir", ajuda: "" },
   { dias: 15, ligado: "autoRecuperation15d", msg: "msg15d", cupom: "coupon15d", titulo: "🎁 Cliente 15 dias sem pedir", ajuda: "" },
   { dias: 30, ligado: "autoRecuperation30d", msg: "msg30d", cupom: "coupon30d", titulo: "✨ Cliente 30 dias sem pedir", ajuda: "" },
@@ -32,6 +50,15 @@ const MARCOS_QR = [
     cupom: "couponConversa",
     titulo: "💬 Conversou com o robô e nunca comprou",
     ajuda: "Vai 3 dias depois da última mensagem da pessoa, só para quem não tem nenhum pedido na loja. Dica: use um cupom de primeiro pedido.",
+  },
+  {
+    dias: null,
+    ligado: "autoRecuperacaoJanela",
+    msg: "msgJanela",
+    cupom: "couponJanela",
+    titulo: "📅 Cliente numa janela de dias sem pedir (1 vez por mês)",
+    ajuda:
+      "Vai para quem está entre os dias escolhidos sem pedir, no máximo 1 vez a cada 30 dias por cliente. Para o cupom valer só 1 vez por mês, em Minha loja › Cupons ponha \"Usos por cliente: 1\" e marque \"por mês\".",
   },
 ] as const;
 
@@ -80,6 +107,17 @@ export default function MarketingHubClient() {
     coupon15d: "",
     coupon30d: "",
     couponConversa: "",
+    autoRecuperacaoSegundo20d: false,
+    autoRecuperacaoSegundo30d: false,
+    autoRecuperacaoJanela: false,
+    msgSegundo20d: "",
+    msgSegundo30d: "",
+    msgJanela: "",
+    couponSegundo20d: "",
+    couponSegundo30d: "",
+    couponJanela: "",
+    janelaDe: 15,
+    janelaAte: 25,
   });
 
   // Toast State
@@ -489,6 +527,23 @@ export default function MarketingHubClient() {
                           </button>
                         </div>
                         {m.ajuda && <p style={{ margin: "0 0 8px", fontSize: "0.78rem", color: "#64748B" }}>{m.ajuda}</p>}
+                        {m.ligado === "autoRecuperacaoJanela" && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, fontSize: "0.8rem", color: "#475569", fontWeight: 700 }}>
+                            Entre
+                            <input
+                              type="number" min={1} max={120} value={autoConfig.janelaDe ?? 15}
+                              onChange={(e) => setAutoConfig({ ...autoConfig, janelaDe: Math.max(1, Math.floor(Number(e.target.value) || 1)) })}
+                              style={{ width: 60, padding: "5px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "0.8rem" }}
+                            />
+                            e
+                            <input
+                              type="number" min={1} max={120} value={autoConfig.janelaAte ?? 25}
+                              onChange={(e) => setAutoConfig({ ...autoConfig, janelaAte: Math.max(1, Math.floor(Number(e.target.value) || 1)) })}
+                              style={{ width: 60, padding: "5px", borderRadius: "6px", border: "1px solid #CBD5E1", fontSize: "0.8rem" }}
+                            />
+                            dias sem pedir
+                          </div>
+                        )}
                         {noOficial && (
                           <div style={{ background: "#ECFEFF", border: "1px solid #A5F3FC", borderRadius: 8, padding: "8px 10px", fontSize: "0.78rem", color: "#155E75", marginBottom: 8 }}>
                             Este marco está ligado no Disparo oficial. Pelo QR Code ele fica parado, para o cliente não receber duas vezes.

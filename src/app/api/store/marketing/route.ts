@@ -8,6 +8,7 @@ import { DISPARO_EM_MASSA_LIBERADO, MOTIVO_DISPARO_DESLIGADO, MOTIVO_SEM_ACEITE,
 import { chaveDoTelefone, descadastradosDaLoja, mesclarNoChatbotConfig } from "@/lib/disparo-pelo-qr";
 import { marcosLigadosNoOficial } from "@/lib/disparo-oficial/servidor";
 import { lerCupons } from "@/lib/cupons";
+import { lerJanela } from "@/lib/recuperacao-pelo-qr";
 import { contatosDaFila } from "@/lib/fila-de-atendimento-humano";
 
 export const dynamic = "force-dynamic";
@@ -418,6 +419,9 @@ export async function GET(req: NextRequest) {
     if (chatbotConfig.coupon15d) activeCampaignCoupons.add(chatbotConfig.coupon15d.trim().toLowerCase());
     if (chatbotConfig.coupon30d) activeCampaignCoupons.add(chatbotConfig.coupon30d.trim().toLowerCase());
     if (chatbotConfig.couponConversa) activeCampaignCoupons.add(chatbotConfig.couponConversa.trim().toLowerCase());
+    for (const k of ["couponSegundo20d", "couponSegundo30d", "couponJanela"]) {
+      if (chatbotConfig[k]) activeCampaignCoupons.add(String(chatbotConfig[k]).trim().toLowerCase());
+    }
     if (chatbotConfig.instantCouponCode) activeCampaignCoupons.add(chatbotConfig.instantCouponCode.trim().toLowerCase());
 
     // Buscar pedidos reais da loja que utilizaram os cupons das campanhas de marketing
@@ -484,6 +488,18 @@ export async function GET(req: NextRequest) {
         img7d: chatbotConfig.img7d || "",
         img15d: chatbotConfig.img15d || "",
         img30d: chatbotConfig.img30d || "",
+        // 2º pedido e janela (Lucas, 11/11/2026 — lib/recuperacao-pelo-qr.ts).
+        autoRecuperacaoSegundo20d: chatbotConfig.autoRecuperacaoSegundo20d === true,
+        autoRecuperacaoSegundo30d: chatbotConfig.autoRecuperacaoSegundo30d === true,
+        autoRecuperacaoJanela: chatbotConfig.autoRecuperacaoJanela === true,
+        msgSegundo20d: chatbotConfig.msgSegundo20d || "Oi! Faz 20 dias do seu primeiro pedido com a gente. Que tal repetir? 😋",
+        msgSegundo30d: chatbotConfig.msgSegundo30d || "Oi! Já faz um mês do seu primeiro pedido. Separamos um desconto para você voltar! ❤️",
+        msgJanela: chatbotConfig.msgJanela || "Oi, sentimos sua falta! Separamos um cupom especial para você pedir hoje. 🍔",
+        couponSegundo20d: chatbotConfig.couponSegundo20d || "",
+        couponSegundo30d: chatbotConfig.couponSegundo30d || "",
+        couponJanela: chatbotConfig.couponJanela || "",
+        janelaDe: lerJanela(chatbotConfig).de,
+        janelaAte: lerJanela(chatbotConfig).ate,
       }
     });
   } catch (err: any) {
@@ -636,6 +652,18 @@ export async function POST(req: NextRequest) {
         coupon15d: String(body.coupon15d || "").trim().toUpperCase(),
         coupon30d: String(body.coupon30d || "").trim().toUpperCase(),
         couponConversa: String(body.couponConversa || "").trim().toUpperCase(),
+        // 2º pedido e janela (Lucas, 11/11/2026 — lib/recuperacao-pelo-qr.ts).
+        autoRecuperacaoSegundo20d: body.autoRecuperacaoSegundo20d === true,
+        autoRecuperacaoSegundo30d: body.autoRecuperacaoSegundo30d === true,
+        autoRecuperacaoJanela: body.autoRecuperacaoJanela === true,
+        msgSegundo20d: body.msgSegundo20d,
+        msgSegundo30d: body.msgSegundo30d,
+        msgJanela: body.msgJanela,
+        couponSegundo20d: String(body.couponSegundo20d || "").trim().toUpperCase(),
+        couponSegundo30d: String(body.couponSegundo30d || "").trim().toUpperCase(),
+        couponJanela: String(body.couponJanela || "").trim().toUpperCase(),
+        janelaDe: lerJanela(body).de,
+        janelaAte: lerJanela(body).ate,
       };
 
       await prisma.user.update({

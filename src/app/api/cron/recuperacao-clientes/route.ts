@@ -8,6 +8,7 @@ import { sendEvolutionMessage, sendEvolutionMediaUrl } from "@/lib/whatsapp-evol
 import { telefoneDeVerdade, paraEnvioWhatsApp } from "@/lib/telefone";
 import { RECUPERACAO_PELO_QR_LIGADA, aceiteDoRiscoQr } from "@/lib/disparo-em-massa";
 import { chaveDoTelefone, mesclarNoChatbotConfig } from "@/lib/disparo-pelo-qr";
+import { GUARDA_DA_JANELA_DIAS, alvosDoMarco, juntarPorCliente, lerJanela, podarEnvios } from "@/lib/recuperacao-pelo-qr";
 import { foraDaAutomacao, marcosLigadosNoOficial } from "@/lib/disparo-oficial/servidor";
 import { telefoneDaMeta } from "@/lib/disparo-oficial/regras";
 import { acharCupom, cupomVenceu } from "@/lib/cupons";
@@ -80,6 +81,17 @@ export const maxDuration = 300;
  * robô passou para atendente (degradedAt), endereço @lid (não é telefone),
  * motoboys e funcionários da loja, a lista de números que o robô ignora e o
  * próprio número da loja.
+ *
+ * ── 2º PEDIDO E JANELA (Lucas/Frangoso, 11/11; aprovados em 15/11/2026) ────
+ *
+ * Mais três marcos (a regra de cada um está em lib/recuperacao-pelo-qr.ts):
+ *   - 20 e 30 dias sem o 2º pedido: só quem tem UM pedido na loja;
+ *   - a janela "entre X e Y dias sem pedir" (a loja escolhe; padrão 15 a 25),
+ *     no máximo uma vez a cada 30 dias por cliente — quem recebeu fica em
+ *     chatbotConfig.recuperacaoJanelaEnvios.
+ * Os do 2º pedido vêm ANTES dos de sempre: o cliente de um pedido só, sumido
+ * há 30 dias, recebe a mensagem feita para ele, não a genérica (quem recebe
+ * um marco sai dos outros do dia por `fora`).
  */
 
 /** Dias depois da última mensagem ao robô, para quem conversou e não comprou. */
@@ -87,10 +99,14 @@ const DIAS_DA_CONVERSA = 3;
 
 /** Marcos de dias sem comprar, com as chaves que a tela do lojista já grava. */
 const MARCOS = [
-  { dias: 7, ligado: "autoRecuperation7d", msg: "msg7d", img: "img7d", cupom: "coupon7d", conversa: false },
-  { dias: 15, ligado: "autoRecuperation15d", msg: "msg15d", img: "img15d", cupom: "coupon15d", conversa: false },
-  { dias: 30, ligado: "autoRecuperation30d", msg: "msg30d", img: "img30d", cupom: "coupon30d", conversa: false },
-  { dias: DIAS_DA_CONVERSA, ligado: "autoRecuperacaoConversa", msg: "msgConversa", img: "imgConversa", cupom: "couponConversa", conversa: true },
+  { dias: 20, ligado: "autoRecuperacaoSegundo20d", msg: "msgSegundo20d", img: "imgSegundo20d", cupom: "couponSegundo20d", tipo: "segundo" },
+  { dias: 30, ligado: "autoRecuperacaoSegundo30d", msg: "msgSegundo30d", img: "imgSegundo30d", cupom: "couponSegundo30d", tipo: "segundo" },
+  { dias: 7, ligado: "autoRecuperation7d", msg: "msg7d", img: "img7d", cupom: "coupon7d", tipo: "sumido" },
+  { dias: 15, ligado: "autoRecuperation15d", msg: "msg15d", img: "img15d", cupom: "coupon15d", tipo: "sumido" },
+  { dias: 30, ligado: "autoRecuperation30d", msg: "msg30d", img: "img30d", cupom: "coupon30d", tipo: "sumido" },
+  // `dias` da janela vem da loja (lerJanela); o 0 aqui não é usado.
+  { dias: 0, ligado: "autoRecuperacaoJanela", msg: "msgJanela", img: "imgJanela", cupom: "couponJanela", tipo: "janela" },
+  { dias: DIAS_DA_CONVERSA, ligado: "autoRecuperacaoConversa", msg: "msgConversa", img: "imgConversa", cupom: "couponConversa", tipo: "conversa" },
 ] as const;
 
 /** Por quanto tempo o envio fica anotado (o oficial espera 6 dias; folga de 1). */
@@ -169,7 +185,7 @@ export async function GET(req: NextRequest) {
       if (!aceiteDoRiscoQr(cfg)) continue;
       // O marco que a recuperação oficial já manda fica parado aqui.
       const noOficial = await marcosLigadosNoOficial(loja.id).catch(() => [] as number[]);
-      const marcosLigados = MARCOS.filter(m => cfg[m.ligado] === true && (m.conversa || !noOficial.includes(m.dias)));
+      const marcosLigados = MARCOS.filter(m => cfg[m.ligado] === true && (m.tipo !== "sumido" || !noOficial.includes(m.dias)));
       if (marcosLigados.length === 0) continue;
 
       // Janela das 10h às 20h NO RELÓGIO DA LOJA. Era uma checagem só, em
@@ -228,7 +244,21 @@ export async function GET(req: NextRequest) {
           status: { not: "CANCELADO" },
         },
         _max: { createdAt: true },
+        _count: { _all: true },
       });
+      // O mesmo cliente com e sem 55 vira um só (o 2º pedido depende disso).
+      const porCliente = juntarPorCliente(
+        porTelefone
+          .filter(g => g.customerPhone && g._max?.createdAt)
+          .map(g => ({ telefone: g.customerPhone as string, ultimo: g._max.createdAt as Date, pedidos: g._count?._all ?? 0 })),
+        chaveDoTelefone
+      );
+      const janela = lerJanela(cfg);
+      const recebeuJanela: Record<string, string> = podarEnvios(
+        cfg.recuperacaoJanelaEnvios && typeof cfg.recuperacaoJanelaEnvios === "object" ? cfg.recuperacaoJanelaEnvios : {},
+        GUARDA_DA_JANELA_DIAS + 1,
+        new Date()
+      );
 
       let enviadosDaLoja = 0;
       let falhasDaLoja = 0;
@@ -240,21 +270,24 @@ export async function GET(req: NextRequest) {
 
       for (const marco of marcosLigados) {
         if (enviadosDaLoja >= TETO_POR_LOJA || aceiteDesfeito) break;
-        const nomeDoMarco = marco.conversa ? "conversou e não comprou" : `${marco.dias}d`;
+        const nomeDoMarco =
+          marco.tipo === "conversa" ? "conversou e não comprou"
+          : marco.tipo === "segundo" ? `${marco.dias}d sem o 2º pedido`
+          : marco.tipo === "janela" ? `entre ${janela.de} e ${janela.ate}d`
+          : `${marco.dias}d`;
 
         const fim = new Date(Date.now() - marco.dias * 24 * 60 * 60 * 1000);
         const inicio = new Date(fim.getTime() - 24 * 60 * 60 * 1000);
 
         const alvos = (
-          marco.conversa
+          marco.tipo === "conversa"
             ? await conversaramENaoCompraram(loja.id, cfg, inicio, fim, porTelefone.map(g => g.customerPhone))
-            : porTelefone
-                .filter(g => {
-                  const ultimo = g._max?.createdAt;
-                  if (!ultimo || !g.customerPhone) return false;
-                  return ultimo >= inicio && ultimo < fim;
-                })
-                .map(g => g.customerPhone as string)
+            : alvosDoMarco(
+                porCliente,
+                marco.tipo === "janela" ? { tipo: "janela", dias: janela.de, ate: janela.ate } : { tipo: marco.tipo, dias: marco.dias },
+                new Date(),
+                { chave: chaveDoTelefone, recebeuJanela }
+              )
         )
           // Embaralha: enviar sempre na mesma ordem (a do banco) é mais um
           // padrão previsível para o antispam reconhecer.
@@ -325,7 +358,12 @@ export async function GET(req: NextRequest) {
               for (const [t, em] of Object.entries(envios)) {
                 if (!(new Date(em).getTime() >= corte)) delete envios[t];
               }
-              await mesclarNoChatbotConfig(loja.id, { recuperacaoQrEnvios: envios }).catch(() => {});
+              // A janela é uma vez por mês: fica anotada 30 dias.
+              if (marco.tipo === "janela") recebeuJanela[chave] = envios[chave];
+              await mesclarNoChatbotConfig(loja.id, {
+                recuperacaoQrEnvios: envios,
+                ...(marco.tipo === "janela" ? { recuperacaoJanelaEnvios: recebeuJanela } : {}),
+              }).catch(() => {});
             }
           } catch (e: any) {
             falhasDaLoja++;

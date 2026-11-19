@@ -10,6 +10,9 @@
  *
  *   validade        "YYYY-MM-DD" — o ÚLTIMO dia em que vale, no dia da loja.
  *   usosPorCliente  quantas vezes o MESMO telefone pode usar. 0/vazio = sem limite.
+ *   usosPorMes      o limite acima conta só o mês corrente da loja (recomeça no
+ *                   dia 1). Pedido do Lucas/Frangoso (11/11/2026) para o cupom da
+ *                   recuperação: "1 vez por mês por cliente".
  *   primeiroPedido  vale só para quem nunca pediu pelo site desta loja — e o
  *                   site aplica sozinho e avisa, sem o cliente digitar código.
  *
@@ -44,6 +47,8 @@ export type Cupom = {
   validade: string | null;
   /** Quantas vezes o mesmo telefone pode usar. 0 = sem limite. */
   usosPorCliente: number;
+  /** `usosPorCliente` conta só os usos do mês corrente da loja. */
+  usosPorMes: boolean;
   /** Só para quem nunca pediu pelo site desta loja; o site aplica sozinho. */
   primeiroPedido: boolean;
   /** Anunciável pelo robô do WhatsApp (já existia). */
@@ -82,6 +87,7 @@ export function lerCupom(bruto: unknown): Cupom | null {
     active: b.active !== false,
     validade,
     usosPorCliente: Number.isFinite(usos) && usos > 0 ? usos : 0,
+    usosPorMes: b.usosPorMes === true,
     primeiroPedido: b.primeiroPedido === true || b.somentePrimeiroPedido === true,
     isPublic: b.isPublic === true,
     origem: typeof b.origem === "string" ? b.origem : null,
@@ -178,7 +184,8 @@ export type FatosDoCupom = {
   /** "YYYY-MM-DD" no fuso da loja. */
   hojeDaLoja: string;
   /**
-   * Quantas vezes este telefone já usou este cupom nesta loja. `null` quando
+   * Quantas vezes este telefone já usou este cupom nesta loja (só no mês
+   * corrente, se o cupom é `usosPorMes`). `null` quando
    * o telefone ainda não é conhecido (sacola aberta, sem login nem checkout).
    */
   usosDoCliente: number | null;
@@ -250,7 +257,9 @@ export function avaliarCupom(cupom: Cupom | null, fatos: FatosDoCupom): Veredito
       const vezes = cupom.usosPorCliente === 1 ? "1 vez" : `${cupom.usosPorCliente} vezes`;
       return {
         ok: false,
-        motivo: `Este cupom pode ser usado ${vezes} por cliente, e este telefone já usou.`,
+        motivo: cupom.usosPorMes
+          ? `Este cupom pode ser usado ${vezes} por mês por cliente, e este telefone já usou este mês.`
+          : `Este cupom pode ser usado ${vezes} por cliente, e este telefone já usou.`,
         ...nada,
       };
     }

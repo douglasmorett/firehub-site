@@ -32,6 +32,8 @@ type Coupon = {
   validade?: string | null;
   /** Quantas vezes o MESMO telefone pode usar. 0/vazio = sem limite. */
   usosPorCliente?: number | null;
+  /** O limite de usos por cliente recomeça todo mês (lib/cupons.ts). */
+  usosPorMes?: boolean;
   /** Só para quem nunca pediu pelo site; o site aplica sozinho e avisa. */
   primeiroPedido?: boolean;
   /** Em quais formas de pagamento vale (lib/cupom-por-forma.ts). Ausente = todas. */
@@ -1100,6 +1102,12 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                       <span style={{ fontSize: "0.75rem", color: "#64748B" }}>Usos por cliente</span>
                       <input type="number" min={0} placeholder="0" value={c.usosPorCliente || 0} onChange={e => updateCoupon(idx, "usosPorCliente", Math.max(0, Math.floor(Number(e.target.value) || 0)))} style={{ width: "55px", padding: "0.35rem", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.82rem" }} />
                       <span style={{ fontSize: "0.7rem", color: "#94A3B8" }}>{(c.usosPorCliente || 0) > 0 ? (c.usosPorCliente === 1 ? "(1 vez)" : `(${c.usosPorCliente} vezes)`) : "(sem limite)"}</span>
+                      {(c.usosPorCliente || 0) > 0 && (
+                        <label style={{ display: "flex", alignItems: "center", gap: 3, fontSize: "0.72rem", color: "#64748B", cursor: "pointer" }} title="O limite recomeça no dia 1 de cada mês">
+                          <input type="checkbox" checked={c.usosPorMes === true} onChange={e => updateCoupon(idx, "usosPorMes", e.target.checked)} />
+                          por mês
+                        </label>
+                      )}
                     </div>
                     {ehPrimeiro && (
                       <span style={{ fontSize: "0.72rem", color: "#92400E", fontWeight: 600 }}>

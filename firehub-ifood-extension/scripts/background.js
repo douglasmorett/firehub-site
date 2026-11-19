@@ -424,6 +424,20 @@ function fn99AplicarLojas(lojas, minutos) {
       var d = a.data || {};
       saida.antes = Math.round((d.avgProduceTime || 0) / 60);
       saida.entregaPropria = d.deliverType === 2;
+      // TEMPO DE ENTREGA no 99 (Lucas/Frangoso, 15/11/2026: "não precisa
+      // alterar o preparo e sim o tempo de entrega"). Ainda NÃO há endpoint
+      // conhecido para gravar o tempo de entrega da loja de entrega própria:
+      // nenhuma chamada medida até hoje o escreve. Até alguém capturar no
+      // 99Food Admin (DevTools › Rede) o que o botão Salvar manda ao mudar esse
+      // tempo, a extensão só ANOTA, desta mesma leitura (nenhuma chamada a
+      // mais), os campos do settingInfo com cara de entrega — ficam em
+      // n99Relato[].camposDeEntrega para conferir antes de escrever qualquer coisa.
+      if (saida.entregaPropria) {
+        saida.camposDeEntrega = {};
+        Object.keys(d).forEach(function (k) {
+          if (k !== "deliverType" && /deliver|distribut|arrive|eta/i.test(k)) saida.camposDeEntrega[k] = d[k];
+        });
+      }
 
       var conf = d.produceTimeConf || {};
       var minLoja = typeof conf.min === "number" && conf.min > 0 ? conf.min : 1;

@@ -114,6 +114,12 @@ export function inicioDoDiaDaLojaAtras(dias: number, timeZone?: string | null, a
   return new Date(hoje.getTime() - dias * 24 * 60 * 60 * 1000);
 }
 
+/** O instante em que começou o mês corrente no relógio da loja (meia-noite do dia 1). */
+export function inicioDoMesDaLoja(timeZone?: string | null, agora: Date = new Date()): Date {
+  const dia = Number(dataDaLoja(timeZone, agora).slice(8, 10));
+  return inicioDoDiaDaLojaAtras(dia - 1, timeZone, agora);
+}
+
 /** Um instante escrito no relógio da loja, como "06/09/2026, 20:28:00" (pt-BR). */
 export function dataHoraDaLoja(instante: Date | string | number, timeZone?: string | null): string {
   return new Date(instante).toLocaleString("pt-BR", { timeZone: timeZone || FUSO_PADRAO });
