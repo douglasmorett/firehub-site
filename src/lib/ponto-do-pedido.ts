@@ -231,7 +231,11 @@ export function motivoForaDaArea(p: Ponto, area: AreaDaLoja, ehMarketplace = fal
 export type PontoGravado = {
   ponto: Ponto;
   fonte: FonteDoPonto;
-  /** Centro do bairro: serve para a direção, não para a porta. */
+  /**
+   * Centro do bairro ou ponto achado só pelo TEXTO: serve para a direção, não
+   * para a porta — a tela marca "local aproximado — confira o endereço". Só
+   * visual: não tira o pedido do mapa nem da rota.
+   */
   aproximado: boolean;
 };
 
@@ -257,9 +261,11 @@ export function lerPontoGravado(bruto: unknown, ehMarketplace: boolean): PontoGr
   if (origem === "vizinhanca") return { ponto, fonte: "vizinhanca", aproximado: true };
   if (origem === "pino" || origem === "gps") return { ponto, fonte: "cliente", aproximado: false };
   if (origem === "bairro") return { ponto, fonte: "bairro", aproximado: true };
-  if (origem === "mapa") return { ponto, fonte: "texto", aproximado: false };
+  // O mapa achou o texto: pode ser a rua de mesmo nome em outro bairro
+  // (Alameda Juriti, Uberaba, 19/11/2026) — a loja vê que é para conferir.
+  if (origem === "mapa") return { ponto, fonte: "texto", aproximado: true };
   if (!origem) return { ponto, fonte: ehMarketplace ? "parceiro" : "cliente", aproximado: false };
-  return { ponto, fonte: "texto", aproximado: false };
+  return { ponto, fonte: "texto", aproximado: true };
 }
 
 /**
@@ -569,7 +575,8 @@ export function planoDosPontos(
     const r = o.resolucoes.get(p.id);
     if (r?.ponto) {
       plano.pontos[p.id] = r.ponto;
-      plano.info[p.id] = { fonte: r.fonte || "texto", aproximado: !!r.aproximado };
+      // O ponto que o servidor achou pelo texto também é só aproximado (ver PontoGravado).
+      plano.info[p.id] = { fonte: r.fonte || "texto", aproximado: !!r.aproximado || (r.fonte || "texto") === "texto" };
       continue;
     }
     if (!String(p.endereco || "").trim()) {

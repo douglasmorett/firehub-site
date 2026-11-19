@@ -218,7 +218,7 @@ export const popupDoPedido = (
     endereco ? `<span style="color:#334155;">📍 ${esc(endereco)}</span>` : "",
     // De onde saiu o ponto: quem monta a rota sabe quando desconfiar dele.
     local
-      ? `<span style="color:${local.aproximado ? "#B45309" : "#64748B"};">🧭 Local: ${esc(NOME_DA_FONTE[local.fonte] || local.fonte)}${local.aproximado ? " — confira (botão direito no pino corrige)" : ""}</span>`
+      ? `<span style="color:${local.aproximado ? "#B45309" : "#64748B"};">🧭 Local: ${esc(NOME_DA_FONTE[local.fonte] || local.fonte)}${local.aproximado ? " · local aproximado — confira o endereço (botão direito no pino corrige)" : ""}</span>`
       : "",
     entregarAte
       ? `<b style="color:#B45309;">⏰ Entregar até ${entregarAte.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</b>${prazoEstimado ? ` <span style="color:#94A3B8;font-weight:400;">(estimado)</span>` : ""}`
@@ -3327,7 +3327,7 @@ ${mapsUrl}`;
                                             cursor: "pointer", fontFamily: "inherit",
                                           }}
                                         >
-                                          {local?.aproximado ? "≈ centro do bairro · corrigir" : "📍 Corrigir local"}
+                                          {local?.aproximado ? (local.fonte === "bairro" ? "≈ centro do bairro · corrigir" : "≈ local aproximado · corrigir") : "📍 Corrigir local"}
                                         </button>
                                       )}
 

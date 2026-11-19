@@ -1291,7 +1291,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
             // Cor da urgência, a mesma régua do KDS (lib/app-motoboy/urgencia.ts).
             const urgencia = urgenciaDaEntrega((order as any).previsaoEntrega?.em, agora, alertaDeTempo);
             const corUrg = urgencia ? CORES_DA_URGENCIA[urgencia.faixa] : null;
-            const pontoMapa = (order as any).mapa as { lat: number; lng: number; aproximado: boolean } | null;
+            const pontoMapa = (order as any).mapa as { lat: number; lng: number; aproximado: boolean; confira?: boolean } | null;
 
             // ── O QUE VAI PARA O NAVEGADOR DE MAPA NÃO É O QUE O HUMANO LÊ ──
             //
@@ -1468,9 +1468,9 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                             style={{ width: "100%", height: 240, border: 0, display: "block" }}
                             loading="lazy"
                           />
-                          {pontoMapa.aproximado && (
+                          {(pontoMapa.aproximado || pontoMapa.confira) && (
                             <div style={{ background: "#FFFBEB", color: "#92400E", fontSize: "0.75rem", fontWeight: 700, padding: "6px 10px" }}>
-                              Ponto aproximado (pelo bairro). Confira o número na rua.
+                              {pontoMapa.aproximado ? "Ponto aproximado (pelo bairro). Confira o número na rua." : "Local aproximado — confira o endereço."}
                             </div>
                           )}
                         </div>

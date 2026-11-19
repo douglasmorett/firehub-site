@@ -673,14 +673,18 @@ function bairroParecido(informado: string, noMapa: string): boolean {
  */
 function compararBairro(
   informado: string,
-  r: { bairro?: string; suburb?: string; displayName: string },
+  r: { bairro?: string; suburb?: string; displayName: string; rua?: string },
 ): "confere" | "sem-bairro" | "diverge" {
   const alvo = nomeDeBairro(informado);
   if (!alvo) return "sem-bairro";
   const doMapa = r.bairro || r.suburb || "";
   const temBairro = !!nomeDeBairro(doMapa);
   if (temBairro && bairroConfere(informado, doMapa)) return "confere";
-  if (contidoEm(alvo, normalizarParaComparar(r.displayName))) return "confere";
+  // O nome do bairro dentro do NOME DA RUA não é o bairro: "Rua Mário Franco"
+  // do outro lado da cidade não fica no "Condomínio Mário Franco".
+  const ruaDoMapa = normalizarParaComparar(r.rua || "");
+  const resto = normalizarParaComparar(r.displayName);
+  if (contidoEm(alvo, ruaDoMapa ? ` ${resto} `.replace(` ${ruaDoMapa} `, " ").trim() : resto)) return "confere";
   return temBairro ? "diverge" : "sem-bairro";
 }
 
@@ -711,16 +715,21 @@ export function bairroDoTexto(texto: string, cidade?: string | null): string {
     .filter(Boolean);
   if (partes.length < 2) return "";
   const daCidade = normalizarParaComparar(cidade || "");
+  // Sem bairro escrito, o NOME do condomínio é o lugar que o cliente disse
+  // ("Rua X, 50 - Condomínio Mário Franco"): sem ele, a rua de mesmo nome do
+  // outro lado da cidade entrava como a casa (Uberaba, 19/11/2026).
+  let condominio = "";
   for (const parte of partes.slice(1)) {
     const semRotulo = parte.replace(/^bairro\s*:?\s*/i, "").trim();
     const n = normalizarParaComparar(semRotulo);
     if (n.length < 3 || /^\d/.test(n)) continue;
+    if (!condominio && /^(condominio|cond) [a-z]{3,}/.test(n)) condominio = semRotulo;
     if (NAO_E_BAIRRO.test(n) || TIPO_DE_VIA.test(n)) continue;
     if (UFS.has(n) || ESTADO_POR_EXTENSO.test(n)) continue;
     if (daCidade && (n === daCidade || contidoEm(daCidade, n))) continue;
     return semRotulo;
   }
-  return "";
+  return condominio;
 }
 
 /**
@@ -813,7 +822,15 @@ export type OpcoesDaVerificacao = {
     cidade: string;
     loja: Ponto;
     raioKm: number;
-  }): Promise<{ lat: number; lng: number; displayName: string; precisao: "endereco" | "rua" } | null>;
+  }): Promise<{ lat: number; lng: number; displayName: string; precisao: "endereco" | "rua"; bairro?: string; bairroConfere?: boolean } | null>;
+  /**
+   * O centro do bairro ESCRITO na base do IBGE do município (localidade do
+   * CNEFE ou bairro da malha). null = o IBGE não conhece esse bairro (ou o
+   * município não foi importado). Só é perguntado quando o mapa aberto não
+   * conhece o bairro: é a régua da rua achada em outro bairro e o ponto
+   * "pelo bairro".
+   */
+  bairroNoIbge?(bairro: string, cidade: string): Promise<Ponto | null>;
 };
 
 /** Texto normalizado para não mandar ao mapa a mesma pergunta com outra pontuação. */
@@ -1013,6 +1030,8 @@ export async function verifyStoreDeliveryAddress(
     let reservaOutroBairro: ResultadoDoMapa | null = null;
     /** A busca pela rua achou a rua num lugar só, com outro bairro no mapa. */
     let reservaRuaUnica: TrechoDeRua | null = null;
+    /** A mesma coisa, mas o mapa não diz bairro nenhum para a rua. */
+    let reservaRuaSemBairro: TrechoDeRua | null = null;
     /** A busca pela rua achou trechos em lugares diferentes, e nenhum no bairro do cliente. */
     let reservaHomonima: { trecho: TrechoDeRua; motivo: string; trechos: TrechoDeRua[] } | null = null;
     /** Duas ruas no texto e a busca livre achou a PRINCIPAL, sem número: a casa fica na pequena. */
@@ -1046,6 +1065,23 @@ export async function verifyStoreDeliveryAddress(
         bairroDoGoogle = { lat: r.lat, lng: r.lng, displayName: r.displayName, cidades: r.cidades };
       }
     };
+    /**
+     * O centro do bairro escrito pelo IBGE, quando o mapa aberto não conhece o
+     * bairro (perguntado uma vez, só quando falta). O bairro escrito manda:
+     * conhecido por qualquer fonte, a rua de outro bairro longe dele não vale
+     * e o ponto vai para o bairro (regra do dono, 19/11/2026).
+     */
+    let perguntaAoIbge: Promise<{ lat: number; lng: number; displayName: string } | null> | null = null;
+    const bairroDoIbge = () =>
+      (perguntaAoIbge ??= (async () => {
+        if (!opcoes?.bairroNoIbge || !neigh || !city) return null;
+        try {
+          const c = await opcoes.bairroNoIbge(neigh, city);
+          return c ? { lat: c.lat, lng: c.lng, displayName: `${neigh}, ${city}` } : null;
+        } catch {
+          return null; // banco fora: segue sem ele
+        }
+      })());
     // ── NÍVEL I: A BASE DO IBGE, ANTES DE TUDO ───────────────────────────
     //
     // O CNEFE do Censo 2022 tem cada endereço do município com o ponto da
@@ -1066,7 +1102,12 @@ export async function verifyStoreDeliveryAddress(
           loja,
           raioKm: maxRadiusKm,
         });
-        if (r) aceitar({ lat: r.lat, lng: r.lng, displayName: r.displayName }, r.precisao);
+        if (r) {
+          aceitar({ lat: r.lat, lng: r.lng, displayName: r.displayName }, r.precisao);
+          // A rua num lugar só da cidade, em outro bairro, e o IBGE não conhece
+          // o bairro escrito (nome de condomínio): é palpite, não a casa.
+          if (r.bairroConfere === false) motivos.push(`a rua só existe em "${r.bairro || "outro bairro"}", e o bairro "${neigh}" não é conhecido — confira no mapa`);
+        }
       } catch {
         // Banco fora: segue a cascata de sempre.
       }
@@ -1171,9 +1212,10 @@ export async function verifyStoreDeliveryAddress(
           if (noBairro.length > 0) { aceitar(maisLonge(noBairro), "rua"); break; }
           if (!espalhados(trechos)) {
             // Um lugar só. Sem bairro nenhum no mapa, não há o que contradiga
-            // o cliente; com OUTRO nome, confere-se a distância ao bairro dele.
-            if (trechos.every((t) => compararBairro(neigh, t) === "sem-bairro")) { aceitar(maisLonge(trechos), "rua"); break; }
-            reservaRuaUnica ??= maisLonge(trechos);
+            // o cliente — a não ser o centro do bairro dele, se alguém o
+            // conhece (abaixo); com OUTRO nome, confere-se a distância também.
+            if (trechos.every((t) => compararBairro(neigh, t) === "sem-bairro")) reservaRuaSemBairro ??= maisLonge(trechos);
+            else reservaRuaUnica ??= maisLonge(trechos);
             continue;
           }
           reservaHomonima ??= {
@@ -1310,8 +1352,9 @@ export async function verifyStoreDeliveryAddress(
         const r = await buscarBairro();
         if (!r.ok) {
           falha ??= r.motivo;
-        } else if (r.valor || bairroDoGoogle) {
-          const perto = trechoMaisPerto(reservaHomonima.trechos, (r.valor || bairroDoGoogle)!);
+        } else {
+          const centro = r.valor || bairroDoGoogle || (await bairroDoIbge());
+          const perto = centro ? trechoMaisPerto(reservaHomonima.trechos, centro) : null;
           if (perto && perto.km <= PERTO_DO_BAIRRO_KM) {
             aceitar(perto.trecho, "rua");
             aproximadoNoBairro = true;
@@ -1322,7 +1365,7 @@ export async function verifyStoreDeliveryAddress(
     }
 
     const candidato: { lat: number; lng: number; displayName: string; cidades?: string[]; bairro?: string; suburb?: string; temNumero?: boolean } | null =
-      reservaOutroBairro ?? reservaRuaUnica;
+      reservaOutroBairro ?? reservaRuaUnica ?? reservaRuaSemBairro;
     if (!foundGeo && !reservaHomonima && candidato && consultaDoBairro) {
       if (!temTempoNoMapa()) {
         esgotouOPrazo = true;
@@ -1331,13 +1374,24 @@ export async function verifyStoreDeliveryAddress(
         if (!r.ok) {
           falha ??= r.motivo;
         } else {
-          const centroDoBairro = r.valor || bairroDoGoogle;
+          const centroDoBairro = r.valor || bairroDoGoogle || (await bairroDoIbge());
           const km = centroDoBairro ? haversineDistanceKm(candidato.lat, candidato.lng, centroDoBairro.lat, centroDoBairro.lng) : null;
           const ondeFica = candidato.bairro || candidato.suburb || "outro bairro";
-          if (km == null || km <= PERTO_DO_BAIRRO_KM) {
-            // O mesmo lugar com outro nome (ou o mapa não conhece o bairro:
-            // nada contradiz a rua achada).
+          if (km != null && km <= PERTO_DO_BAIRRO_KM) {
+            // O mesmo lugar com outro nome.
             aceitar(candidato, candidato.temNumero ? "endereco" : "rua");
+          } else if (km == null && candidato === reservaRuaSemBairro) {
+            // Nem a rua nem o bairro têm nome no mapa: nada contradiz o cliente.
+            aceitar(candidato, "rua");
+          } else if (km == null) {
+            // ── O BAIRRO ESCRITO QUE NINGUÉM CONHECE NÃO ACEITA A RUA DE OUTRO ──
+            // Rush Pizza (Uberaba, 19/11/2026): "Alameda Juriti, 581 - Cyrela
+            // Landscape". Nem o mapa nem o IBGE conhecem o condomínio; o mapa
+            // só tem a Alameda Juriti do Residencial Estados Unidos (o IBGE
+            // tem duas), e ela entrava calada como a casa: 3,8 km errado, a
+            // taxa de outra faixa. Fica como palpite — o cliente confirma.
+            aceitar(candidato, "rua");
+            motivos.push(`o mapa só achou a rua em "${ondeFica}" e não conhece o bairro "${neigh}" — pode ser outra rua de mesmo nome`);
           } else {
             motivoDoCandidato = `o mapa só achou a rua em "${ondeFica}", a ${km} km do bairro "${neigh}"`;
           }
@@ -1360,8 +1414,8 @@ export async function verifyStoreDeliveryAddress(
         return falhou("prazo", { maxRadiusKm, centroDaLoja: loja });
       }
       const r = await buscarBairro();
-      if (!r.ok && !bairroDoGoogle) return falhou(r.motivo, { maxRadiusKm, centroDaLoja: loja });
-      const centro = (r.ok ? r.valor : null) || bairroDoGoogle;
+      const centro = (r.ok ? r.valor : null) || bairroDoGoogle || (await bairroDoIbge());
+      if (!r.ok && !centro) return falhou(r.motivo, { maxRadiusKm, centroDaLoja: loja });
       if (centro) {
         aceitar(centro, "bairro");
         if (centro === bairroDoGoogle) opcoes?.aoUsarPontoDoGoogle?.();
@@ -1380,6 +1434,10 @@ export async function verifyStoreDeliveryAddress(
     if (!foundGeo && reservaRuaUnica) {
       aceitar(reservaRuaUnica, "rua");
       motivos.push(`o mapa achou a rua em "${reservaRuaUnica.suburb || "outro bairro"}", não em "${neigh}"`);
+    }
+    if (!foundGeo && reservaRuaSemBairro) {
+      aceitar(reservaRuaSemBairro, "rua");
+      motivos.push(`o mapa achou a rua sem bairro, e não no bairro "${neigh}"`);
     }
     if (!foundGeo && reservaHomonima) {
       aceitar(reservaHomonima.trecho, "rua");
