@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { exigirEstoque } from "@/lib/cmv/acesso";
+import { gravarContados } from "@/lib/cmv/contagem-no-banco";
 
 export const dynamic = "force-dynamic";
 
@@ -98,12 +99,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       if (!Number.isFinite(n) || n < 0) return NextResponse.json({ error: `Quantidade inválida em "${porId.get(it.stockItemId)?.name}".` }, { status: 400 });
       contado = n;
     }
-    const insumo = porId.get(it.stockItemId)!;
-    await prisma.contagemItem.upsert({
-      where: { contagemId_stockItemId: { contagemId: contagem.id, stockItemId: insumo.id } },
-      create: { contagemId: contagem.id, stockItemId: insumo.id, nome: insumo.name, unidade: insumo.unit, contado, atualizadoPor: usuarioId },
-      update: { contado, atualizadoPor: usuarioId },
-    });
+    await gravarContados({ contagemId: contagem.id, usuarioId, itens: [{ insumo: porId.get(it.stockItemId)!, contado }] });
   }
   return NextResponse.json({ success: true });
 }

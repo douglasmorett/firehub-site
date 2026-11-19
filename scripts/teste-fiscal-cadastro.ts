@@ -497,7 +497,7 @@ console.log("\n— pendenciasParaEmitir: loja da Focus (config crua, como emitir
   confere(
     "emitir, inutilizar e a automática normalizam a config antes de emitir",
     [
-      leem("src/app/api/store/fiscal/emitir/route.ts").includes("normalizarConfigFiscal(loja?.fiscalConfig)"),
+      leem("src/lib/fiscal-emitir-pelo-painel.ts").includes("normalizarConfigFiscal(loja?.fiscalConfig)"),
       leem("src/app/api/store/fiscal/inutilizacao/route.ts").includes("normalizarConfigFiscal(loja?.fiscalConfig)"),
       leem("src/lib/fiscal-automatico.ts").includes("config: configNormalizada(loja?.fiscalConfig)"),
       leem("src/lib/fiscal-automatico.ts").includes("const config = configNormalizada(loja.fiscalConfig)"),
@@ -611,9 +611,10 @@ console.log("\n— caminhoDaNotaDoPedido (POST /api/store/fiscal/emitir)");
   const lib = readFileSync(join(__dirname, "../src/lib/fiscal-config.ts"), "utf8");
   confere("fiscal-config usa pedidoDeMesaExigeNotaDaConta e não tem mais recusaDaNotaAvulsa", [lib.includes("pedidoDeMesaExigeNotaDaConta(pedido)"), lib.includes("function recusaDaNotaAvulsa")], [true, false]);
 
-  // Ordem na rota: já emitida → caminho (mesa) → nota da conta OU avulsa.
-  const rota = readFileSync(join(__dirname, "../src/app/api/store/fiscal/emitir/route.ts"), "utf8");
-  const posPost = rota.indexOf("export async function POST");
+  // Ordem na emissão (a da rota, em lib/fiscal-emitir-pelo-painel.ts): já
+  // emitida → caminho (mesa) → nota da conta OU avulsa.
+  const rota = readFileSync(join(__dirname, "../src/lib/fiscal-emitir-pelo-painel.ts"), "utf8");
+  const posPost = rota.indexOf("export async function emitirNotaPeloPainel");
   const jaEmitida = rota.indexOf('error: "ja_emitida"', posPost);
   const decide = rota.indexOf("caminhoDaNotaDoPedido(order", posPost);
   const daConta = rota.indexOf("emitirNfceDaMesa(caminho.tableSessionId, { manual: true })", posPost);

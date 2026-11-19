@@ -9,11 +9,12 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { comContextoIfood } from "@/lib/ifood-rota";
-import { chamarComContexto, mensagemDeErro } from "@/lib/ifood-http";
+import { mensagemDeErro } from "@/lib/ifood-http";
+import { criarInterrupcao, interrupcoesDaResposta, listarInterrupcoes } from "@/lib/ifood-interrupcoes";
 
 export async function GET(req: NextRequest) {
   return comContextoIfood(req, async ({ ctx }) => {
-    const r = await chamarComContexto(ctx, `/merchant/v1.0/merchants/${ctx.merchantId}/interruptions`);
+    const r = await listarInterrupcoes(ctx);
 
     if (!r.ok) {
       return NextResponse.json(
@@ -22,7 +23,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const lista = Array.isArray(r.data) ? r.data : ((r.data as any)?.interruptions ?? []);
+    const lista = interrupcoesDaResposta(r.data);
     // A tela antiga espera o array puro; o resto vem em campos extras que ela ignora.
     return NextResponse.json(lista);
   });
@@ -35,10 +36,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Informe o início e o fim da pausa." }, { status: 400 });
     }
 
-    const r = await chamarComContexto(ctx, `/merchant/v1.0/merchants/${ctx.merchantId}/interruptions`, {
-      method: "POST",
-      body: JSON.stringify({ description: description || "Pausa temporária", start, end }),
-    });
+    const r = await criarInterrupcao(ctx, { description, start, end });
 
     if (!r.ok) {
       return NextResponse.json(
