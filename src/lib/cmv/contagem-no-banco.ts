@@ -120,6 +120,21 @@ export async function abrirContagem(e: { lojaId: string; usuarioId: string; dia:
   });
 }
 
+/**
+ * Grava o que foi contado numa contagem ABERTA (o PATCH da tela, item a item,
+ * e o Bill). `contado: null` apaga; item fora da lista entra. Quem chama já
+ * conferiu a contagem, os insumos (da loja) e as quantidades.
+ */
+export async function gravarContados(e: { contagemId: string; usuarioId: string; itens: { insumo: { id: string; name: string; unit: string }; contado: number | null }[] }) {
+  for (const { insumo, contado } of e.itens) {
+    await prisma.contagemItem.upsert({
+      where: { contagemId_stockItemId: { contagemId: e.contagemId, stockItemId: insumo.id } },
+      create: { contagemId: e.contagemId, stockItemId: insumo.id, nome: insumo.name, unidade: insumo.unit, contado, atualizadoPor: e.usuarioId },
+      update: { contado, atualizadoPor: e.usuarioId },
+    });
+  }
+}
+
 /** Fecha a contagem: congela quantidade e custo, ajusta o saldo do contado. */
 export async function fecharContagemNoBanco(e: { lojaId: string; usuarioId: string; contagemId: string; tz: string }): Promise<{ fechamento: Fechamento; dia: string }> {
   const contagem = await prisma.contagemDeEstoque.findFirst({ where: { id: e.contagemId, franchiseeId: e.lojaId }, include: { itens: true } });

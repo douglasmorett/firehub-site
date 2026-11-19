@@ -5,7 +5,8 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { comContextoIfood } from "@/lib/ifood-rota";
-import { chamarComContexto, mensagemDeErro } from "@/lib/ifood-http";
+import { mensagemDeErro } from "@/lib/ifood-http";
+import { removerInterrupcao } from "@/lib/ifood-interrupcoes";
 
 export async function DELETE(
   req: NextRequest,
@@ -14,11 +15,7 @@ export async function DELETE(
   const { id } = await params;
 
   return comContextoIfood(req, async ({ ctx }) => {
-    const r = await chamarComContexto(
-      ctx,
-      `/merchant/v1.0/merchants/${ctx.merchantId}/interruptions/${id}`,
-      { method: "DELETE" },
-    );
+    const r = await removerInterrupcao(ctx, id);
 
     // 204 não tem corpo, e `ok` já cobre a faixa 2xx.
     if (!r.ok) {
