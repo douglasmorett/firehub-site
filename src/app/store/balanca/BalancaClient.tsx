@@ -12,6 +12,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Cable, Calculator, ReceiptText, ScanLine, Scale } from "lucide-react";
 import InterruptorDoModulo from "@/components/modulos/InterruptorDoModulo";
 import ResumoDaCobranca from "@/components/modulos/ResumoDaCobranca";
 import { CLAUSULAS_DO_TERMO_DA_BALANCA, TITULO_DO_TERMO_DA_BALANCA, VERSAO_DO_TERMO_DA_BALANCA } from "@/lib/balanca/termo";
@@ -112,26 +113,36 @@ export default function BalancaClient() {
       )}
 
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900, color: "#0F172A" }}>⚖️ Balança</h1>
+        <span aria-hidden style={{ width: 44, height: 44, borderRadius: 12, background: COR, color: "#fff", display: "grid", placeItems: "center", flex: "none" }}>
+          <Scale size={24} />
+        </span>
+        <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900, color: "#0F172A" }}>Balança automática</h1>
         {e.ativo && (
           <span style={{ fontSize: 12, fontWeight: 800, padding: "4px 10px", borderRadius: 999, background: "#DCFCE7", color: "#166534" }}>
             {e.isento ? "LIBERADO" : e.emTeste && e.testeAte ? `ATIVO · grátis até ${data(e.testeAte)}` : "ATIVO"}
           </span>
         )}
       </div>
-      <p style={{ ...texto, marginTop: 6, fontSize: 15 }}>
-        Self-service por quilo: o cliente põe o prato na balança, passa o cartão da comanda e o valor cai na conta dele. Sem
-        digitar peso, sem fila no caixa.
+      <p style={{ ...texto, marginTop: 8, fontSize: 16, color: "#334155" }}>
+        <b style={{ color: "#0F172A" }}>O peso entra sozinho.</b> O cliente do self-service põe o prato na balança, o FireHub
+        recebe o peso pelo cabo, multiplica pelo preço do quilo e o valor cai direto na comanda dele. Ninguém digita peso,
+        ninguém faz conta.
       </p>
 
       {e.ativo ? (
-        <Ativo dados={dados} salvando={salvando} onDesligar={() => ligar(false)} onContinuar={() => ligar(true)}
-          onProdutos={(produtos) => setDados({ ...dados, produtos })} onAviso={setAviso} />
+        <>
+          <Ativo dados={dados} salvando={salvando} onDesligar={() => ligar(false)} onContinuar={() => ligar(true)}
+            onProdutos={(produtos) => setDados({ ...dados, produtos })} onAviso={setAviso} />
+          <div style={{ marginTop: 16 }}><IlustracaoDaBalanca /></div>
+        </>
       ) : (
-        <Oferta dados={dados} salvando={salvando} onAtivar={() => setTermoAberto(true)} />
+        <>
+          <div style={{ marginTop: 16 }}><IlustracaoDaBalanca /></div>
+          <PorQueAutomatica />
+          <Oferta dados={dados} salvando={salvando} onAtivar={() => setTermoAberto(true)} />
+        </>
       )}
 
-      <div style={{ marginTop: 16 }}><IlustracaoDaBalanca /></div>
       <Equipamento />
 
       {termoAberto && (
@@ -143,6 +154,74 @@ export default function BalancaClient() {
 }
 
 // ─── Desligado ───────────────────────────────────────────────────────────
+
+/**
+ * O que o "automática" quer dizer, só com o que a tela de pesar faz de verdade
+ * (pesar/TelaDaBalanca.tsx, lib/balanca/protocolo-toledo.ts,
+ * api/store/balanca/pesar, lib/fiscal-itens.ts). O erro de digitação é um
+ * exemplo de conta, marcado como exemplo: 0,027 kg × R$ 51,90 = R$ 1,40.
+ */
+const VANTAGENS: [typeof Cable, string, string][] = [
+  [Cable, "Ninguém digita o peso", "A balança manda o peso pelo cabo. O valor só sai quando ela repete o mesmo peso: prato balançando ou mão encostada não vira conta."],
+  [Calculator, "A conta é do sistema", "Peso × preço do quilo do seu cardápio, no centavo. O FireHub refaz a conta na hora de lançar, com o preço cadastrado."],
+  [ScanLine, "Cai direto na comanda", "O cliente encosta o cartão no leitor de mesa e pronto. A comanda abre sozinha na primeira pesagem e o mesmo prato não entra duas vezes."],
+  [ReceiptText, "O caixa só fecha", "Passa o cartão em Mesas › Comandas e fecha a conta, com o prato e a bebida juntos. Se a loja emite NFC-e pelo FireHub, o prato sai na nota em quilo (KG)."],
+];
+
+function PorQueAutomatica() {
+  const lista = (itens: string[], cor: string, marca: string) => (
+    <ul style={{ margin: "6px 0 0", padding: 0, listStyle: "none", display: "grid", gap: 6 }}>
+      {itens.map((t) => (
+        <li key={t} style={{ display: "flex", gap: 8, fontSize: 14, color: "#334155", lineHeight: 1.45 }}>
+          <b aria-hidden style={{ color: cor, flex: "none" }}>{marca}</b>{t}
+        </li>
+      ))}
+    </ul>
+  );
+  return (
+    <section style={cartao}>
+      <h2 style={h2}>Por que automática</h2>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 170px), 1fr))", gap: 12 }}>
+        {VANTAGENS.map(([Icone, titulo, detalhe]) => (
+          <div key={titulo} style={{ border: "1px solid #CCFBF1", background: "#F0FDFA", borderRadius: 12, padding: "14px 14px 12px" }}>
+            <span aria-hidden style={{ width: 34, height: 34, borderRadius: 10, background: "#fff", color: COR, display: "grid", placeItems: "center", boxShadow: "0 2px 6px rgba(15,118,110,.15)" }}>
+              <Icone size={19} />
+            </span>
+            <b style={{ display: "block", marginTop: 10, fontSize: 15, color: "#0F172A" }}>{titulo}</b>
+            <p style={{ ...texto, marginTop: 4, fontSize: 13.5, lineHeight: 1.5 }}>{detalhe}</p>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12, marginTop: 14 }}>
+        <div style={{ borderRadius: 12, padding: "12px 14px", background: "#F8FAFC", border: "1px solid #E2E8F0" }}>
+          <b style={{ fontSize: 14, color: "#64748B" }}>Sem a balança automática</b>
+          {lista([
+            "Alguém lê o visor e digita ou anota o peso de cada prato.",
+            "A conta do quilo é feita na mão ou na calculadora.",
+            "Número trocado vira prejuízo ou reclamação na mesa.",
+          ], "#DC2626", "✕")}
+        </div>
+        <div style={{ borderRadius: 12, padding: "12px 14px", background: "#F0FDFA", border: "1.5px solid #99F6E4" }}>
+          <b style={{ fontSize: 14, color: COR }}>Com a balança automática</b>
+          {lista([
+            "O peso vem da balança direto para a comanda do cliente.",
+            "O valor sai do preço do quilo do cardápio, sem conta na mão.",
+            "Quem pesava fica livre para repor o buffet e atender.",
+          ], COR, "✓")}
+        </div>
+      </div>
+
+      <div style={{ marginTop: 12, borderRadius: 12, padding: "12px 14px", background: "#FFFBEB", border: "1px solid #FDE68A", display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+        <span style={{ fontSize: 11, fontWeight: 900, letterSpacing: 0.6, color: "#92400E", background: "#FEF3C7", borderRadius: 6, padding: "3px 7px" }}>EXEMPLO</span>
+        <p style={{ ...texto, flex: "1 1 260px", fontSize: 14, color: "#78350F" }}>
+          Um prato de <b>0,452 kg</b> digitado como <b>0,425 kg</b> (dois números trocados), a R$ 51,90 o quilo:{" "}
+          <b>R$ 1,40 a menos</b> nesse prato, e ninguém percebe. Na balança automática o peso não passa pela mão de ninguém.
+        </p>
+      </div>
+    </section>
+  );
+}
 
 function Oferta({ dados, salvando, onAtivar }: { dados: Dados; salvando: boolean; onAtivar: () => void }) {
   const m = dados.mensalidade;
