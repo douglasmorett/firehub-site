@@ -132,6 +132,172 @@ export function cupomDoFiado(e: {
   });
 }
 
+// ── O FECHAMENTO DO PERÍODO, para assinar ──────────────────────────────────
+//
+// Pedido do Douglas e do Victor (19/11/2026): "impressão é o cara ter ali 30
+// dias fechado o que o cara consumiu e dentro daquele mês". Um papel só com
+// tudo o que a pessoa levou no período (mês atual, mês anterior ou as datas
+// da tela), o total, o que já foi pago desse consumo, o pendente, e a aba de
+// assinatura reconhecendo o débito. Mesma fila do comprovante (CAIXA_FIADO),
+// na impressora que a pessoa escolher (`impressoraAlvo`, print-queue).
+
+/** Um lançamento do período, já com o quanto dele ainda está em aberto. */
+export type LancamentoDoPeriodo = {
+  id: string;
+  quando: Date;
+  /** "Pedido #12", "Mesa 4", "Divida lancada". */
+  rotulo: string;
+  /** "2x X Burger, 1x Coca lata" — ou a observação da dívida à mão. */
+  descricao?: string | null;
+  valor: number;
+  /** O que falta pagar deste lançamento (as baixas quitam os mais antigos primeiro). */
+  restante: number;
+};
+
+/**
+ * Quanto falta pagar de cada lançamento. As baixas do fiado são do SALDO, não
+ * de um pedido: aqui elas quitam do mais antigo para o mais novo — o que
+ * qualquer caderninho de fiado faz. A soma dos restantes é o saldo
+ * (saldoDoFiado): lançamento negativo conta como baixa, baixa a mais não vira
+ * crédito.
+ */
+export function restanteDosLancamentos(lancamentos: { id: string; quando: Date; valor: number }[], baixas: number): Map<string, number> {
+  const ordem = lancamentos
+    .map((l, i) => ({ ...l, i, c: Math.round((Number(l.valor) || 0) * 100) }))
+    .sort((a, b) => a.quando.getTime() - b.quando.getTime() || a.i - b.i);
+  let pago = Math.round((Number(baixas) || 0) * 100) + ordem.reduce((s, l) => s + (l.c < 0 ? -l.c : 0), 0);
+  const saida = new Map<string, number>();
+  for (const l of ordem) {
+    if (l.c <= 0) { saida.set(l.id, 0); continue; }
+    const abate = Math.min(Math.max(0, pago), l.c);
+    pago -= abate;
+    saida.set(l.id, (l.c - abate) / 100);
+  }
+  return saida;
+}
+
+const MESES = ["Janeiro", "Fevereiro", "Marco", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
+/**
+ * O período escrito como a pessoa fala: "Novembro de 2026", "Novembro de 2026
+ * (01/11 a 19/11)" no mês em curso, "01/11 a 19/11/2026", "19/11/2026".
+ * `de`/`ate` são dias puros (YYYY-MM-DD) da tela; vazios = todas as datas.
+ */
+export function periodoPorExtenso(de?: string | null, ate?: string | null): string {
+  const p = (s?: string | null) => (s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s.split("-").map(Number) : null);
+  const a = p(de);
+  const b = p(ate);
+  const dm = (x: number[]) => `${String(x[2]).padStart(2, "0")}/${String(x[1]).padStart(2, "0")}`;
+  const dma = (x: number[]) => `${dm(x)}/${x[0]}`;
+  if (!a && !b) return "Todas as datas";
+  if (a && !b) return `Desde ${dma(a)}`;
+  if (!a && b) return `Ate ${dma(b)}`;
+  const [x, y] = [a!, b!];
+  if (x[0] === y[0] && x[1] === y[1] && x[2] === 1) {
+    const mes = `${MESES[x[1] - 1]} de ${x[0]}`;
+    const ultimo = new Date(Date.UTC(x[0], x[1], 0)).getUTCDate();
+    if (y[2] === ultimo) return mes;
+    return `${mes} (${dm(x)} a ${dm(y)})`;
+  }
+  if (x.join() === y.join()) return dma(x);
+  return x[0] === y[0] ? `${dm(x)} a ${dma(y)}` : `${dma(x)} a ${dma(y)}`;
+}
+
+/** Completadas até 32 colunas: cabem inteiras na bobina de 58 mm. */
+const ate32 = (rotulo: string) => rotulo + "_".repeat(32 - rotulo.length);
+export const LINHA_DO_NOME_COMPLETO = ate32("Nome: ");
+export const LINHA_DO_DOCUMENTO = ate32("CPF/Doc.: ");
+export const LINHA_DA_DATA = "Data: ____/____/________";
+
+export function cupomDoFechamentoDoFiado(e: {
+  loja: string;
+  fuso: string;
+  operador: string;
+  cliente: { id: string; nome: string; cargo?: string | null };
+  /** periodoPorExtenso(de, ate). */
+  periodo: string;
+  /** Os lançamentos DO PERÍODO (qualquer ordem). */
+  lancamentos: LancamentoDoPeriodo[];
+  /** Saldo devedor de todas as datas, agora. */
+  saldoTotal: number;
+  agora?: Date;
+}): CupomDoCaixa {
+  const agora = e.agora || new Date();
+  const dataHora = agora.toLocaleString("pt-BR", { timeZone: e.fuso, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const dia = (d: Date) => d.toLocaleDateString("pt-BR", { timeZone: e.fuso, day: "2-digit", month: "2-digit" });
+  const semana = (d: Date) => d.toLocaleDateString("pt-BR", { timeZone: e.fuso, weekday: "short" }).replace(".", "");
+  const hora = (d: Date) => d.toLocaleTimeString("pt-BR", { timeZone: e.fuso, hour: "2-digit", minute: "2-digit" });
+  const lancs = [...e.lancamentos].sort((a, b) => a.quando.getTime() - b.quando.getTime());
+  const soma = (f: (l: LancamentoDoPeriodo) => number) => Math.round(lancs.reduce((s, l) => s + Math.round((Number(f(l)) || 0) * 100), 0)) / 100;
+  const consumo = soma((l) => l.valor);
+  const pendente = soma((l) => l.restante);
+  const pago = centavos(consumo - pendente);
+
+  const R: LinhaDoRelatorio[] = [
+    { tipo: "titulo", texto: "Cliente" },
+    { tipo: "texto", texto: e.cliente.cargo ? `${e.cliente.nome} (${e.cliente.cargo})` : e.cliente.nome },
+    { tipo: "texto", texto: `Periodo: ${e.periodo}` },
+    { tipo: "titulo", texto: "Consumo no periodo" },
+  ];
+  if (lancs.length === 0) R.push({ tipo: "texto", texto: "Nenhum lancamento no periodo." });
+
+  // Agrupado por dia: com 30 dias de consumo, o papel se lê pela data.
+  const dias = new Map<string, LancamentoDoPeriodo[]>();
+  for (const l of lancs) dias.set(dia(l.quando), [...(dias.get(dia(l.quando)) || []), l]);
+  let primeiro = true;
+  for (const [d, doDia] of dias) {
+    if (!primeiro) R.push({ tipo: "linha", texto: "", valor: "" });
+    primeiro = false;
+    R.push({ tipo: "texto", texto: `== ${d} (${semana(doDia[0].quando)}) ==` });
+    for (const l of doDia) {
+      const marca = l.restante <= 0.004 ? " (pago)" : l.restante < l.valor - 0.004 ? ` (resta ${reais(l.restante)})` : "";
+      R.push({ tipo: "linha", texto: `${hora(l.quando)} ${l.rotulo}${marca}`, valor: reais(l.valor) });
+      const desc = String(l.descricao || "").replace(/×/g, "x").trim();
+      if (desc) R.push({ tipo: "texto", texto: `- ${desc}` });
+    }
+    if (doDia.length > 1) {
+      R.push({ tipo: "linha", texto: `Subtotal ${d}`, valor: reais(doDia.reduce((s, l) => s + Math.round(l.valor * 100), 0) / 100) });
+    }
+  }
+
+  R.push({ tipo: "separador" });
+  R.push({ tipo: "linha", texto: `Total consumido (${lancs.length})`, valor: reais(consumo) });
+  if (pago > 0.004) R.push({ tipo: "linha", texto: "Ja pago deste consumo", valor: reais(-pago) });
+  R.push({ tipo: "destaque", texto: "PENDENTE", valor: reais(pendente) });
+  if (Math.abs(centavos(e.saldoTotal) - pendente) > 0.004) {
+    R.push({ tipo: "linha", texto: "Saldo em aberto (todas as datas)", valor: reais(e.saldoTotal) });
+  }
+
+  // A aba de assinatura. O vão é uma "linha" vazia (o Assistente descarta
+  // texto só de espaço) — o mesmo recurso do comprovante e da sangria.
+  const vao = (): LinhaDoRelatorio => ({ tipo: "linha", texto: "", valor: "" });
+  R.push({ tipo: "titulo", texto: "Reconhecimento de debito" });
+  R.push({ tipo: "texto", texto: `Reconheco o debito acima no valor de ${reais(pendente)}, referente a ${e.periodo}.` });
+  R.push(vao(), vao(), vao());
+  R.push({ tipo: "texto", texto: TRACO_DA_ASSINATURA });
+  R.push({ tipo: "texto", texto: "Assinatura" });
+  R.push(vao());
+  R.push({ tipo: "texto", texto: LINHA_DO_NOME_COMPLETO });
+  R.push(vao());
+  R.push({ tipo: "texto", texto: LINHA_DO_DOCUMENTO });
+  R.push(vao());
+  R.push({ tipo: "texto", texto: LINHA_DA_DATA });
+
+  // Assistente antigo (sem `relatorio`) imprime como pedido: um item por lançamento.
+  const items: LinhaDoCaixa[] = lancs.map((l) => ({ name: `${dia(l.quando)} ${l.rotulo}`, qty: 1, price: centavos(l.valor) }));
+
+  return montar({
+    id: `caixa_fiado_periodo_${e.cliente.id}_${agora.getTime()}`,
+    kind: KIND_DO_COMPROVANTE_DO_FIADO,
+    titulo: "FIADO DO PERIODO",
+    cabecalho: { loja: e.loja, dataHora, operador: e.operador || "—" },
+    items,
+    total: pendente,
+    rodape: `Fiado de ${e.cliente.nome} - ${e.periodo}. Pendente ${reais(pendente)}. Assinatura: ______________`,
+    relatorio: R,
+  });
+}
+
 // ── A assinatura desenhada na tela ─────────────────────────────────────────
 
 /** Teto do PNG em base64. A caixa de 500×180 com traço fino dá 5–20 KB; 120 KB é folga, não convite. */

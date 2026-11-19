@@ -1210,10 +1210,16 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
         : [];
     const cadastradaDoCaixa = impressoraDoCaixa(printers, impressorasNoPc);
     const unicaDoPc = cadastradaDoCaixa ? null : impressoraUnicaDoPc(impressorasNoPc);
-    const destinoDoCaixa: any = cadastradaDoCaixa || (unicaDoPc ? { name: unicaDoPc } : null);
+    const destinoDoCaixaDaLoja: any = cadastradaDoCaixa || (unicaDoPc ? { name: unicaDoPc } : null);
 
     const jobsDoCaixa = doCaixa.map((pedido) => {
       const order: any = pedido.payload;
+      // O papel cuja impressora a pessoa escolheu na tela (fiado do período,
+      // api/store/employees/[id]/fechamento): sai nela, não na do caixa.
+      const alvo = typeof order?.impressoraAlvo === "string" ? order.impressoraAlvo.trim() : "";
+      const destinoDoCaixa: any = alvo
+        ? printers.find((p) => String(p?.name || "").trim() === alvo) || { name: alvo }
+        : destinoDoCaixaDaLoja;
       return {
         id: "job_" + pedido.id,
         order,
@@ -1274,9 +1280,9 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
           createdAt: pedida.createdAt.toISOString(),
         },
         storeName: owner?.storeName || owner?.name || "FIREHUB",
-        paperWidth: destinoDoCaixa?.paperWidth || printers[0]?.paperWidth || pc?.defaultPaperWidth || "80mm",
-        columns: destinoDoCaixa?.columns ?? printers[0]?.columns,
-        escposProfile: destinoDoCaixa?.escposProfile ?? printers[0]?.escposProfile,
+        paperWidth: destinoDoCaixaDaLoja?.paperWidth || printers[0]?.paperWidth || pc?.defaultPaperWidth || "80mm",
+        columns: destinoDoCaixaDaLoja?.columns ?? printers[0]?.columns,
+        escposProfile: destinoDoCaixaDaLoja?.escposProfile ?? printers[0]?.escposProfile,
         printerConfig: {
           autoprint: pc?.autoprint !== false,
           autoBeverageTag: pc?.autoBeverageTag !== false,
@@ -1284,13 +1290,13 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
           defaultPaperWidth: pc?.defaultPaperWidth || "80mm",
           printers,
         },
-        destinos: destinoDoCaixa
+        destinos: destinoDoCaixaDaLoja
           ? [{
-              printer: destinoDoCaixa.name,
+              printer: destinoDoCaixaDaLoja.name,
               copies: 1,
-              paperWidth: destinoDoCaixa.paperWidth || pc?.defaultPaperWidth || "80mm",
-              columns: destinoDoCaixa.columns ?? undefined,
-              escposProfile: destinoDoCaixa.escposProfile ?? undefined,
+              paperWidth: destinoDoCaixaDaLoja.paperWidth || pc?.defaultPaperWidth || "80mm",
+              columns: destinoDoCaixaDaLoja.columns ?? undefined,
+              escposProfile: destinoDoCaixaDaLoja.escposProfile ?? undefined,
               somenteBebidas: false,
               separarItens: false,
               items: [],
