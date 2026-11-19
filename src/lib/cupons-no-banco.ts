@@ -12,7 +12,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { FONTES_QUE_NAO_SAO_SITE, digitosDoTelefone } from "@/lib/campanha-converter";
-import { FUSO_PADRAO } from "@/lib/fuso";
+import { FUSO_PADRAO, inicioDoMesDaLoja } from "@/lib/fuso";
 import { type Cupom, type FatosDoCupom } from "@/lib/cupons";
 
 /** "YYYY-MM-DD" de hoje no relógio da loja — é contra isso que a validade é lida. */
@@ -64,8 +64,9 @@ export async function jaPediuPeloSite(franchiseeId: string, telefone: unknown, e
  * pedido quando o desconto foi aplicado — é o único registro estruturado que
  * existe do cupom usado, e é gravado há meses, então os usos antigos contam.
  * Pedido cancelado não conta: o cliente não levou o desconto.
+ * `desde`: só os usos a partir deste instante (o cupom "por mês").
  */
-export async function usosDoCupomPeloCliente(franchiseeId: string, telefone: unknown, code: string, excetoPedidoId?: PedidosDeFora): Promise<number> {
+export async function usosDoCupomPeloCliente(franchiseeId: string, telefone: unknown, code: string, excetoPedidoId?: PedidosDeFora, desde?: Date): Promise<number> {
   const digitos = digitosDoTelefone(telefone);
   if (digitos.length < 8) return 0;
   const ultimos8 = digitos.slice(-8);
@@ -76,6 +77,7 @@ export async function usosDoCupomPeloCliente(franchiseeId: string, telefone: unk
       AND "status" NOT IN ('CANCELADO', 'CANCELLED', 'CANCELED', 'CRIANDO_IA', 'AGUARDANDO_PAGAMENTO')
       AND COALESCE("notes", '') LIKE ${marca}
       AND regexp_replace(COALESCE("customerPhone", ''), '[^0-9]', '', 'g') LIKE ${"%" + ultimos8}
+      ${desde ? Prisma.sql`AND "createdAt" >= ${desde}` : Prisma.empty}
       ${semOPedido(excetoPedidoId)}`;
   return Number(linhas[0]?.n ?? 0);
 }
@@ -100,7 +102,9 @@ export async function fatosDoCupom(
 ): Promise<FatosDoCupom> {
   const temTelefone = digitosDoTelefone(ctx.telefone).length >= 8;
   const [usos, jaPediu] = await Promise.all([
-    cupom.usosPorCliente > 0 && temTelefone ? usosDoCupomPeloCliente(ctx.franchiseeId, ctx.telefone, cupom.code, ctx.excetoPedidoId) : Promise.resolve(null),
+    cupom.usosPorCliente > 0 && temTelefone
+      ? usosDoCupomPeloCliente(ctx.franchiseeId, ctx.telefone, cupom.code, ctx.excetoPedidoId, cupom.usosPorMes ? inicioDoMesDaLoja(ctx.timeZone) : undefined)
+      : Promise.resolve(null),
     cupom.primeiroPedido && temTelefone ? jaPediuPeloSite(ctx.franchiseeId, ctx.telefone, ctx.excetoPedidoId) : Promise.resolve(null),
   ]);
   return {

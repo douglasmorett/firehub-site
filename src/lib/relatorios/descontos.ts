@@ -842,7 +842,7 @@ function regrasDoCupom(c: Cupom): string[] {
   const r: string[] = [];
   if (c.minOrderValue > 0) r.push(`pedido a partir de R$ ${c.minOrderValue.toFixed(2).replace(".", ",")}`);
   if (c.primeiroPedido) r.push("só no 1º pedido pelo site");
-  if (c.usosPorCliente > 0) r.push(c.usosPorCliente === 1 ? "1 uso por cliente" : `${c.usosPorCliente} usos por cliente`);
+  if (c.usosPorCliente > 0) r.push((c.usosPorCliente === 1 ? "1 uso por cliente" : `${c.usosPorCliente} usos por cliente`) + (c.usosPorMes ? " por mês" : ""));
   if (c.origem === "converter") r.push("prêmio da comanda");
   if (c.isPublic) r.push("o robô pode anunciar");
   return r;
