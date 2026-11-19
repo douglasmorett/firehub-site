@@ -433,6 +433,10 @@ export function pendenciasDosItens(itens: ItemDaNota[], regime: number): Problem
 export const INTERMEDIADORES_CONHECIDOS: Partial<Record<ChaveDeCanal, { nome: string; razaoSocial: string; cnpj: string }>> = {
   IFOOD: { nome: "iFood", razaoSocial: "IFOOD.COM AGENCIA DE RESTAURANTES ONLINE S.A.", cnpj: "14380200000121" },
   "99FOOD": { nome: "99Food", razaoSocial: "99 FOOD LTDA.", cnpj: "60112920000123" },
+  // Conferido na Receita (BrasilAPI) em 18/11/2026: AIQFOME LTDA, fantasia
+  // AIQFOME.COM, ativa, Maringá-PR. Marketplace com comissão por pedido,
+  // como o iFood: a venda é intermediada.
+  AIQFOME: { nome: "aiqfome", razaoSocial: "AIQFOME LTDA", cnpj: "09186786000158" },
 };
 
 /** Nome do canal para frase corrida na nota ("Pago no app iFood"). */
