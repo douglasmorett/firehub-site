@@ -3,6 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { lojasDaVisao, cookieDaVisao } from "@/lib/loja-ativa";
+// Os motivos (do iFood, ou a lista padrão) moram em lib/motivos-do-cancelamento-do-pedido.ts:
+// o Bill oferece os mesmos.
+import { motivosDoCancelamento } from "@/lib/motivos-do-cancelamento-do-pedido";
 
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
@@ -47,57 +50,5 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
   }
 
-  const defaultReasons = [
-    { cancelCodeId: "501", description: "Área de risco / Sem segurança" },
-    { cancelCodeId: "502", description: "Estabelecimento sem motoboy" },
-    { cancelCodeId: "503", description: "Item indisponível no cardápio" },
-    { cancelCodeId: "504", description: "Pedido em duplicidade" },
-    { cancelCodeId: "505", description: "Cliente desistiu do pedido" },
-    { cancelCodeId: "506", description: "Cardápio com preço incorreto" },
-    { cancelCodeId: "507", description: "Outros motivos" },
-  ];
-
-  if (order.ifoodOrderId) {
-    try {
-      // Com a credencial do dono do pedido (o token central só alcança a Hakim).
-      const { chamarPeloPedido } = await import("@/lib/ifood-pedido");
-      const res = await chamarPeloPedido(
-        order,
-        `/order/v1.0/orders/${order.ifoodOrderId}/cancellationReasons`,
-        { method: "GET", idempotente: true },
-        "iFood cancellationReasons",
-      );
-      if (res.ok) {
-        const data = res.data;
-        console.log(`[iFood cancellationReasons] Received data:`, JSON.stringify(data));
-        
-        let reasons: any[] = [];
-        if (Array.isArray(data)) {
-          reasons = data;
-        } else if (data && Array.isArray(data.reasons)) {
-          reasons = data.reasons;
-        } else if (data && typeof data === "object") {
-          const arrayVal = Object.values(data).find(Array.isArray);
-          if (arrayVal) {
-            reasons = arrayVal;
-          }
-        }
-
-        if (reasons.length > 0) {
-          const formatted = reasons.map((r: any) => ({
-            cancelCodeId: String(r.cancelCodeId || r.code || r.cancelCode || "501"),
-            description: String(r.description || r.reason || "Outros")
-          }));
-          return NextResponse.json(formatted);
-        }
-      } else {
-        console.warn(`[iFood cancellationReasons] Failed to fetch. Status: ${res.status}`);
-      }
-    } catch (err: any) {
-      console.error(`[iFood cancellationReasons] Error:`, err?.message);
-    }
-  }
-
-  // Fallback if not iFood order or if API fetch failed/returned empty
-  return NextResponse.json(defaultReasons);
+  return NextResponse.json(await motivosDoCancelamento(order));
 }

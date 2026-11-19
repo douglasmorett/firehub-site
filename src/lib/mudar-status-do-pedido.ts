@@ -1,0 +1,863 @@
+/**
+ * MUDAR O STATUS DE UM PEDIDO — o corpo do PUT /api/customer-order/status,
+ * tirado da rota em 19/11/2026 para o Bill (lib/assessor/modulos/pedidos.ts)
+ * passar EXATAMENTE pelo mesmo caminho do painel de pedidos: os avisos ao
+ * iFood/99/Brendi/Keeta/CardápioWeb/Anota AI/aiqfome/JotaJá/Wabiz, o WhatsApp
+ * do cliente, estorno, estoque, NFC-e e faturamento.
+ *
+ * A rota continua cuidando de sessão, motivo obrigatório do cancelamento e de
+ * quem pode mexer no pedido; daqui para baixo é o código que estava nela, sem
+ * mudança de comportamento. A senha do gerente vem por função porque a rota a
+ * lê do cabeçalho da requisição.
+ */
+import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import { trackSaleForBilling } from "@/lib/billing";
+import { ehPedido99Food, sincronizar99Food } from "@/lib/food99-status";
+import { ehPedidoBrendi, sincronizarBrendi } from "@/lib/brendi-status";
+import { ehPedidoWabiz, sincronizarWabiz } from "@/lib/wabiz-status";
+import { ehPedidoKeeta, sincronizarKeeta } from "@/lib/keeta/status";
+import { ehPedidoCardapioWeb, sincronizarCardapioWeb } from "@/lib/cardapioweb/status";
+import { ehPedidoAnotaAi, sincronizarAnotaAi } from "@/lib/anotaai/status";
+import { ehPedidoAiqfome, sincronizarAiqfome } from "@/lib/aiqfome/status";
+import { empilharEdicao } from "@/lib/edicao-de-pedido";
+import { prontoVoltaParaProducao } from "@/lib/pedidos-na-cozinha";
+
+// Status que contam como venda confirmada para fins de faturamento
+// Disparado apenas em ENTREGUE para evitar contagem duplicada
+const BILLING_TRIGGER_STATUSES = ["ENTREGUE"];
+
+// Transições de status permitidas (state machine total flexível para a operação dinâmica do restaurante)
+const ALL_TARGET_STATUSES = ["NOVO", "CONFIRMADO", "ACEITO", "PREPARANDO", "EM_PREPARO", "EM_ANDAMENTO", "PRONTO", "SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "ENTREGUE", "CANCELADO"];
+
+const ALLOWED_TRANSITIONS: Record<string, string[]> = {
+  // AGUARDANDO_PAGAMENTO faltava neste mapa, e a falta era fatal: sem entrada,
+  // `allowedNext` virava [] e NENHUMA transição saía dele para quem não é
+  // ADMIN. É o status em que todo pedido de totem NASCE.
+  //
+  // Na prática isso quebrava o fluxo principal do autoatendimento: o cliente
+  // escolhe "pagar no balcão", leva a senha, paga — e o atendente não
+  // conseguia aceitar o pedido ("Transição inválida: AGUARDANDO_PAGAMENTO →
+  // ACEITO"). A cozinha nunca via o pedido. E o pedido abandonado por quem
+  // desistiu também não podia ser cancelado: ficava presa na lista da loja
+  // para sempre.
+  //
+  // Aceitar daqui é o que dispara `confirmOrderPayment` mais abaixo — que
+  // carimba o pagamento, gera a senha e manda para o KDS.
+  AGUARDANDO_PAGAMENTO: ALL_TARGET_STATUSES,
+  CRIANDO_IA:    ALL_TARGET_STATUSES,
+  NOVO:          ALL_TARGET_STATUSES,
+  CONFIRMADO:    ALL_TARGET_STATUSES,
+  RECEBIDO:      ALL_TARGET_STATUSES,
+  PENDENTE:      ALL_TARGET_STATUSES,
+  ACEITO:        ALL_TARGET_STATUSES,
+  PREPARANDO:    ALL_TARGET_STATUSES,
+  EM_PREPARO:    ALL_TARGET_STATUSES,
+  EM_ANDAMENTO:  ALL_TARGET_STATUSES,
+  PRONTO:        ALL_TARGET_STATUSES,
+  SAIU_ENTREGA:  ALL_TARGET_STATUSES,
+  SAIU_PARA_ENTREGA: ALL_TARGET_STATUSES,
+  ENTREGUE:      ALL_TARGET_STATUSES,
+  CANCELADO:     ALL_TARGET_STATUSES,
+};
+
+// ── SÓ AS COLUNAS QUE A ROTA USA — E NUNCA A LINHA DA LOJA ─────────────────
+//
+// O PUT carregava o pedido com `include: { franchisee: true }`: a linha User
+// inteira da loja vinha junto — hash da senha, `resetToken` em claro, tokens
+// do Mercado Pago, do iFood, do 99Food e do JotaJá, o fiscalConfig — e o
+// "status igual ao atual" devolvia o `order` inteiro na resposta. Um
+// funcionário pedia "esqueci a senha" em nome do dono e lia o `resetToken`
+// aqui: virava titular da loja. Da loja, a rota só precisa do `ownerId` (a
+// checagem de quem é dono do pedido); do pedido, só o que está abaixo — o que
+// as sincronizações com os parceiros (iFood, 99Food, Brendi, Wabiz, JotaJá) e a
+// trava da NFC-e (lib/edicao-de-pedido → travaDaNotaFiscal) leem.
+export const CAMPOS_DO_PEDIDO = {
+  id: true,
+  franchiseeId: true,
+  status: true,
+  source: true,
+  deliveryType: true,
+  deliveryBy: true,
+  paymentMethod: true,
+  paymentPaidAt: true,
+  gatewayProvider: true,
+  gatewayPaymentId: true,
+  dailyOrderNumber: true,
+  notes: true,
+  kdsStage: true,
+  motoboyId: true,
+  fiscalStatus: true,
+  fiscalInfo: true,
+  ifoodOrderId: true,
+  ifoodStoreMerchant: true,
+  openDeliveryOrderId: true,
+  openDeliveryChannel: true,
+  openDeliveryReference: true,
+  food99AppShopId: true,
+  totalAmount: true,
+  // O rastro do pedido: o cancelamento à mão entra nele com quem e o motivo.
+  editHistory: true,
+  franchisee: { select: { ownerId: true } },
+} as const;
+
+export type PedidoParaStatus = Prisma.CustomerOrderGetPayload<{ select: typeof CAMPOS_DO_PEDIDO }>;
+
+export type MudancaDeStatus = {
+  /** O pedido lido com CAMPOS_DO_PEDIDO (quem pode mexer nele a rota já conferiu). */
+  order: PedidoParaStatus;
+  status: string;
+  /** O papel da sessão (ADMIN passa direto pela máquina de estados). */
+  role: string | undefined;
+  currentUser: { id: string; name: string | null; role: string | null };
+  /** Obrigatório para CANCELADO (lib/motivo-do-cancelamento.ts). */
+  cancelReason?: string;
+  cancellationCode?: unknown;
+  scheduledDatetime?: any;
+  /** Nome de quem finaliza o rascunho do robô (vai nas notas do pedido). */
+  quemFinaliza: string;
+  /** A trava da senha do gerente para cancelar: a resposta de recusa, ou null. */
+  conferirSenhaDoGerente: () => Promise<Response | null>;
+};
+
+export async function mudarStatusDoPedido(m: MudancaDeStatus): Promise<Response> {
+  const { order, status, role, currentUser, cancelReason, cancellationCode, scheduledDatetime } = m;
+  const orderId = order.id;
+
+  // Status igual ao atual não é transição: sem esta guarda, um segundo clique
+  // em "Entregue" no painel (ENTREGUE → ENTREGUE, que o ADMIN passa direto)
+  // disparava DE NOVO o WhatsApp "seu pedido chegou" e os efeitos da entrega.
+  // Responde só o status — nenhuma tela lia o `order` que ia aqui (e ele
+  // levava a linha da loja junto; ver CAMPOS_DO_PEDIDO).
+  const voltaParaProducao = prontoVoltaParaProducao(order, status);
+  if (order.status === status && !voltaParaProducao) {
+    return NextResponse.json({ success: true, semMudanca: true, status: order.status });
+  }
+
+  // Pix pelo site esperando o cliente pagar: quem tira o pedido da espera é o
+  // pagamento (lib/pix-online-pedido.ts), não um clique. Mais abaixo, sair de
+  // AGUARDANDO_PAGAMENTO chama `confirmOrderPayment` — isso é certo para o
+  // totem que paga no caixa, mas aqui carimbaria como pago um Pix que não caiu.
+  // Cancelar pode (a cobrança é excluída e o QR deixa de valer).
+  const esperaPixPeloSite =
+    order.status === "AGUARDANDO_PAGAMENTO" &&
+    order.source === "ONLINE" &&
+    (order.gatewayProvider === "asaas" || ["PIX", "PIX_ONLINE"].includes(String(order.paymentMethod || "").toUpperCase()));
+  if (esperaPixPeloSite && status !== "CANCELADO") {
+    return NextResponse.json(
+      { error: "Este pedido está esperando o Pix do cliente. Ele entra sozinho no painel quando o pagamento cair." },
+      { status: 409 }
+    );
+  }
+
+  // State machine: só permite transições válidas (exceto ADMIN que tem controle total)
+  if (role !== "ADMIN") {
+    const allowedNext = ALLOWED_TRANSITIONS[order.status] ?? [];
+    if (!allowedNext.includes(status)) {
+      return NextResponse.json(
+        { error: `Transição inválida: ${order.status} → ${status}` },
+        { status: 400 }
+      );
+    }
+  }
+
+  // Divinos, 08/11: PREPARANDO + FINISHED continua em Prontos. A volta é
+  // uma mudança da cozinha, não uma nova venda nem um novo aceite. Itens e
+  // pedido voltam juntos; só mudar o estágio deixaria os itens todos prontos
+  // e invisíveis na produção. Não reenvia pronto/aceite aos parceiros.
+  if (voltaParaProducao) {
+    try {
+      const pedido = await prisma.customerOrder.update({
+        where: {
+          id: orderId, franchiseeId: order.franchiseeId,
+          status: order.status, kdsStage: order.kdsStage,
+        },
+        data: {
+          status: "PREPARANDO", kdsStage: "PRODUCTION", kdsProductionAt: new Date(),
+          kdsStationId: null, kdsFinishingAt: null, kdsFinishedAt: null, readyAt: null,
+          kdsTelasProntas: [], kdsBaixas: [],
+          items: { updateMany: { where: {}, data: { prontoEm: null } } },
+        },
+        select: {
+          status: true, kdsStage: true, acceptedAt: true, readyAt: true,
+          kdsProductionAt: true, kdsStationId: true, kdsFinishingAt: true, kdsFinishedAt: true,
+        },
+      });
+      return NextResponse.json({ success: true, pedido });
+    } catch (err: any) {
+      if (err?.code === "P2025") {
+        return NextResponse.json(
+          { error: "O pedido mudou enquanto você voltava para produção. Atualize a lista e confira antes de tentar de novo." },
+          { status: 409 },
+        );
+      }
+      throw err;
+    }
+  }
+
+  // Pedido com NFC-e autorizada não se cancela por baixo da nota: a venda
+  // continuaria declarada na SEFAZ. Antes de qualquer aviso a parceiro — o
+  // iFood não pode receber um cancelamento que aqui não vai acontecer.
+  if (status === "CANCELADO") {
+    const { travaDaNotaFiscal } = await import("@/lib/edicao-de-pedido");
+    const trava = travaDaNotaFiscal(order, "cancelar o pedido");
+    if (trava) return NextResponse.json({ error: trava }, { status: 409 });
+  }
+
+  // Senha do gerente para cancelar, se o dono ligou (Minha Loja → Senha do gerente).
+  if (status === "CANCELADO" && role !== "ADMIN") {
+    const semSenha = await m.conferirSenhaDoGerente();
+    if (semSenha) return semSenha;
+  }
+
+  const updateData: any = { status };
+
+  // Quem cancelou e por quê, no rastro do pedido: é dele que o fechamento do
+  // caixa e a comanda do painel leem o nome de quem fez.
+  if (status === "CANCELADO") {
+    const papel = String(currentUser.role || "").toUpperCase() === "STAFF" ? "funcionário" : role === "ADMIN" ? "admin" : "dono";
+    updateData.editHistory = empilharEdicao((order as any).editHistory, {
+      quando: new Date().toISOString(),
+      quem: `${(currentUser.name || "").trim() || "Loja"} (${papel})`,
+      quemId: currentUser.id,
+      acao: "CANCELOU",
+      descricao: "Pedido cancelado pelo painel",
+      totalAntes: Number((order as any).totalAmount) || 0,
+      totalDepois: 0,
+      motivo: cancelReason,
+    }) as any;
+  }
+
+  // ── RASCUNHO DO ROBÔ ARRASTADO NO QUADRO ────────────────────────────────
+  //
+  // O botão "Finalizar pedido manualmente" (finalizar-rascunho) e o fechamento
+  // pelo robô dão número do dia e fazem o pedido nascer agora. Arrastar o
+  // cartão de "IA criando…" só trocava o status: o pedido ia para a cozinha
+  // SEM NÚMERO, e sem número não há QR do motoboy (lib/qr-puxar.ts) — a
+  // Ragnar recebeu a comanda da Diva assim em 26/09/2026. Com a hora do
+  // rascunho, a fila da nuvem (2 h) e o prazo contavam desde a primeira
+  // mensagem do cliente.
+  const saiDoRascunhoDoRobo = order.status === "CRIANDO_IA" && status !== "CANCELADO";
+  if (saiDoRascunhoDoRobo) {
+    const { generateDailyOrderNumber } = await import("@/lib/order-number");
+    const { notasDaFinalizacao } = await import("@/lib/finalizar-rascunho");
+    updateData.dailyOrderNumber = order.dailyOrderNumber || (await generateDailyOrderNumber(order.franchiseeId));
+    updateData.createdAt = new Date();
+    updateData.printedAt = null;
+    updateData.notes = notasDaFinalizacao(order.notes, m.quemFinaliza, "");
+  }
+
+  // Allow updating scheduledDatetime (e.g. when anticipating a scheduled order)
+  if (scheduledDatetime !== undefined) {
+    updateData.scheduledDatetime = scheduledDatetime ? new Date(scheduledDatetime) : null;
+  }
+
+  // ── Auto-set KDS stage ──
+  // Pedido ENTREGUE/CANCELADO que o painel reabre (arrastado de volta, com
+  // confirmação): sai do fim de linha — o KDS volta à produção e o carimbo de
+  // entrega/cancelamento deixa de valer (Douglas, 21/10/2026).
+  const reabre = ["ENTREGUE", "CANCELADO"].includes(order.status) && !["ENTREGUE", "CANCELADO"].includes(status);
+  if (reabre) {
+    if (order.status === "ENTREGUE") updateData.deliveredAt = null;
+    if (order.status === "CANCELADO") updateData.cancelledAt = null;
+  }
+  if (status === "ACEITO" || status === "PREPARANDO") {
+    // Apenas atribui PRODUCTION se o pedido ainda não tiver nenhum estágio no KDS
+    if (!order.kdsStage || reabre) {
+      updateData.kdsStage = "PRODUCTION";
+      updateData.kdsProductionAt = new Date();
+    }
+  }
+  if (["ENTREGUE", "CANCELADO"].includes(status)) {
+    // Apenas ENTREGUE e CANCELADO encerram o pedido do KDS da cozinha.
+    // SAIU_ENTREGA mantém o pedido no KDS se a cozinha ainda estiver preparando!
+    updateData.kdsStage = "FINISHED";
+    updateData.kdsStationId = null;
+  }
+
+  // ── Sync with iFood ──
+  //
+  // Com a credencial do DONO do pedido. Isto usava `getIfoodToken()`, o app
+  // centralizado, que só alcança a Hakim: para as outras lojas cada confirm,
+  // dispatch, conclude e cancel daqui era um 403 que o log engolia — o pedido
+  // saía para entrega no painel e ficava parado no iFood (lib/ifood-pedido.ts).
+  // A recusa agora volta na resposta, em `avisoIfood`, para o painel mostrar.
+  let avisoIfood: string | null = null;
+  // O mesmo para o 99Food. O erro dele era `console.error` e só: o lojista
+  // marcava "pronto", o 99 não recebia, e a tela dizia que estava tudo certo.
+  // O Frangoso descreveu exatamente isso em 17/09/2026 — "não reflete no 99,
+  // cheio de erro" — sem nunca ter visto um aviso, porque não existia.
+  let aviso99Food: string | null = null;
+  // E o mesmo para a Brendi: a falha ia só para o log, a tela dizia "pronto".
+  let avisoBrendi: string | null = null;
+  let avisoKeeta: string | null = null;
+  let avisoCardapioWeb: string | null = null;
+  let avisoAnotaAi: string | null = null;
+  let avisoAiqfome: string | null = null;
+  if (order.ifoodOrderId) {
+    try {
+      const { acaoNoPedidoIfood, despacharNoIfood } = await import("@/lib/ifood-pedido");
+      const { mensagemDeErro } = await import("@/lib/ifood-http");
+      let resposta: Awaited<ReturnType<typeof acaoNoPedidoIfood>> | null = null;
+
+      if (status === "ACEITO") {
+        resposta = await acaoNoPedidoIfood(order, "confirm");
+      }
+
+      if (status === "PRONTO") {
+        // readyToPickup acelera a alocação do motoboy parceiro e avisa o cliente.
+        resposta = await acaoNoPedidoIfood(order, "readyToPickup");
+      }
+
+      if (status === "SAIU_ENTREGA") {
+        resposta = await despacharNoIfood(order);
+      }
+
+      if (status === "ENTREGUE") {
+        const isPickup = order.deliveryType !== "DELIVERY";
+        await acaoNoPedidoIfood(order, isPickup ? "readyToPickup" : "dispatch");
+        resposta = await acaoNoPedidoIfood(order, "conclude");
+      }
+
+      if (status === "CANCELADO") {
+        updateData.cancelledBy = "LOJA";
+        if (cancelReason) updateData.cancelReason = cancelReason;
+
+        const codeToUse = cancellationCode || "501";
+        resposta = await acaoNoPedidoIfood(order, "requestCancellation", {
+          body: { reason: cancelReason || "CANCELLED_BY_RESTAURANT", cancellationCode: String(codeToUse) },
+        });
+
+        if (!resposta.ok) {
+          // Fallback: deny para pedido ainda NOVO, cancel para os demais.
+          resposta = await acaoNoPedidoIfood(order, order.status === "NOVO" ? "deny" : "cancel", {
+            body: { reason: cancelReason || "Cancelado pela loja", cancelCodeId: String(codeToUse) },
+          });
+        }
+      }
+
+      if (resposta && !resposta.ok) avisoIfood = mensagemDeErro(resposta);
+    } catch (err: any) {
+      console.error(`[iFood Sync] Erro ${order.ifoodOrderId}:`, err?.message);
+      avisoIfood = "Não foi possível avisar o iFood desta mudança.";
+      // Don't block local update even if iFood sync fails
+    }
+  }
+
+  // ── Sync with 99Food ────────────────────────────────────────────────────
+  // O 99Food grava o id dele em `openDeliveryOrderId`, o mesmo campo do
+  // JotaJá. O bloco abaixo lia só a presença do campo, então TODO pedido do
+  // 99Food era mandado para a API do JotaJá com um id que não é dele: o 99Food
+  // nunca recebia o confirm (e cancela o pedido por isso), nunca recebia o
+  // ready (que é o que chama o entregador deles) e nunca recebia o cancel.
+  // Quem separa os dois é o canal, nunca a presença do id.
+  if (ehPedido99Food(order)) {
+    if (status === "CANCELADO") {
+      updateData.cancelledBy = "LOJA";
+      if (cancelReason) updateData.cancelReason = cancelReason;
+    }
+    // O entregador só é buscado quando o 99Food vai perguntar por ele.
+    let entregadorDoPedido: { nome: string; telefone?: string | null; id?: string | null } | null = null;
+    if (status === "SAIU_ENTREGA" && (order as any).motoboyId) {
+      const mb = await prisma.motoboy
+        .findUnique({ where: { id: (order as any).motoboyId }, select: { id: true, name: true, phone: true } })
+        .catch(() => null);
+      if (mb) entregadorDoPedido = { nome: mb.name, telefone: mb.phone, id: mb.id };
+    }
+    const r = await sincronizar99Food(
+      {
+        openDeliveryOrderId: order.openDeliveryOrderId!,
+        franchiseeId: order.franchiseeId,
+        status: order.status,
+        deliveryBy: order.deliveryBy,
+        entregador: entregadorDoPedido,
+        // A loja do 99Food de onde o pedido veio: o token dela vai na frente.
+        appShopId: (order as any).food99AppShopId ?? null,
+      },
+      status,
+      { motivo: cancelReason, reasonId: cancellationCode ? Number(cancellationCode) : undefined }
+    );
+    if (r.erros.length > 0) {
+      console.error(`[99Food Sync] ❌ FALHAS em ${order.openDeliveryOrderId}: ${r.erros.join(" | ")}`);
+      // Volta para a tela, igual ao aviso do iFood. O texto é o que o 99Food
+      // devolveu (ou "demorou mais que o limite"), que é o que alguém precisa
+      // ler para saber se é token, loja errada ou o 99 fora do ar.
+      aviso99Food = r.erros[0].replace(/^[^:]+:\s*/, "");
+    }
+  }
+
+  // ── Sync with Brendi (Open Delivery) ────────────────────────────────────
+  // A Brendi grava o id dela no MESMO `openDeliveryOrderId` do JotaJá e do
+  // 99Food — quem separa os três é o canal (openDeliveryChannel/source), nunca
+  // a presença do campo. `ehPedidoBrendi` decide por canal e o ramo JotaJá
+  // logo abaixo exclui explicitamente os canais irmãos, senão o pedido da
+  // Brendi cairia lá e o confirm iria para a API errada (o exato incidente do
+  // 99Food descrito acima).
+  if (ehPedidoBrendi(order)) {
+    if (status === "CANCELADO") {
+      updateData.cancelledBy = "LOJA";
+      if (cancelReason) updateData.cancelReason = cancelReason;
+    }
+    const r = await sincronizarBrendi(
+      {
+        // O registro de resgate manual usa o sufixo `_recovered`; a API da
+        // Brendi só conhece o UUID limpo (mesma normalização do brendi-action).
+        openDeliveryOrderId: order.openDeliveryOrderId!.replace(/_recovered$/, ""),
+        franchiseeId: order.franchiseeId,
+        status: order.status,
+        deliveryBy: order.deliveryBy,
+      },
+      status,
+      { motivo: cancelReason }
+    );
+    if (r.erros.length > 0) {
+      console.error(`[Brendi Sync] ❌ FALHAS em ${order.openDeliveryOrderId}: ${r.erros.join(" | ")}`);
+      // Volta para a tela, igual ao aviso do iFood e do 99Food.
+      avisoBrendi = r.erros[0].replace(/^[^:]+:\s*/, "");
+    }
+  }
+
+  // ── Sync with Wabiz ─────────────────────────────────────────────────────
+  // Também grava o id no `openDeliveryOrderId` (o internalKey deles), então
+  // entra na mesma exclusão do ramo JotaJá abaixo. O número do pedido na Wabiz
+  // mora em `openDeliveryReference` — o status deles exige os dois.
+  if (ehPedidoWabiz(order)) {
+    if (status === "CANCELADO") {
+      updateData.cancelledBy = "LOJA";
+      if (cancelReason) updateData.cancelReason = cancelReason;
+    }
+    const r = await sincronizarWabiz(
+      {
+        openDeliveryOrderId: order.openDeliveryOrderId!,
+        openDeliveryReference: (order as any).openDeliveryReference,
+        franchiseeId: order.franchiseeId,
+        deliveryType: (order as any).deliveryType,
+      },
+      status,
+      { motivo: cancelReason }
+    );
+    if (r.erros.length > 0) {
+      console.error(`[Wabiz Sync] ❌ FALHAS em ${order.openDeliveryOrderId}: ${r.erros.join(" | ")}`);
+    }
+  }
+
+  // ── Sync with Jotajá (Open Delivery) ──
+  // Decisão por CANAL: o JotaJá é o "resto" do Open Delivery só depois de
+  // excluir 99Food, Brendi e Wabiz — presença de openDeliveryOrderId não diz
+  // de quem o pedido é.
+  // ── Sync with Keeta ─────────────────────────────────────────────────────
+  // Também usa `openDeliveryOrderId` (keeta_<id>): entra ANTES do ramo JotaJá
+  // e é excluída dele — o furo que cada canal novo teve (lib/keeta/status.ts).
+  if (ehPedidoKeeta(order)) {
+    if (status === "CANCELADO") {
+      updateData.cancelledBy = "LOJA";
+      if (cancelReason) updateData.cancelReason = cancelReason;
+    }
+    const r = await sincronizarKeeta(
+      {
+        openDeliveryOrderId: order.openDeliveryOrderId!,
+        franchiseeId: order.franchiseeId,
+        status: order.status,
+        deliveryBy: order.deliveryBy,
+        deliveryType: (order as any).deliveryType,
+        dailyOrderNumber: (order as any).dailyOrderNumber,
+        id: order.id,
+      },
+      status,
+      { motivo: cancelReason }
+    );
+    if (r.erros.length > 0) {
+      console.error(`[Keeta Sync] ❌ FALHAS em ${order.openDeliveryOrderId}: ${r.erros.join(" | ")}`);
+      avisoKeeta = r.erros[0].replace(/^[^:]+:\s*/, "");
+    }
+  }
+
+  // ── Sync with CardápioWeb ───────────────────────────────────────────────
+  // Também usa `openDeliveryOrderId` (cardapioweb_<loja>_<id>): entra ANTES do
+  // ramo JotaJá e é excluído dele. A loja de lá (e o token) sai do próprio id —
+  // a conta pode ter uma loja do CardápioWeb por marca (lib/cardapioweb/status.ts).
+  if (ehPedidoCardapioWeb(order)) {
+    if (status === "CANCELADO") {
+      updateData.cancelledBy = "LOJA";
+      if (cancelReason) updateData.cancelReason = cancelReason;
+    }
+    const r = await sincronizarCardapioWeb(
+      {
+        openDeliveryOrderId: order.openDeliveryOrderId!,
+        franchiseeId: order.franchiseeId,
+        status: order.status,
+        deliveryBy: order.deliveryBy,
+        deliveryType: (order as any).deliveryType,
+        notes: order.notes,
+      },
+      status,
+      { motivo: cancelReason }
+    );
+    if (r.erros.length > 0) {
+      console.error(`[CardápioWeb Sync] ❌ FALHAS em ${order.openDeliveryOrderId}: ${r.erros.join(" | ")}`);
+      avisoCardapioWeb = r.erros[0].replace(/^[^:]+:\s*/, "");
+    }
+  }
+
+  // ── Sync with Anota AI ──────────────────────────────────────────────────
+  // Mesmo caso do CardápioWeb: `openDeliveryOrderId` = anotaai_<página>_<id>,
+  // ANTES do ramo JotaJá e excluído dele (lib/anotaai/status.ts).
+  if (ehPedidoAnotaAi(order)) {
+    if (status === "CANCELADO") {
+      updateData.cancelledBy = "LOJA";
+      if (cancelReason) updateData.cancelReason = cancelReason;
+    }
+    const r = await sincronizarAnotaAi(
+      { openDeliveryOrderId: order.openDeliveryOrderId!, franchiseeId: order.franchiseeId, status: order.status },
+      status,
+      { motivo: cancelReason }
+    );
+    if (r.erros.length > 0) {
+      console.error(`[Anota AI Sync] ❌ FALHAS em ${order.openDeliveryOrderId}: ${r.erros.join(" | ")}`);
+      avisoAnotaAi = r.erros[0].replace(/^[^:]+:\s*/, "");
+    }
+  }
+
+  // ── Sync with aiqfome ───────────────────────────────────────────────────
+  // Também usa `openDeliveryOrderId` (aiqfome_<loja>_<id>): entra ANTES do
+  // ramo JotaJá e é excluído dele. A V2 não cancela pedido de restaurante:
+  // cancelar aqui devolve o aviso para a loja cancelar também no Geraldo.
+  if (ehPedidoAiqfome(order)) {
+    if (status === "CANCELADO") {
+      updateData.cancelledBy = "LOJA";
+      if (cancelReason) updateData.cancelReason = cancelReason;
+    }
+    const r = await sincronizarAiqfome(
+      {
+        openDeliveryOrderId: order.openDeliveryOrderId!,
+        franchiseeId: order.franchiseeId,
+        status: order.status,
+        deliveryBy: order.deliveryBy,
+        deliveryType: (order as any).deliveryType,
+        notes: order.notes,
+      },
+      status
+    );
+    if (r.erros.length > 0) console.error(`[aiqfome Sync] ❌ FALHAS em ${order.openDeliveryOrderId}: ${r.erros.join(" | ")}`);
+    avisoAiqfome = r.aviso || (r.erros[0] ? r.erros[0].replace(/^[^:]+:\s*/, "") : null);
+  }
+
+  if (order.openDeliveryOrderId && !ehPedido99Food(order) && !ehPedidoBrendi(order) && !ehPedidoWabiz(order) && !ehPedidoKeeta(order) && !ehPedidoCardapioWeb(order) && !ehPedidoAiqfome(order) && !ehPedidoAnotaAi(order)) {
+    const syncErrors: string[] = [];
+    try {
+      const { jotajaMutate } = await import("@/lib/jotaja-api");
+      const { guardarAcaoPendente } = await import("@/lib/jotaja-instavel");
+      const odId = order.openDeliveryOrderId;
+
+      // Retry helper: tenta até 2x com 1s de intervalo. Se o JotaJá seguir
+      // fora do ar (5xx / rede), a ação fica guardada e o cron reenvia
+      // (lib/jotaja-instavel.ts) — o pedido não fica "aguardando aceite" lá.
+      const jotajaCall = async (path: string, label: string): Promise<Response> => {
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          try {
+            const r = await jotajaMutate(path, { method: "POST" }, order.franchiseeId);
+            if (r.ok || r.status === 409) {
+              console.log(`[Jotajá Sync] ✅ ${label} ${odId}: ${r.status}`);
+              return r;
+            }
+            const errBody = await r.text().catch(() => "");
+            console.warn(`[Jotajá Sync] ⚠️ ${label} ${odId} tentativa ${attempt}: ${r.status} — ${errBody.slice(0, 300)}`);
+            if (attempt < 2) await new Promise(res => setTimeout(res, 1000));
+            if (attempt === 2) {
+              syncErrors.push(`${label}: ${r.status} ${errBody.slice(0, 100)}`);
+              if (r.status >= 500) await guardarAcaoPendente(order.franchiseeId, odId, path, label);
+            }
+          } catch (err: any) {
+            console.warn(`[Jotajá Sync] ⚠️ ${label} ${odId} tentativa ${attempt}: ${err.message}`);
+            if (attempt < 2) await new Promise(res => setTimeout(res, 1000));
+            if (attempt === 2) {
+              syncErrors.push(`${label}: ${err.message}`);
+              await guardarAcaoPendente(order.franchiseeId, odId, path, label);
+            }
+          }
+        }
+        return new Response(null, { status: 500 });
+      };
+
+      if (status === "ACEITO") {
+        await jotajaCall(`/v1/orders/${odId}/confirm`, "confirm");
+      }
+
+      if (status === "PREPARANDO") {
+        await jotajaCall(`/v1/orders/${odId}/startPreparation`, "startPreparation");
+      }
+
+      // PRONTO não tinha ramo aqui. O iFood recebia readyToPickup, o 99Food,
+      // a Brendi e a Wabiz recebiam o PRONTO pelos blocos acima, e só o
+      // JotaJá ficava sem aviso: o entregador parceiro dele não era chamado
+      // no Pronto, só no Saiu para Entrega — meia hora depois, com a comida
+      // esfriando no balcão. O KDS já fazia esta chamada; o painel não.
+      if (status === "PRONTO") {
+        // startPreparation antes, pela mesma razão do dispatch: o Open
+        // Delivery recusa readyToPickup em pedido que ainda não entrou em
+        // preparo.
+        if (order.status === "ACEITO" || order.status === "NOVO") {
+          await jotajaCall(`/v1/orders/${odId}/startPreparation`, "startPreparation (pre-ready)");
+        }
+        await jotajaCall(`/v1/orders/${odId}/readyToPickup`, "readyToPickup");
+      }
+
+      if (status === "SAIU_ENTREGA") {
+        // Garantir startPreparation antes do dispatch (igual iFood)
+        if (order.status === "ACEITO" || order.status === "NOVO") {
+          await jotajaCall(`/v1/orders/${odId}/startPreparation`, "startPreparation (pre-dispatch)");
+        }
+        await jotajaCall(`/v1/orders/${odId}/dispatch`, "dispatch");
+      }
+
+      if (status === "ENTREGUE") {
+        const isPickup = order.deliveryType !== "DELIVERY";
+        if (isPickup) {
+          await jotajaCall(`/v1/orders/${odId}/readyToPickup`, "readyToPickup");
+        }
+        await jotajaCall(`/v1/orders/${odId}/delivered`, "delivered");
+      }
+
+      if (status === "CANCELADO") {
+        updateData.cancelledBy = "LOJA";
+        if (cancelReason) updateData.cancelReason = cancelReason;
+
+        const codeToUse = cancellationCode || "501";
+
+        const cancelRes = await jotajaMutate(`/v1/orders/${odId}/requestCancellation`, {
+          method: "POST",
+          body: JSON.stringify({ code: String(codeToUse), mode: "MANUAL", reason: cancelReason || "CANCELLED_BY_RESTAURANT" }),
+        }, order.franchiseeId);
+        if (!cancelRes.ok) {
+          const errBody = await cancelRes.text().catch(() => "");
+          syncErrors.push(`cancel: ${cancelRes.status} ${errBody.slice(0, 100)}`);
+        }
+        console.log(`[Jotajá Sync] cancel ${odId}: ${cancelRes.status}`);
+      }
+    } catch (err: any) {
+      console.error(`[Jotajá Sync] ❌ Erro ${order.openDeliveryOrderId}:`, err?.message);
+      syncErrors.push(`geral: ${err.message}`);
+    }
+    // Registrar erro de sync para visibilidade no dashboard (Removido pois jotajaSyncError não existe no schema)
+    if (syncErrors.length > 0) {
+      console.error(`[Jotajá Sync] ❌ FALHAS em ${order.openDeliveryOrderId}: ${syncErrors.join(" | ")}`);
+    }
+  }
+
+  // Handle non-iFood/non-Jotajá cancellations
+  if (status === "CANCELADO" && !order.ifoodOrderId && !order.openDeliveryOrderId) {
+    updateData.cancelledBy = "LOJA";
+    if (cancelReason) updateData.cancelReason = cancelReason;
+  }
+
+  if (saiDoRascunhoDoRobo) {
+    // Só se AINDA é rascunho: o cliente pode ter confirmado com o robô no
+    // mesmo instante, e o robô já deu o número dele.
+    const gravados = await prisma.customerOrder.updateMany({
+      where: { id: orderId, status: "CRIANDO_IA" },
+      data: updateData,
+    });
+    if (gravados.count !== 1) {
+      return NextResponse.json(
+        { error: "O robô acabou de mexer neste pedido. A lista vai ser atualizada — confira e arraste de novo." },
+        { status: 409 }
+      );
+    }
+  } else {
+    await prisma.customerOrder.update({
+      where: { id: orderId },
+      data: updateData
+    });
+  }
+
+  // O acréscimo do marketplace (pedido colado) anda junto com o principal.
+  {
+    const { acrescimosSeguemOPai } = await import("@/lib/acrescimo-segue-o-pai");
+    await acrescimosSeguemOPai(orderId, status);
+  }
+
+  // Lanche da equipe cancelado: a bebida que foi para o fiado do motoboy cai junto.
+  if (status === "CANCELADO" && order.source === "EQUIPE") {
+    const { cancelarFiadoDoLanche } = await import("@/lib/lanche-da-equipe");
+    await cancelarFiadoDoLanche(orderId).catch((err) => console.error("[Lanche] fiado da bebida não cancelou:", err?.message || err));
+  }
+
+  // ── Notificações via WhatsApp ──
+  try {
+    const { sendOrderNotification } = await import("@/lib/order-notifications");
+    if (status === "SAIU_ENTREGA" || status === "SAIU_PARA_ENTREGA") {
+      if (order.deliveryType === "DELIVERY") {
+        sendOrderNotification(orderId, "SAIU_ENTREGA").catch(() => {});
+      } else {
+        sendOrderNotification(orderId, "PRONTO_RETIRADA").catch(() => {});
+      }
+    } else if (status === "ACEITO" || status === "PREPARANDO") {
+      // ── O AVISO DA COZINHA, UMA VEZ SÓ ────────────────────────────────
+      //
+      // Entre o "Pedido Recebido" e o "Saiu para Entrega" havia meia hora de
+      // silêncio — justamente a janela em que o cliente liga para a loja
+      // perguntando se o pedido caiu. E a mensagem do recebido promete "te
+      // avisaremos sobre cada atualização por aqui".
+      //
+      // Mas ACEITO e PREPARANDO são DOIS passos do mesmo lugar (a coluna "Em
+      // Produção" do quadro), e a loja passa pelos dois. Disparar em cada um
+      // mandaria a mesma mensagem duas vezes para o cliente — e mensagem
+      // repetida da mesma instância é o que o antispam do WhatsApp procura.
+      //
+      // Só na PRIMEIRA entrada em produção: quando o pedido ainda estava em
+      // NOVO ou aguardando pagamento. Voltar para trás e avançar de novo
+      // (correção do operador) também não reenvia.
+      const vinhaDeNovo = order.status === "NOVO" || order.status === "AGUARDANDO_PAGAMENTO";
+      if (vinhaDeNovo) sendOrderNotification(orderId, "EM_PREPARO").catch(() => {});
+    } else if (status === "PRONTO") {
+      sendOrderNotification(orderId, "PRONTO_RETIRADA").catch(() => {});
+    } else if (status === "ENTREGUE") {
+      sendOrderNotification(orderId, "ENTREGUE").catch(() => {});
+    } else if (status === "CANCELADO") {
+      sendOrderNotification(orderId, "CANCELADO", { cancelReason }).catch(() => {});
+    }
+  } catch (errWp) {
+    console.warn("[Status API] Erro ao disparar notificação WhatsApp:", errWp);
+  }
+
+  // Cancelado com entregador: o app nativo dele avisa na hora, com o celular
+  // no bolso — ele pode estar a caminho da porta do cliente com a sacola.
+  if (status === "CANCELADO" && order.motoboyId) {
+    import("@/lib/app-motoboy/aparelhos")
+      .then((m) =>
+        m.avisarMotoboy(order.motoboyId, {
+          titulo: `❌ Pedido${order.dailyOrderNumber ? ` #${order.dailyOrderNumber}` : ""} CANCELADO`,
+          corpo: "Não entregue este pedido. Fale com a loja.",
+          dados: { tipo: "PEDIDO_CANCELADO" },
+        }),
+      )
+      .catch(() => {});
+  }
+
+  // Rota 100% automatizada: entrega cancelada sai da rota agora (e a rota que
+  // ficou vazia some), sem esperar os 20 s do cron — o motoboy chamado não
+  // pode sair com a sacola do pedido cancelado (lib/roteirizacao-automatica/
+  // empurrao.ts; nas outras lojas não custa nada).
+  if (status === "CANCELADO" && order.deliveryType === "DELIVERY") {
+    const { empurrarRoteirizacao } = await import("@/lib/roteirizacao-automatica/empurrao");
+    empurrarRoteirizacao(order.franchiseeId, "pedido cancelado");
+  }
+
+  // Estorno Automático para Pagamentos Online no Cancelamento
+  //
+  // Pix pelo site (conta Asaas da loja): pago → estorna do saldo da loja;
+  // esperando → exclui a cobrança. O que não sair na hora (sem saldo, estorno
+  // esperando autorização no app do Asaas) volta em `avisoEstorno` para o
+  // painel e vai para o WhatsApp do dono.
+  let avisoEstorno: string | null = null;
+  if (status === "CANCELADO" && order.gatewayProvider === "asaas") {
+    try {
+      const { aoCancelarPedidoPelaLoja } = await import("@/lib/pix-online-pedido");
+      avisoEstorno = await aoCancelarPedidoPelaLoja(orderId, cancelReason);
+    } catch (errEstorno: any) {
+      console.error(`[Pix pelo site] Erro ao estornar/excluir a cobrança do pedido ${orderId}:`, errEstorno?.message);
+      avisoEstorno = "Não foi possível falar com o Asaas agora. Confira o estorno no app do Asaas.";
+    }
+  }
+
+  // Totem pago na maquininha Cielo: o estorno vai para a fila da maquininha
+  // que cobrou, e o app do totem faz sozinho (lib/estorno-na-maquininha.ts).
+  // Nas outras adquirentes não entra aqui: o modal já avisou para estornar
+  // na maquininha. Falha daqui não segura o cancelamento: o aviso do painel
+  // manda fazer o estorno na maquininha.
+  let estornoNaMaquininha: import("@/lib/estorno-na-maquininha-regras").EstornoNoPainel | null = null;
+  if (status === "CANCELADO" && order.gatewayProvider === "CIELO_APP" && order.paymentPaidAt) {
+    try {
+      const { pedirEstornoAoCancelar } = await import("@/lib/estorno-na-maquininha");
+      estornoNaMaquininha = await pedirEstornoAoCancelar(orderId);
+    } catch (errEstorno: any) {
+      console.error(`[Estorno na maquininha] Erro ao pedir o estorno do pedido ${orderId}:`, errEstorno?.message);
+      estornoNaMaquininha = { situacao: "RECUSADO", motivo: "não deu para mandar para a maquininha agora" };
+    }
+  }
+  // Reaberto antes de a maquininha pegar: o estorno é desistido.
+  if (reabre && order.status === "CANCELADO" && order.gatewayProvider === "CIELO_APP" && order.paymentPaidAt) {
+    import("@/lib/estorno-na-maquininha")
+      .then(({ desistirDoEstornoAoReabrir }) => desistirDoEstornoAoReabrir(orderId))
+      .catch((e) => console.error(`[Estorno na maquininha] Erro ao desistir do estorno do pedido ${orderId}:`, e?.message));
+  }
+
+  // Mercado Pago (desligado desde 23/08). Lia `(order as any).paymentId`, campo
+  // que não existe no pedido — o estorno nunca rodava. O id é `gatewayPaymentId`.
+  if (status === "CANCELADO" && order.gatewayProvider === "mercadopago" && order.gatewayPaymentId && order.paymentPaidAt) {
+    try {
+      const { refundMpPayment } = await import("@/lib/mercadopago");
+      const franchisee = await prisma.user.findUnique({
+        where: { id: order.franchiseeId },
+        select: { mpAccessToken: true },
+      });
+      const refundRes = await refundMpPayment(order.gatewayPaymentId, franchisee?.mpAccessToken || undefined);
+      if (refundRes.success) {
+        console.log(`[Automatic Refund] Order ${orderId} refunded successfully via MP.`);
+      } else {
+        console.warn(`[Automatic Refund] Order ${orderId} refund notice:`, refundRes.error);
+      }
+    } catch (refundErr: any) {
+      console.error(`[Automatic Refund] Erro ao estornar pedido ${orderId}:`, refundErr.message);
+    }
+  }
+
+  // ── Emissão automática de NFC-e ──
+  // Se a loja marcou a forma de pagamento deste pedido em "emissão automática"
+  // (tela Fiscal → Configurações), a nota sai sozinha. QUANDO é decisão de
+  // lib/fiscal-momento (padrão: entrega no "Saiu", retirada na conclusão),
+  // então aqui dispara em toda mudança e a função ignora o que não é hora.
+  // Fire and forget: falha de emissão vira FAILED na aba Notas fiscais.
+  if (status !== "CANCELADO") {
+    import("@/lib/fiscal-automatico")
+      .then(({ emitirNfceAutomatica }) => emitirNfceAutomatica(orderId))
+      .catch(err => console.error("[Fiscal Auto] Erro ao disparar:", err?.message));
+  }
+
+  // Atualiza faturamento do ciclo mensal se pedido foi confirmado
+  if (BILLING_TRIGGER_STATUSES.includes(status)) {
+    trackSaleForBilling(order.franchiseeId).catch(err =>
+      console.error("[Billing] Erro ao atualizar ciclo:", err)
+    );
+  }
+
+  // Baixa de estoque — disparada APENAS no ACEITO para evitar débitos múltiplos
+  if (status === "ACEITO") {
+    const { deductStockForOrder } = await import("@/lib/stock");
+    deductStockForOrder(orderId).catch(err =>
+      console.error("[Stock] Erro ao deduzir estoque:", err)
+    );
+  }
+
+  // ── ACEITAR UM PEDIDO QUE ESPERAVA PAGAMENTO É CONFIRMAR QUE PAGOU ────────
+  // O pedido do totem passou a nascer em AGUARDANDO_PAGAMENTO, e o cliente que
+  // escolhe "pagar no caixa" depende de alguém no balcão liberar. Se o
+  // atendente apenas mudasse o status por aqui, o pedido iria para a cozinha
+  // com `paymentPaidAt` nulo: apareceria como não pago no fechamento do dia e
+  // não geraria a senha que o cliente é chamado para retirar.
+  //
+  // `confirmOrderPayment` é a mesma função do webhook do gateway e do app da
+  // maquininha, e é idempotente — se o pagamento já tiver sido confirmado por
+  // outro caminho, ela não faz nada.
+  if (order.status === "AGUARDANDO_PAGAMENTO" && status !== "CANCELADO") {
+    const { confirmOrderPayment } = await import("@/lib/order-payment-confirm");
+    confirmOrderPayment(orderId).catch(err =>
+      console.error("[Status] Erro ao confirmar pagamento no balcão:", err)
+    );
+  }
+
+  // Cancelou: o estoque (devolver o insumo, ou marcar desperdício se o pedido
+  // já tinha sido produzido) é da extensão do Prisma em lib/prisma.ts, que vale
+  // para todo caminho de cancelamento — chamar aqui também faria duas decisões
+  // em paralelo para o mesmo pedido.
+
+  // `avisoIfood` vem preenchido quando o iFood recusou a ação: o status local
+  // mudou, mas o lojista precisa saber que o iFood não acompanhou.
+  // `pedido`: o que o servidor mudou além do status, para o painel imprimir a
+  // comanda com o número (e o QR) sem esperar a próxima consulta.
+  const pedido = saiDoRascunhoDoRobo
+    ? { dailyOrderNumber: updateData.dailyOrderNumber, createdAt: updateData.createdAt, printedAt: null, notes: updateData.notes }
+    : undefined;
+  return NextResponse.json({ success: true, avisoIfood, aviso99Food, avisoBrendi, avisoKeeta, avisoCardapioWeb, avisoAiqfome, avisoAnotaAi, avisoEstorno, ...(estornoNaMaquininha ? { estornoNaMaquininha } : {}), ...(pedido ? { pedido } : {}) });
+}
