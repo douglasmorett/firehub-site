@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useMemo, useRef, type CSSProperties } from "react";
+import { useState, useEffect, useMemo, useRef, useContext, type CSSProperties } from "react";
 import { ShoppingCart, Plus, Minus, Trash2, Check, Bike, UtensilsCrossed, Users, Search, ChevronRight } from "lucide-react";
 import ComboModal from "@/components/customer/ComboModal";
 import { diaDaSemanaEmSaoPaulo, disponivelAgora, lerHorarioDoProduto, PREFIXOS_DE_ESPELHO } from "@/lib/cardapio-interno";
@@ -17,7 +17,8 @@ import {
 import { MENSAGEM_CAIXA_FECHADO, EVENTO_CAIXA_MUDOU, pedirAberturaDoCaixa } from "@/lib/caixa-aberto";
 import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
 import { consultaDoBalcao, entregaNoPedidoDoBalcao, lerCotacaoNoBalcao } from "@/lib/entrega-no-checkout";
-import { lerConsulta, preencherBalcao, type ClienteSugerido } from "@/lib/busca-de-clientes";
+import { digitosNacionais, lerConsulta, preencherBalcao, type ClienteSugerido } from "@/lib/busca-de-clientes";
+import { ContextoDoBalcao } from "@/components/balcao/balcao-embutido";
 import { useSession } from "next-auth/react";
 import { comSenhaDoGerente, useSenhaDoGerente } from "@/components/SenhaDoGerente";
 import { ModalDoComprovanteDoFiado, OpcoesDoComprovante, usePreferenciasDoComprovante } from "@/components/ComprovanteDoFiado";
@@ -53,7 +54,26 @@ const CHAVE_DO_RASCUNHO = "firehub_pdv_rascunho";
  */
 const VALIDADE_DO_RASCUNHO = 12 * 60 * 60 * 1000;
 
+/**
+ * Os botões grandes do pagamento na coluna do atendimento. O Túlio Lanches
+ * (06/11/2026) achava a forma de pagamento "escondida numa faixa pequena":
+ * ao lado da conversa, ela é a pergunta que o atendente faz ao cliente, então
+ * vira uma grade de botões grandes, com ícone e alvo de dedo, logo depois dos itens.
+ */
+const ICONE_DA_FORMA: Record<string, string> = {
+  "Dinheiro": "💵", "PIX": "💠", "Cartão Débito": "💳", "Cartão Crédito": "💳", "Voucher/Vale": "🎟️",
+};
+
 export default function VendaPresencialPage() {
+  // Ao lado da conversa do WhatsApp (tela grande e extensão), o Balcão vem
+  // pelo BalcaoNaConversa (components/balcao/balcao-embutido.ts). Aqui, na
+  // página de sempre, não há provedor: modo "pagina" e o rascunho de sempre.
+  const embutido = useContext(ContextoDoBalcao);
+  const compacto = embutido.modo === "atendimento";
+  const cliente = embutido.cliente;
+  const chaveDoRascunho = embutido.chaveDoRascunho || CHAVE_DO_RASCUNHO;
+  /** Na coluna estreita, uma aba de cada vez: o cardápio ou o pedido. */
+  const [abaCompacta, setAbaCompacta] = useState<"cardapio" | "pedido">("cardapio");
   /**
    * A cidade da loja (cadastro, "Cabo Frio - RJ"): o separador do endereço de
    * uma linha não pode tomá-la por bairro — "Rua X, 10 - Cabo Frio" virava
@@ -104,6 +124,8 @@ export default function VendaPresencialPage() {
    */
   const [bairrosDaLoja, setBairrosDaLoja] = useState<{ name: string; fee: number }[]>([]);
   const [bairro, setBairro] = useState("");
+  /** A lista de bairros já chegou (ou falhou): o cliente da conversa espera por ela para casar o bairro. */
+  const [configDoBalcaoLida, setConfigDoBalcaoLida] = useState(false);
   const enderecoDaEntrega = [address.trim(), bairro].filter(Boolean).join(" - ");
 
   // ── CLIENTE POR NÚMERO PARECIDO ────────────────────────────────────────
@@ -250,7 +272,8 @@ export default function VendaPresencialPage() {
           );
         }
       })
-      .catch(() => { /* fica no padrão */ });
+      .catch(() => { /* fica no padrão */ })
+      .finally(() => setConfigDoBalcaoLida(true));
     // A nota fiscal (lib/fiscal-modo): a loja que emite sozinha pergunta o
     // CPF/CNPJ também na ENTREGA, e pode exigi-lo. Falhou? Fica como antes:
     // o campo só no balcão, nada obrigatório — a rota do pedido confere.
@@ -780,6 +803,13 @@ export default function VendaPresencialPage() {
       // deste campo existir — mesma falha, consertada junto.
       setCart([]); setCustomerName(""); setCustomerPhone(""); setAddress(""); setBairro(""); setTableNum(""); setNotes(""); setChange(""); setPager(""); setDocumento(""); setVoucherBrand(""); setConsumo(CONSUMO_PADRAO);
       setTaxaEntrega(""); setTaxaNaMao(false); setTaxaAviso(null); setCotacaoDoBalcao(null);
+      // Na conversa, o próximo pedido costuma ser do MESMO cliente (o "ah, e
+      // manda mais uma Coca"): nome e telefone da conversa voltam aos campos.
+      if (compacto && cliente) {
+        if (cliente.nome) setCustomerName(cliente.nome);
+        const tel = digitosNacionais(cliente.telefone || "");
+        if (tel.length >= 10) setCustomerPhone(tel);
+      }
 
       // ── E A FORMA DE PAGAMENTO TAMBÉM ────────────────────────────────
       //
@@ -822,20 +852,26 @@ export default function VendaPresencialPage() {
   // máquina e este navegador — é rascunho de balcão, não pedido: pedido só
   // existe depois do POST.
   const rascunhoRestaurado = useRef(false);
+  /** O cadastro do cliente da conversa (telefone igual), para trazer o endereço. */
+  const [cadastroDaConversa, setCadastroDaConversa] = useState<ClienteSugerido | null>(null);
 
   useEffect(() => {
+    // O rascunho desta conversa já tinha o cliente? Então ele vale — o
+    // atendente pode ter corrigido o nome; a conversa só preenche o vazio.
+    let clienteDoRascunho = false;
     try {
-      const bruto = localStorage.getItem(CHAVE_DO_RASCUNHO);
+      const bruto = localStorage.getItem(chaveDoRascunho);
       if (!bruto) return;
       const salvo = JSON.parse(bruto);
       if (!salvo?.em || Date.now() - salvo.em > VALIDADE_DO_RASCUNHO) {
-        localStorage.removeItem(CHAVE_DO_RASCUNHO);
+        localStorage.removeItem(chaveDoRascunho);
         return;
       }
       if (Array.isArray(salvo.cart) && salvo.cart.length > 0) setCart(salvo.cart);
       if (salvo.orderType) setOrderType(salvo.orderType);
       if (salvo.customerName) setCustomerName(salvo.customerName);
       if (salvo.customerPhone) setCustomerPhone(salvo.customerPhone);
+      clienteDoRascunho = !!(salvo.customerName || salvo.customerPhone);
       if (salvo.address) setAddress(salvo.address);
       if (salvo.bairro) setBairro(salvo.bairro);
       if (salvo.tableNum) setTableNum(salvo.tableNum);
@@ -851,19 +887,49 @@ export default function VendaPresencialPage() {
       // Só a partir daqui o efeito de gravar pode escrever — senão o estado
       // vazio do primeiro render apagaria o rascunho antes de restaurá-lo.
       rascunhoRestaurado.current = true;
+      // ── O CLIENTE DA CONVERSA ──────────────────────────────────────────
+      // Na tela de atendimento o atendente está LENDO a conversa: nome e
+      // telefone já entram, e se o número já pediu na loja o endereço vem
+      // do último pedido (a mesma busca da lista do telefone).
+      if (cliente && !clienteDoRascunho) {
+        if (cliente.nome) setCustomerName(cliente.nome);
+        const tel = digitosNacionais(cliente.telefone || "");
+        if (tel.length >= 10) {
+          setCustomerPhone(tel);
+          fetch(`/api/store/clientes/buscar?q=${encodeURIComponent(tel)}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d) => {
+              const achado = (Array.isArray(d?.clientes) ? d.clientes : []).find((c: ClienteSugerido) => digitosNacionais(c.telefone) === tel);
+              if (achado) setCadastroDaConversa(achado);
+            })
+            .catch(() => { /* sem cadastro, o atendente digita */ });
+        }
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // O cadastro só entra depois da lista de bairros: sem ela, a loja que entrega
+  // por bairro ficaria com o bairro no meio do texto e a lista vazia.
+  useEffect(() => {
+    if (!cadastroDaConversa || !configDoBalcaoLida) return;
+    const p = preencherBalcao(cadastroDaConversa, bairrosDaLoja);
+    // O nome que o WhatsApp mostra pode ser apelido; o do cadastro é o dos pedidos.
+    if (p.nome) setCustomerName(p.nome);
+    if (p.endereco) { setAddress(p.endereco); setBairro(p.bairro); }
+    setCadastroDaConversa(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cadastroDaConversa, configDoBalcaoLida]);
 
   useEffect(() => {
     if (!rascunhoRestaurado.current) return;
     try {
       if (cart.length === 0) {
-        localStorage.removeItem(CHAVE_DO_RASCUNHO);
+        localStorage.removeItem(chaveDoRascunho);
         return;
       }
       localStorage.setItem(
-        CHAVE_DO_RASCUNHO,
+        chaveDoRascunho,
         JSON.stringify({
           em: Date.now(),
           cart,
@@ -888,7 +954,7 @@ export default function VendaPresencialPage() {
   const cartQty = cart.reduce((s, i) => s + i.qty, 0);
 
   return (
-    <div className="pdv-layout" style={{ fontFamily: "'Inter', sans-serif", height: "calc(100vh - 145px)", maxHeight: "calc(100vh - 145px)", overflow: "hidden", position: "relative" }}>
+    <div className={compacto ? "pdv-layout pdv-compacto" : "pdv-layout"} style={{ fontFamily: "'Inter', sans-serif", height: compacto ? "100%" : "calc(100vh - 145px)", maxHeight: compacto ? "100%" : "calc(100vh - 145px)", overflow: "hidden", position: "relative" }}>
       {modalDaSenha}
       {fiadoParaAssinar && (
         <ModalDoComprovanteDoFiado
@@ -1034,6 +1100,22 @@ export default function VendaPresencialPage() {
           .pdv-layout input, .pdv-layout select { min-height: 44px; font-size: 16px; }
         }
 
+        /* ── COLUNA DO ATENDIMENTO (modo "atendimento") ──────────────────
+           Ao lado da conversa sobram ~420px: cardápio e pedido viram duas
+           abas, e o pedido rola INTEIRO (sem as três rolagens por dentro do
+           balcão grande), com total e Finalizar grudados embaixo. Vem depois
+           das regras acima e com mais especificidade: a extensão abre esta
+           coluna numa moldura de 400px, onde o @media de 900px também vale. */
+        .pdv-layout.pdv-compacto {
+          grid-template-columns: 1fr;
+          grid-template-rows: auto minmax(0, 1fr);
+        }
+        .pdv-compacto .pdv-produtos { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+        .pdv-compacto .pdv-carrinho { border-left: none !important; border-top: none; max-height: none; overflow-y: auto !important; }
+        .pdv-compacto .pdv-cabecalho, .pdv-compacto .pdv-itens, .pdv-compacto .pdv-rodape { flex: none; min-height: 0; overflow: visible; }
+        .pdv-compacto .pdv-formas { display: grid !important; grid-template-columns: 1fr 1fr; gap: 6px !important; }
+        .pdv-compacto .pdv-formas button { padding: 11px 8px !important; font-size: 0.88rem !important; border-radius: 10px !important; text-align: left; }
+
         #floating-contact-widget, .fcw-container, .fcw-backdrop, #contact-widget-fab,
         #hubspot-messages-iframe-container, iframe[src*="chat"], .crisp-client, div[class*="chat"], #chat-widget-container, div[class*="widget"], div[id*="chat"] {
           display: none !important;
@@ -1052,8 +1134,25 @@ export default function VendaPresencialPage() {
         }
       `}</style>
 
+      {/* ===== ABAS DA COLUNA DO ATENDIMENTO ===== */}
+      {compacto && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", background: "#fff", borderBottom: "1px solid #E2E8F0" }}>
+          {([
+            ["cardapio", "🍔 Cardápio"],
+            ["pedido", `🧾 Pedido${cartQty > 0 ? ` (${cartQty}) · ${fmt(total)}` : ""}`],
+          ] as const).map(([id, rotulo]) => (
+            <button key={id} type="button" onClick={() => setAbaCompacta(id)}
+              style={{ padding: "11px 6px", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 800, fontSize: "0.84rem", whiteSpace: "nowrap",
+                background: abaCompacta === id ? "#FEF2F2" : "#fff", color: abaCompacta === id ? "#B71C1C" : "#64748B",
+                borderBottom: `3px solid ${abaCompacta === id ? "#C92E09" : "transparent"}` }}>
+              {rotulo}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* ===== LEFT: CARDÁPIO ===== */}
-      <div style={{ display: "flex", flexDirection: "column", overflow: "hidden", borderRight: "1px solid #E2E8F0" }}>
+      <div style={{ display: compacto && abaCompacta !== "cardapio" ? "none" : "flex", flexDirection: "column", overflow: "hidden", borderRight: "1px solid #E2E8F0" }}>
         {/* Header */}
         <div style={{ padding: "12px 16px", background: "#fff", borderBottom: "1px solid #E2E8F0" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
@@ -1062,7 +1161,8 @@ export default function VendaPresencialPage() {
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar produto..."
                 style={{ width: "100%", padding: "8px 12px 8px 32px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: "0.88rem", outline: "none" }} />
             </div>
-            <div style={{ background: "#C92E09", color: "#fff", borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: "0.85rem", display: "flex", alignItems: "center", gap: 6 }}>
+            <div onClick={compacto ? () => setAbaCompacta("pedido") : undefined}
+              style={{ background: "#C92E09", color: "#fff", borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: "0.85rem", display: "flex", alignItems: "center", gap: 6, whiteSpace: compacto ? "nowrap" : undefined, cursor: compacto ? "pointer" : undefined }}>
               <ShoppingCart size={15} /> {cartQty} {cartQty === 1 ? "item" : "itens"}
             </div>
           </div>
@@ -1115,10 +1215,19 @@ export default function VendaPresencialPage() {
             )}
           </div>
         </div>
+
+        {/* Na coluna estreita o pedido está na outra aba: com item no
+            carrinho, o caminho para o pagamento fica no pé, à mão. */}
+        {compacto && cart.length > 0 && (
+          <button type="button" onClick={() => setAbaCompacta("pedido")}
+            style={{ margin: 8, padding: "13px", border: "none", borderRadius: 12, background: "#C92E09", color: "#fff", fontWeight: 900, fontSize: "0.95rem", cursor: "pointer", fontFamily: "inherit", display: "flex", justifyContent: "space-between", boxShadow: "0 4px 14px rgba(198,40,40,0.35)" }}>
+            <span>Pagamento e entrega →</span><span>{fmt(total)}</span>
+          </button>
+        )}
       </div>
 
       {/* ===== RIGHT: PEDIDO ===== */}
-      <div className="pdv-carrinho" style={{ display: "flex", flexDirection: "column", background: "#fff", overflow: "hidden" }}>
+      <div className="pdv-carrinho" style={{ display: compacto && abaCompacta !== "pedido" ? "none" : "flex", flexDirection: "column", background: "#fff", overflow: "hidden" }}>
         {/* Tipo de pedido */}
         <div className="pdv-cabecalho" style={{ padding: "12px 16px", borderBottom: "1px solid #E2E8F0" }}>
           <div className="pdv-tipo" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 12 }}>
@@ -1351,15 +1460,15 @@ export default function VendaPresencialPage() {
         <div className="pdv-rodape" style={{ padding: "10px 14px 10px 14px", borderTop: "1px solid #E2E8F0", background: "#FAFAFA", position: "relative", zIndex: 50 }}>
           {/* Forma de pagamento */}
           <div style={{ marginBottom: 6 }}>
-            <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.4px", display: "block", marginBottom: 3 }}>Pagamento</label>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+            <label style={{ fontSize: compacto ? "0.82rem" : "0.72rem", fontWeight: compacto ? 900 : 700, color: compacto ? "#1C1917" : "#64748B", textTransform: "uppercase", letterSpacing: "0.4px", display: "block", marginBottom: compacto ? 6 : 3 }}>{compacto ? "Como o cliente vai pagar?" : "Pagamento"}</label>
+            <div className="pdv-formas" style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
               {[...PAYMENT_METHODS, ...formasProprias, ...(employeeAccountEnabled ? ["Conta Funcionário"] : [])].map(m => (
                 <button key={m} type="button" onClick={() => { setPaymentMethod(m); if (m !== "Voucher/Vale") setVoucherBrand(""); else if (bandeirasDoVale.length === 1) setVoucherBrand(bandeirasDoVale[0].name); }}
                   style={{ padding: "4px 9px", borderRadius: 8, border: `1.5px solid ${paymentMethod === m ? "#C92E09" : "#CBD5E1"}`,
                     background: paymentMethod === m ? "#C92E09" : "#fff",
                     color: paymentMethod === m ? "#fff" : "#334155",
                     fontWeight: 700, fontSize: "0.75rem", cursor: "pointer", fontFamily: "inherit" }}>
-                  {m === "Conta Funcionário" ? "👤 Conta Funcionário" : ehFormaPropria(m) ? `🪙 ${rotuloDaForma(m)}` : m}
+                  {m === "Conta Funcionário" ? "👤 Conta Funcionário" : ehFormaPropria(m) ? `🪙 ${rotuloDaForma(m)}` : compacto && ICONE_DA_FORMA[m] ? `${ICONE_DA_FORMA[m]} ${m}` : m}
                 </button>
               ))}
               {/* Dividir entre formas, igual à mesa: metade no Pix, metade em dinheiro. */}
