@@ -44,6 +44,7 @@ import { prisma } from "@/lib/prisma";
 import { inicioOperacional, janelaDoPeriodo } from "@/lib/relatorios/janela";
 import { lojasDeOrigemDaConta } from "@/lib/lojas-de-origem-da-conta";
 import { funcionarioAbre } from "@/lib/permissao-da-tela";
+import { sessaoDoBill } from "@/lib/assessor/sessao-do-bill";
 import { chaveDaLoja } from "@/lib/origem-do-relatorio";
 import { SEM_REPOSICAO } from "@/lib/relatorios/sem-reposicao";
 import type { LojaDeOrigem } from "@/lib/loja-de-origem";
@@ -104,12 +105,15 @@ export { inicioOperacional, janelaDoPeriodo };
  * que é da cozinha, abre com "KDS" (lib/permissao-da-tela.ts).
  */
 export async function contextoDoRelatorio(req: NextRequest, tela = "/store/relatorios"): Promise<Resultado<ContextoDoRelatorio>> {
-  const session = await getServerSession(authOptions).catch(() => null);
+  // O Bill lê como quem conversa com ele (lib/assessor/sessao-do-bill.ts): o
+  // usuário vem da conversa, e a loja dela faz o papel do cookie da loja ativa.
+  const doBill = sessaoDoBill();
+  const session = doBill ? null : await getServerSession(authOptions).catch(() => null);
   const email = session?.user?.email;
-  if (!email) return erro(401, "Não autorizado");
+  if (!doBill && !email) return erro(401, "Não autorizado");
 
   const usuario = await prisma.user.findUnique({
-    where: { email },
+    where: doBill ? { id: doBill.usuarioId } : { email: email! },
     select: { id: true, role: true, ownerId: true, accountGroupId: true, permissions: true },
   });
   if (!usuario) return erro(404, "Usuário não encontrado");
@@ -121,7 +125,7 @@ export async function contextoDoRelatorio(req: NextRequest, tela = "/store/relat
       : "Sem acesso a esta tela: peça ao dono da loja para liberar no seu cadastro em Equipe.");
   }
 
-  const cookieLoja = req.cookies.get("firehub_active_store")?.value || "";
+  const cookieLoja = doBill ? doBill.franchiseeId : req.cookies.get("firehub_active_store")?.value || "";
   const ehAdmin = usuario.role === "ADMIN";
 
   // A loja dona: a do usuário, a do dono (funcionário) ou, para o ADMIN, a loja

@@ -10,6 +10,8 @@
  *   registrar_conta_a_pagar → Payable PENDING (Contas a Pagar)
  *   marcar_conta_paga       → o "Paguei" das Contas a Pagar
  *   consultar_*             → só leitura
+ *   consultar_relatorio     → os relatórios do menu, de qualquer período, pelas
+ *                              rotas das telas (relatorios.ts)
  *   alterar_taxa_de_bairro, → a tela de Entrega (PUT api/store-settings →
  *   cadastrar_bairro,          cadastroParaGravar), só loja por bairro
  *   remover_bairro             (entrega.ts)
@@ -33,6 +35,7 @@ import { comAutor } from "./painel";
 import { buscarNoCardapio, pausarOuReativar, listarPausados, abrirOuFecharSite, desfazerNoCardapio } from "./cardapio";
 import { pausarNosApps } from "./pausa-nos-apps";
 import { consultarTaxasDeEntrega, alterarTaxaDeBairro, cadastrarBairro, removerBairro, desfazerNaEntrega } from "./entrega";
+import { consultarRelatorio, RELATORIOS_DO_BILL } from "./relatorios";
 
 export type ContextoDoAssessor = {
   franchiseeId: string;
@@ -271,6 +274,26 @@ export const DECLARACOES_DO_ASSESSOR = [
     description: "Desfaz o último lançamento feito pelo assessor ('desfaz', 'errei', 'cancela isso').",
     parameters: { type: Type.OBJECT, properties: {} },
   },
+  {
+    name: "consultar_relatorio",
+    description:
+      "Lê um relatório do painel (os mesmos números da tela Relatórios) de QUALQUER período: ontem, um dia passado, a semana, o mês, um intervalo. " +
+      "Use para toda pergunta de vendas/financeiro/operação/estoque que não seja só de HOJE, e também de hoje quando os DADOS AO VIVO não tiverem o detalhe. " +
+      "Relatórios: " + Object.entries(RELATORIOS_DO_BILL).map(([slug, [o]]) => `${slug} (${o})`).join("; ") + ".",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        relatorio: { type: Type.STRING, description: "O slug do relatório, exatamente como na lista." },
+        de: { type: Type.STRING, description: "Primeiro dia (AAAA-MM-DD), dia de operação da loja (vira às 5h). Vazio = hoje." },
+        ate: { type: Type.STRING, description: "Último dia (AAAA-MM-DD). Vazio = o mesmo de 'de'." },
+        horaDe: { type: Type.STRING, description: "Opcional: só a partir desta hora (HH:MM)." },
+        horaAte: { type: Type.STRING, description: "Opcional: só até esta hora (HH:MM)." },
+        categorias: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Opcional: só estas categorias do cardápio (nome exato)." },
+        produtos: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Opcional: só estes produtos (nome exato)." },
+      },
+      required: ["relatorio"],
+    },
+  },
 ];
 
 /** Ferramentas que gravam: a resposta da IA sem nenhuma delas não pode dizer "lancei". */
@@ -302,6 +325,7 @@ export async function executarFerramentaDoAssessor(nome: string, args: any, ctx:
       case "alterar_taxa_de_bairro": return await alterarTaxaDeBairro(args, ctx);
       case "cadastrar_bairro": return await cadastrarBairro(args, ctx);
       case "remover_bairro": return await removerBairro(args, ctx);
+      case "consultar_relatorio": return await consultarRelatorio(args, ctx);
       default: return { ok: false, erro: `Ferramenta desconhecida: ${nome}` };
     }
   } catch (err: any) {
