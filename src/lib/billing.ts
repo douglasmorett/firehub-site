@@ -33,6 +33,7 @@ import { getAsaasKey } from "@/lib/asaas";
 import { prepararAvisoDoBoleto } from "@/lib/aviso-do-boleto";
 import { bloqueioDaMensalidade, bloqueioDoCiclo, JUROS_AO_MES_PCT, MULTA_POR_ATRASO_PCT, vencimentoDoBoleto } from "@/lib/prazo-da-mensalidade";
 import { fimDoTeste } from "@/lib/fim-do-teste";
+import { anualCobreOMes } from "@/lib/black-november";
 
 /**
  * Teto de comissão que pode sair de uma mensalidade, somando os dois níveis do
@@ -122,6 +123,19 @@ const VENDAS_QUE_CONTAM = {
 const CAMPOS_DO_BRUTO = { totalAmount: true, discountTotal: true } as const;
 function faturamentoBruto(soma: { totalAmount: number | null; discountTotal: number | null }): number {
   return (soma.totalAmount ?? 0) + (soma.discountTotal ?? 0);
+}
+
+/**
+ * As vendas que contam para a mensalidade (mesmo filtro, mesmo bruto) num
+ * intervalo qualquer. Usado pela Black November (lib/black-november.ts) para
+ * saber se a loja vende no ritmo do teto.
+ */
+export async function vendasQueContam(franchiseeId: string, de: Date, ate: Date): Promise<number> {
+  const agg = await prisma.customerOrder.aggregate({
+    where: { franchiseeId, ...VENDAS_QUE_CONTAM, createdAt: { gte: de, lt: ate } },
+    _sum: CAMPOS_DO_BRUTO,
+  });
+  return faturamentoBruto(agg._sum);
 }
 
 /**
@@ -767,7 +781,10 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
     ? null
     : await indiqueEGanheDaLoja(cycle.franchisee);
   const isentaPorIndicacoes = !!indique?.isenta;
-  const mensalidadePerdoada = isSpecialStore || isentoPorTeste || !hasUsage || isentaPorIndicacoes;
+  // Plano anual da Black November pago e cobrindo este mês: a mensalidade já
+  // foi paga adiantada. As taxas à parte (tráfego, totem, módulos) seguem.
+  const cobertoPeloAnual = !isSpecialStore && anualCobreOMes(cycle.franchisee?.onboardingData, yearMonth);
+  const mensalidadePerdoada = isSpecialStore || isentoPorTeste || !hasUsage || isentaPorIndicacoes || cobertoPeloAnual;
   const mensalidadeCheia = mensalidadePerdoada ? 0 : Math.max(0, amountDue - cycle.amountOffset);
   // Os créditos de R$ 100 por indicação paga abatem a mensalidade (nunca as
   // taxas). Mensalidade menor que o crédito: abate até zerar e o resto fica
@@ -779,6 +796,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
     : 0;
   const mensalidadePendente = parseFloat(Math.max(0, mensalidadeCheia - creditoDeIndicacao).toFixed(2));
   const notaDoIndique = [
+    cobertoPeloAnual ? "Mensalidade paga no plano anual (Black November)." : null,
     isentaPorIndicacoes ? `Mensalidade isenta pelo Indique e Ganhe: ${indique!.ativosPagantes} lojas indicadas ativas e pagantes (a partir de ${INDICADOS_PARA_ISENCAO}).` : null,
     creditoDeIndicacao > 0 ? `Indique e Ganhe: R$ ${creditoDeIndicacao.toFixed(2)} de crédito abatido da mensalidade de R$ ${mensalidadeCheia.toFixed(2)}.` : null,
   ].filter(Boolean).join(" ");

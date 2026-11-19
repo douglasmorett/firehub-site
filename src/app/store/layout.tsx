@@ -34,6 +34,8 @@ import AceiteDosTermos from "@/components/termos/AceiteDosTermos";
 import SairDaConta from "@/components/SairDaConta";
 import { aceitouVersaoAtual, aceiteAdiado } from "@/lib/termos-de-uso";
 import { VERSAO_DOS_TERMOS } from "@/lib/termos-versao";
+import BlackNovember from "@/components/customer/BlackNovember";
+import { FIM_DA_BLACK_NOVEMBER } from "@/lib/black-november";
 
 export const dynamic = "force-dynamic";
 
@@ -369,6 +371,15 @@ export default async function StoreLayout({ children }: { children: React.ReactN
             nomeDaLoja={storeOwner?.storeName || user?.storeName || session.user?.name || "sua loja"}
             primeiraVez={contaNovaParaOsTermos}
           />
+        )}
+
+        {/* Black November (até 30/11/2026): uma janela, uma vez, só para o dono.
+            Com os Termos ou o bloqueio na tela ela nem monta; com outra janela
+            aberta (tutoriais, novidades) ela espera a vez. Quem mais fica de
+            fora (isenta, embaixador, loja nova, anual pago) o servidor decide:
+            lib/black-november.ts. */}
+        {ehDonoDaConta && user?.id && !precisaAceitarTermos && !isBlocked && process.env.FIREHUB_LOCAL !== "1" && Date.now() < FIM_DA_BLACK_NOVEMBER.getTime() && (
+          <BlackNovember usuarioId={user.id} />
         )}
 
         {/* Tela de Bloqueio por Inadimplência — permite o login, mas bloqueia o uso até pagar */}

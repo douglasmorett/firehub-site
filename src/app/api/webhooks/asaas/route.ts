@@ -44,6 +44,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, recarga: resultado });
     }
 
+    // Black November: plano anual de R$ 4.000 (lib/black-november-no-banco.ts,
+    // "black-november:<loja>"). No cartão em 12x chega um evento por parcela.
+    if (String(payment.externalReference || "").startsWith("black-november:")) {
+      const { registrarPagamentoDaBlackNovember } = await import("@/lib/black-november-no-banco");
+      const resultado = await registrarPagamentoDaBlackNovember(payment, event);
+      console.log(`[webhook/asaas] Black November ${payment.externalReference}: ${resultado} (${event})`);
+      return NextResponse.json({ success: true, blackNovember: resultado });
+    }
+
     // Procurar o pedido: primeiro por asaasPaymentId, depois por externalReference (orderId)
     let order = await prisma.order.findFirst({
       where: { asaasPaymentId: payment.id }
