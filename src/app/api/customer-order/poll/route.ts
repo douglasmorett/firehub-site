@@ -147,7 +147,16 @@ async function pollIfoodEvents(sessionUserId?: string) {
       return h;
     };
 
-    const url = "https://merchant-api.ifood.com.br/events/v1.0/events:polling?excludeHeartbeat=true";
+    // SEM `excludeHeartbeat=true` de propósito, só aqui (19/11/2026). Com ele,
+    // nenhum polling do FireHub contava como sinal de vida e o iFood só via a
+    // loja conectada (`is-connected`) com o Gestor de Pedidos aberto — o
+    // Cantinho do Sabor ficou fechado no pico com a integração ok. Este é o
+    // polling do PAINEL: só roda com a tela da loja aberta, então é o sinal
+    // certo de "tem gente atendendo". O cron (lib/ifood-eventos.ts) e o app
+    // central (api/cron/ifood-poll) continuam com o parâmetro, para o servidor
+    // não manter aberta loja que ninguém está olhando. O consumo dos eventos
+    // não muda: a resposta e o ACK são os mesmos com ou sem o parâmetro.
+    const url = "https://merchant-api.ifood.com.br/events/v1.0/events:polling";
     let res = await fetch(url, { method: "GET", headers: montarHeaders(token) });
 
     // 401 com token distribuído = token da loja venceu e não renovou. Antes o
