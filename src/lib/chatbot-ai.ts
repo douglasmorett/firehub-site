@@ -55,7 +55,7 @@ import { ehPerguntaSobreOPedido } from "./problema-no-pedido";
 import { escolhasDoItem, opcoesPagasSemPar, trocoEObservacaoDoPedido } from "./item-do-robo";
 import { escolherModeloDoRobo, LEMBRETE_DO_MODELO_BARATO, LEMBRETE_DO_MODELO_BARATO_SO_REFERENCIA, MODELO_BARATO, MODELO_DE_PEDIDO } from "./modelo-do-robo";
 import { chaveDoClaude, lojaNoClaude, marcadaNoClaude, MODELO_CLAUDE, respostaDoClaude } from "./robo-no-claude";
-import { regrasDoRobo } from "./regras-do-robo";
+import { ENDERECO_SEM_NUMERO, regrasDoRobo } from "./regras-do-robo";
 import { cardapioParaORobo } from "./cardapio-para-o-robo";
 import { lojasDoGrupo } from "./loja-ativa";
 import { DOCUMENTO_NAO_PEDIDO, documentoNoPedido, formasEmTexto, type DocumentoNoPedido } from "./fiscal-modo";
@@ -1291,7 +1291,7 @@ export async function processChatbotAI(
       const linhaDaLocalizacao = avaliacao.trocouPeloTexto
         ? `\n- ⚠️ O cliente tinha mandado a LOCALIZAÇÃO, mas o endereço que ele DIGITOU depois fica longe dela: a área e a taxa acima são do endereço DIGITADO. Confirme com ele, numa frase, que a entrega é nesse endereço (se for na localização, peça para ele mandar a localização de novo).`
         : coordsQueValem
-          ? `\n- O cliente mandou a LOCALIZAÇÃO pelo WhatsApp e a área e a taxa foram conferidas por ela. Se ele ainda não disse rua, número e complemento/ponto de referência, peça — o entregador precisa do endereço escrito. O endereço escrito NÃO muda a taxa e NÃO é motivo para pedir a localização de novo.`
+          ? `\n- O cliente mandou a LOCALIZAÇÃO pelo WhatsApp e a área e a taxa foram conferidas por ela. Se ele ainda não disse rua, número e complemento/ponto de referência, peça — o entregador precisa do endereço escrito (${ENDERECO_SEM_NUMERO}). O endereço escrito NÃO muda a taxa e NÃO é motivo para pedir a localização de novo.`
           : "";
       if (enderecoSalvo) {
         // Só oferece o que fecha sem pergunta (ATENDE com taxa firme). FORA,
@@ -1318,7 +1318,7 @@ export async function processChatbotAI(
       : `${ondeFoiMedido} — ${distancia ? distancia.distancia : `${v.distanciaKm} km da loja`}${distancia?.limite ? ` (${distancia.limite})` : ""}${v.aproximado ? ", medido pelo centro do bairro" : ""}`}
 - RESULTADO: ✅ A LOJA ATENDE. Taxa de entrega: ${brl(v.taxa ?? 0)}${v.tempoMin && prazoDaLoja.temDado ? ` (${v.tempoMin} min)` : ""}.
 - Use EXATAMENTE esta taxa no resumo e no campo deliveryFee da tag PEDIDO_IA.${linhaDoFreteGratis}${linhaDaLocalizacao}${v.peloBairro && !coordsQueValem ? `
-- O mapa achou o BAIRRO do cliente, não a rua: a taxa acima é a do bairro e VALE — pode fechar o pedido com ela. NÃO peça a localização por causa disso. Só confira que o endereço escrito tem rua, número e um ponto de referência (é o que o entregador usa para achar a casa).` : ""}${pedirLocalizacao === "aproximado" ? `
+- O mapa achou o BAIRRO do cliente, não a rua: a taxa acima é a do bairro e VALE — pode fechar o pedido com ela. NÃO peça a localização por causa disso. Só confira que o endereço escrito tem rua, número e um ponto de referência (é o que o entregador usa para achar a casa; ${ENDERECO_SEM_NUMERO}).` : ""}${pedirLocalizacao === "aproximado" ? `
 - ⚠️ O mapa só achou este endereço de forma APROXIMADA (centro do bairro, rua que existe em mais de um lugar, ou ponto longe da rua): a taxa acima é uma ESTIMATIVA. ANTES de fechar o pedido, peça a localização do cliente, numa frase só: "Pra calcular a taxa certinha, me manda sua localização? ${COMO_MANDAR_A_LOCALIZACAO}" Se ele não puder mandar, siga com a taxa estimada e diga que a loja confere o valor.` : ""}
 `;
       } else if (faltaOPontoDaLoja(v)) {
