@@ -8,11 +8,13 @@
  *
  * As três caixas (Só Checklist, os dois, Só Ponto) são os planos da landing do
  * FireCheck (Douglas, 31/10/2026: "tem que ter aquelas três caixinhas"). Sem
- * FireCheck conectado, o "concordo" do termo já cria a conta (a senha aparece
- * uma vez) antes de ligar; quem já tem conta conecta no quadro do fim da página.
+ * FireCheck conectado, o "concordo" do termo já cria a conta ao ligar, com o
+ * e-mail da loja e a senha do FireHub (lib/firecheck-modulos/mesma-conta.ts):
+ * "deveria ser só ativar mesmo". "Abrir o FireCheck" entra direto, sem senha.
+ * Quem já tem conta conecta no quadro do fim da página.
  */
 import { useEffect, useState } from "react";
-import { Check, Loader2 } from "lucide-react";
+import { Check, ExternalLink, Loader2 } from "lucide-react";
 import InterruptorDoModulo from "@/components/modulos/InterruptorDoModulo";
 import ResumoDaCobranca from "@/components/modulos/ResumoDaCobranca";
 import { NOME_DO_MODULO, type ModuloDoFirecheck } from "@/lib/firecheck-modulos/preco";
@@ -21,7 +23,7 @@ import { CLAUSULAS_DO_TERMO_DO_FIRECHECK, TITULO_DO_TERMO_DO_FIRECHECK, VERSAO_D
 type EstadoDoModulo = { ativo: boolean; emTeste: boolean; testeAte: string | null; isento: boolean; jaTestou: boolean; desligaEm: string | null; fimDoMes: string | null; preco: number };
 type Dados = {
   estado: { isento: boolean; modulos: Record<ModuloDoFirecheck, EstadoDoModulo>; valorEsteMes: number };
-  conectado: { storeName: string; email: string } | null;
+  conectado: { storeName: string; email: string; mesmoLogin: boolean } | null;
   podeContratar: boolean;
   precos: { porModulo: Record<ModuloDoFirecheck, number>; combo: number; diasDeTeste: number };
 };
@@ -46,10 +48,9 @@ const PLANOS: Plano[] = [
 
 export default function ModulosNoBoleto({ onConectou }: { onConectou: () => void }) {
   const [dados, setDados] = useState<Dados | null>(null);
-  const [salvando, setSalvando] = useState<ModuloDoFirecheck | "conta" | null>(null);
+  const [salvando, setSalvando] = useState<ModuloDoFirecheck | "abrir" | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [termoDe, setTermoDe] = useState<Plano | null>(null);
-  const [contaNova, setContaNova] = useState<{ email: string; senha: string } | null>(null);
 
   const carregar = () =>
     fetch("/api/store/firecheck/modulos", { cache: "no-store" })
@@ -59,7 +60,7 @@ export default function ModulosNoBoleto({ onConectou }: { onConectou: () => void
 
   useEffect(() => { carregar(); }, []);
 
-  async function enviar(corpo: Record<string, unknown>, quem: ModuloDoFirecheck | "conta") {
+  async function enviar(corpo: Record<string, unknown>, quem: ModuloDoFirecheck | "abrir") {
     setErro(null);
     setSalvando(quem);
     try {
@@ -75,22 +76,30 @@ export default function ModulosNoBoleto({ onConectou }: { onConectou: () => void
     }
   }
 
-  // O "concordo" do termo: cria a conta se a loja ainda não tem FireCheck e liga
-  // os módulos do plano que estão desligados.
+  // O "concordo" do termo liga os módulos do plano que estão desligados. Loja
+  // sem FireCheck ganha a conta no primeiro (o servidor cria, com a senha do FireHub).
   async function ligarPlano(plano: Plano) {
     if (!dados) return;
-    if (!dados.conectado) {
-      const j = await enviar({ acao: "criar-conta" }, "conta");
-      if (!j?.conta) { setTermoDe(null); return; }
-      setContaNova({ email: j.conta.email, senha: j.conta.senha });
-      onConectou();
-    }
+    let ligou = false;
     for (const modulo of plano.alvos.filter((m) => !dados.estado.modulos[m].ativo)) {
       // Recusou (ex.: já paga pela Cakto): para aqui e o aviso aparece.
       if (!(await enviar({ modulo, ligar: true, aceite: { versao: VERSAO_DO_TERMO_DO_FIRECHECK } }, modulo))) break;
+      ligou = true;
     }
     setTermoDe(null);
+    // A conta acabou de nascer: o quadro de conexão do fim da página também muda.
+    if (ligou && !dados.conectado) onConectou();
     await carregar();
+  }
+
+  // A aba abre já no clique (senão o navegador barra a janela que abre depois
+  // da espera) e vai para o FireCheck quando o link chega.
+  async function abrirFirecheck() {
+    const aba = window.open("", "_blank");
+    const j = await enviar({ acao: "abrir" }, "abrir");
+    if (!j?.url) { aba?.close(); return; }
+    if (aba) { aba.opener = null; aba.location.href = j.url; } else window.location.href = j.url;
+    if (!dados?.conectado) { onConectou(); await carregar(); }
   }
 
   async function religar(modulo: ModuloDoFirecheck) {
@@ -171,21 +180,24 @@ export default function ModulosNoBoleto({ onConectou }: { onConectou: () => void
 
       {!conectado && dados.podeContratar && (
         <p style={{ fontSize: "0.85rem", color: "#64748B", margin: "12px 0 0", lineHeight: 1.5 }}>
-          Ainda não tem FireCheck? A conta é criada na hora em que você liga, já conectada a esta loja. Já tem? Conecte com o e-mail e a senha dele no quadro do fim da página.
+          Ainda não tem FireCheck? A conta é criada na hora em que você liga, já conectada a esta loja, e entra com o mesmo e-mail e a mesma senha do FireHub. Já tem? Conecte com o e-mail e a senha dele no quadro do fim da página.
         </p>
       )}
 
       {erro && <div role="alert" style={{ ...caixa, marginTop: 14, background: "#FEF2F2", border: "1px solid #FECACA", color: "#991B1B", fontWeight: 600, fontSize: "0.9rem" }}>{erro}</div>}
 
-      {contaNova && (
-        <div style={{ ...caixa, marginTop: 14, background: "#F0FDF4", border: "1px solid #BBF7D0" }}>
-          <div style={{ fontWeight: 900, color: "#14532D", marginBottom: 6 }}>Conta do FireCheck criada</div>
-          <div style={{ fontSize: "0.92rem", color: "#1E293B", lineHeight: 1.7 }}>
-            Entre em <b>firecheckapp.com.br</b> com:<br />
-            E-mail: <b>{contaNova.email}</b><br />
-            Senha: <b style={{ fontFamily: "monospace", fontSize: "1.05rem", background: "#FFF", padding: "2px 8px", borderRadius: 6, border: "1px solid #BBF7D0" }}>{contaNova.senha}</b>
+      {dados.podeContratar && (conectado || ligados.length > 0) && (
+        <div style={{ ...caixa, marginTop: 14, background: "#F0FDF4", border: "1px solid #BBF7D0", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ fontSize: "0.9rem", color: "#1E293B", lineHeight: 1.55, flex: "1 1 260px" }}>
+            <div style={{ fontWeight: 900, color: "#14532D", marginBottom: 2 }}>Sua conta do FireCheck</div>
+            {conectado && !conectado.mesmoLogin
+              ? <>No app e no site do FireCheck, entre com <b>{conectado.email}</b> e a senha do FireCheck.</>
+              : <>No app e no site do FireCheck, entre com <b>o mesmo e-mail e a mesma senha do FireHub</b>{conectado ? <> ({conectado.email})</> : null}. Daqui, o botão entra direto.</>}
           </div>
-          <div style={{ fontSize: "0.82rem", color: "#92400E", marginTop: 8 }}>Anote agora: esta senha não aparece de novo. Você pode trocá-la depois, dentro do FireCheck.</div>
+          <button onClick={abrirFirecheck} disabled={salvando === "abrir"}
+            style={{ background: "#FF4D00", color: "#FFF", border: "none", borderRadius: 10, padding: "10px 18px", fontWeight: 800, fontSize: "0.9rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 8 }}>
+            {salvando === "abrir" ? <Loader2 size={16} className="animate-spin" /> : <ExternalLink size={16} />} Abrir o FireCheck
+          </button>
         </div>
       )}
 
@@ -232,7 +244,7 @@ function Termo({ plano, modulos, preco, combo, diasDeTeste, comTeste, criaConta,
         <ResumoDaCobranca preco={preco} diasDeTeste={diasDeTeste} comTeste={comTeste} />
         {criaConta && (
           <div style={{ margin: "10px 20px 0", fontSize: 13.5, color: "#334155", lineHeight: 1.5 }}>
-            Esta loja ainda não tem FireCheck: ao concordar, a conta é criada já conectada a ela, e a senha aparece na tela uma vez.
+            Esta loja ainda não tem FireCheck: ao concordar, a conta é criada já conectada a ela, e você entra com o mesmo e-mail e a mesma senha do FireHub.
             {/* Pizzaria 17 (13/11): quem já tinha FireCheck concordou aqui, ganhou uma conta nova e
                 seguiu entrando na antiga, vencida — pagava uma e usava a outra. */}
             <div style={{ marginTop: 8, padding: "8px 10px", background: "#FFF7ED", border: "1px solid #FED7AA", borderRadius: 8, color: "#7C2D12", fontWeight: 600 }}>
