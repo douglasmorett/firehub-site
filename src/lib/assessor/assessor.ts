@@ -129,7 +129,10 @@ ${listaDeInsumos}
 
 ${resumo}
 
-${mudou}`;
+${mudou}${ctx.soInformacao ? `
+
+MODO SÓ INFORMAÇÃO (vale mais que as regras acima): esta loja ainda não assina o Bill. Responda o que ele PERGUNTAR (vendas, caixa, pedidos, estoque, contas, cardápio, pausados, taxas) com os dados e as ferramentas de consulta. Se ele pedir para FAZER algo (lançar compra/despesa/conta, pausar ou reativar item, abrir ou fechar a loja, mudar taxa ou bairro, horário, cardápio), NÃO chame ferramenta que grava e não diga que fez: explique numa frase que, para o Bill fazer isso por ele, é só ativar o *Bill, seu assessor* no painel, neste link, sozinho na linha:
+https://firehubfood.com.br/store/bill` : ""}`;
 }
 
 /**

@@ -51,6 +51,8 @@ export type ContextoDoAssessor = {
   imagemUrl?: string | null;
   /** A mensagem trouxe foto (a compra entra como "nota com foto"). */
   comFoto?: boolean;
+  /** Loja sem assinatura com o Bill só para perguntas (billSoInformacao): nada grava. */
+  soInformacao?: boolean;
 };
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -310,6 +312,9 @@ export const FERRAMENTAS_QUE_GRAVAM = new Set([
 // ── Execução ──────────────────────────────────────────────────────────────
 
 export async function executarFerramentaDoAssessor(nome: string, args: any, ctx: ContextoDoAssessor): Promise<Record<string, unknown>> {
+  if (ctx.soInformacao && FERRAMENTAS_QUE_GRAVAM.has(nome)) {
+    return { ok: false, erro: "Nada foi feito: fazer pelo Bill (lançar, pausar, abrir/fechar, mudar taxa) é só com o Bill, seu assessor ativo." };
+  }
   try {
     switch (nome) {
       case "registrar_compra": return await registrarCompra(args, ctx);

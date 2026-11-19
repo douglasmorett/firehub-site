@@ -1444,12 +1444,13 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
   // porteira acima: "atendente assumiu" vale para ele também.
   if (ehODono) {
     const lojaDoAssessor = (user as any).ownerId || user.id;
-    const { assessorEstaLigado } = await import("@/lib/assessor/assinatura");
-    if (await assessorEstaLigado(lojaDoAssessor)) {
+    const { assessorEstaLigado, billSoInformacao } = await import("@/lib/assessor/assinatura");
+    const billLigado = await assessorEstaLigado(lojaDoAssessor);
+    if (billLigado || billSoInformacao(lojaDoAssessor)) {
       try {
         const { conversarComOAssessor } = await import("@/lib/assessor/assessor");
         const r = await conversarComOAssessor(
-          { franchiseeId: lojaDoAssessor, usuarioId: lojaDoAssessor, canal: "WHATSAPP", telefone: cleanPhone },
+          { franchiseeId: lojaDoAssessor, usuarioId: lojaDoAssessor, canal: "WHATSAPP", telefone: cleanPhone, soInformacao: !billLigado },
           { texto: rawText, audio: audioData?.base64 ? audioData : null, imagem: imagemData?.base64 ? imagemData : null },
         );
         await replyToCustomer(user.id, remoteJid, r.resposta, remoteJid || data.from || "");
