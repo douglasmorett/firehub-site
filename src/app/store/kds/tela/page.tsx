@@ -2285,10 +2285,10 @@ export default function KDSTelaPage() {
                 gridTemplateColumns:
                   "repeat(auto-fill, minmax(min(100%, 420px), 1fr))",
                 gap: 16,
-                // Com zoom menor, a mesma largura da tela recebe mais colunas:
-                // a grade cresce na mesma proporção que as comandas encolhem.
-                maxWidth: Math.round(1600 / zoom),
-                margin: "0 auto",
+                // A grade usa a LARGURA TODA da tela: com o teto de 1600 px
+                // sobravam faixas vazias nas laterais da TV e a loja encolhia
+                // as comandas para caber mais (Garagem Burger, 18/11/2026).
+                // Com zoom menor, a mesma largura recebe mais colunas.
                 zoom,
               }}
             >

@@ -88,5 +88,43 @@ const mesaNova = p("mesaNova", "MESA", "PRESENCIAL", "23:30");
 confere("a mesa nova, trazida pela busca extra, fura os 100 mais antigos",
   ids(ordenarPelaPrioridade([...cem, mesaNova], lerKdsConfig({ prioridade: ["MESA"] }))).slice(0, 2), ["mesaNova", "d0"]);
 
+// ── a fila pelo NÚMERO do pedido (Garagem Burger, 18/11/2026) ──
+// #37 do site gravado às 17:57:38 e #36 do robô às 17:58:10: o 36 vem antes.
+type N = P & { franchiseeId: string; dailyOrderNumber?: number | null; items?: { prontoEm?: string | null }[] };
+const n = (id: string, numero: number | null, hora: string, extra: Partial<N> = {}): N => ({
+  id, deliveryType: "DELIVERY", source: "ONLINE", createdAt: `2026-11-18T${hora}.000Z`, franchiseeId: "g", dailyOrderNumber: numero, ...extra,
+});
+const fechou = new Date("2026-11-18T05:00:00.000Z").getTime();
+const garagem = { g: { sorteada: false, desde: fechou } };
+const filaG = [n("p37", 37, "17:57:38"), n("p36", 36, "17:58:10", { source: "WHATSAPP_IA" }), n("p38", 38, "17:59:00")];
+confere("sem a numeração da loja: chegada (como antes)", ids(ordenarPelaPrioridade(filaG, lerKdsConfig(null))), ["p37", "p36", "p38"]);
+confere("com a numeração: pelo número", ids(ordenarPelaPrioridade(filaG, lerKdsConfig(null), "production", null, garagem)), ["p36", "p37", "p38"]);
+confere("numeração sorteada: chegada", ids(ordenarPelaPrioridade(filaG, lerKdsConfig(null), "production", null, { g: { sorteada: true, desde: fechou } })), ["p37", "p36", "p38"]);
+confere("loja sem leitura: chegada", ids(ordenarPelaPrioridade(filaG, lerKdsConfig(null), "production", null, {})), ["p37", "p36", "p38"]);
+// O caixa fechou às 05:00 e o contador voltou ao 1: o #90 de antes, preso na
+// cozinha, continua na frente do #1 de hoje.
+const virada = [n("hoje2", 2, "18:10:00"), n("hoje1", 1, "18:00:00"), n("ontem90", 90, "02:00:00")];
+confere("contagem anterior ao fechamento vai na frente", ids(ordenarPelaPrioridade(virada, lerKdsConfig(null), "production", null, garagem)), ["ontem90", "hoje1", "hoje2"]);
+confere("sem número: depois dos numerados", ids(ordenarPelaPrioridade([n("sem", null, "17:00:00"), ...filaG], lerKdsConfig(null), "production", null, garagem)), ["p36", "p37", "p38", "sem"]);
+// As prioridades da loja continuam acima do número.
+const comPrioridade = [
+  n("p40", 40, "18:00:00"),
+  n("rota", 45, "18:05:00", { isRoutePriority: true }),
+  n("repos", 50, "18:06:00", { prioridadeNaCozinha: true }),
+  n("mesa", 47, "18:07:00", { deliveryType: "MESA", source: "PRESENCIAL" }),
+  n("p39", 39, "18:08:00"),
+];
+confere("reposição, rota e tipo marcado na frente; o resto pelo número",
+  ids(ordenarPelaPrioridade(comPrioridade, lerKdsConfig({ prioridade: ["MESA"] }), "production", null, garagem)), ["repos", "rota", "mesa", "p39", "p40"]);
+// Finalização separada: vale a chegada NELA (a primeira baixa), não o número.
+const fin = [
+  n("f9", 9, "18:00:00", { items: [{ prontoEm: "2026-11-18T18:20:00.000Z" }] }),
+  n("f8", 8, "18:01:00", { items: [{ prontoEm: "2026-11-18T18:25:00.000Z" }] }),
+];
+confere("finalização separada: pela chegada na finalização",
+  ids(ordenarPelaPrioridade(fin, lerKdsConfig({ prioridadeNaFinalizacao: [] }), "finishing", null, garagem)), ["f9", "f8"]);
+confere("finalização comum: pelo número",
+  ids(ordenarPelaPrioridade(fin, lerKdsConfig(null), "finishing", null, garagem)), ["f8", "f9"]);
+
 console.log(falhas ? `\n${falhas} falha(s)` : "\ntudo certo");
 process.exit(falhas ? 1 : 0);

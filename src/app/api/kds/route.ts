@@ -24,8 +24,10 @@ import {
   registrarBaixa,
   temAlgoPronto,
   tirarBaixa,
+  type NumeracaoDasLojas,
   type TelaDoKds,
 } from "@/lib/kds-telas";
+import { chaveDoContador } from "@/lib/order-number";
 import { lerConfigDeAgendamento } from "@/lib/agendamento";
 import { lembrarPor } from "@/lib/cache-curto";
 import { lerEnquantoNadaMuda } from "@/lib/novidade-da-loja";
@@ -509,7 +511,23 @@ async function kdsDeVerdade(req: NextRequest) {
     // Cada etapa com a sua lista: a finalização pode ter a dela (Pizzaria 17).
     // As telas entram para a finalização que espera a produção inteira sair na
     // ordem em que chegou nela (a última baixa).
-    visiveis = ordenarPelaPrioridade(visiveis, regrasDaLoja, stage, telasDaLoja);
+    //
+    // No resto, a fila anda pelo NÚMERO do pedido, não pela hora gravada: o
+    // número do robô é reservado antes de o pedido entrar e o #36 aparecia
+    // depois do #37 (Garagem Burger, 18/11/2026). Para isso a ordenação
+    // precisa saber, por loja, se a numeração é sorteada (aí não há ordem) e
+    // quando o contador zerou (o fechamento do caixa). Falhou a leitura: fica
+    // a ordem de chegada.
+    const numeracao = await lembrarPor(`kds:numeracao:${userStoreIds.join(",")}`, VALIDADE_DA_CONFIG_MS, async () => {
+      const lojas = await prisma.user.findMany({ where: { id: { in: userStoreIds } }, select: { id: true, numeracaoAleatoria: true } });
+      const porLoja: NumeracaoDasLojas = {};
+      for (const loja of lojas) {
+        const { desde } = await chaveDoContador(prisma, loja.id);
+        porLoja[loja.id] = { sorteada: loja.numeracaoAleatoria === true, desde: desde.getTime() };
+      }
+      return porLoja;
+    }).catch(() => null);
+    visiveis = ordenarPelaPrioridade(visiveis, regrasDaLoja, stage, telasDaLoja, numeracao);
     visiveis = visiveis.map((o) => {
       // O selo "⚠ OBS. ALTERADA" vai no item; o rastro inteiro fica no servidor.
       const { editHistory, ...pedido } = o;

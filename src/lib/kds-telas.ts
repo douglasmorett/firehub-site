@@ -850,38 +850,80 @@ export function chegadaNaFinalizacao(pedido: { items?: { prontoEm?: Date | strin
 }
 
 /**
+ * Como cada loja numera os pedidos, para a fila andar pelo NÚMERO
+ * (lib/order-number.ts): `sorteada` é a numeração embaralhada, que não diz
+ * nada de ordem; `desde` (ms) é o último fechamento de caixa que zerou o
+ * contador — pedido de antes dele tem número de outra contagem.
+ */
+export type NumeracaoDasLojas = Record<string, { sorteada: boolean; desde: number }>;
+
+/**
+ * A posição do pedido na fila pelo número: [grupo, valor].
+ *   0 — de uma contagem anterior (antes do último fechamento): pela criação,
+ *       na frente, que é o mais velho;
+ *   1 — da contagem atual: pelo número (#36 antes do #37 mesmo que o #37 tenha
+ *       sido gravado segundos antes — Garagem Burger, 18/11/2026);
+ *   2 — sem número utilizável (loja sorteada, pedido sem número, sem a
+ *       leitura da loja): pela criação, como sempre foi.
+ */
+function posicaoPeloNumero(
+  p: { franchiseeId?: string | null; dailyOrderNumber?: number | null; createdAt?: Date | string | null },
+  numeracao: NumeracaoDasLojas | null | undefined,
+): [number, number] {
+  const criado = new Date(p?.createdAt as any).getTime();
+  const ms = Number.isFinite(criado) ? criado : 0;
+  const loja = p?.franchiseeId ? numeracao?.[p.franchiseeId] : undefined;
+  const n = p?.dailyOrderNumber;
+  if (!loja || loja.sorteada || typeof n !== "number" || !(n > 0)) return [2, ms];
+  if (ms < loja.desde) return [0, ms];
+  return [1, n];
+}
+
+/**
  * A fila da cozinha na ordem da loja: reposição, rota criada, os tipos que a
- * loja marcou como prioridade e, no resto, quem chegou primeiro.
+ * loja marcou como prioridade e, no resto, o NÚMERO do pedido (com
+ * `numeracao`; sem ela, quem chegou primeiro). A finalização separada segue
+ * a ordem de chegada NELA antes do número.
  *
- * Estável de propósito: sem prioridade marcada a lista volta exatamente como
- * entrou — que é a ordem que a consulta e `juntarPedidosDaProducao` já dão.
+ * Estável de propósito: sem prioridade marcada e sem `numeracao` a lista volta
+ * exatamente como entrou — que é a ordem que a consulta e
+ * `juntarPedidosDaProducao` já dão.
  */
 export function ordenarPelaPrioridade<
-  T extends { isRoutePriority?: boolean | null; prioridadeNaCozinha?: boolean | null; deliveryType?: string | null; source?: string | null; createdAt?: Date | string | null; kdsFinishingAt?: Date | string | null; items?: { prontoEm?: Date | string | null }[] | null },
->(pedidos: T[], config: KdsConfig | null | undefined, etapa?: string | null, telas?: TelaDoKds[] | null): T[] {
+  T extends { isRoutePriority?: boolean | null; prioridadeNaCozinha?: boolean | null; deliveryType?: string | null; source?: string | null; createdAt?: Date | string | null; kdsFinishingAt?: Date | string | null; items?: { prontoEm?: Date | string | null }[] | null; franchiseeId?: string | null; dailyOrderNumber?: number | null },
+>(pedidos: T[], config: KdsConfig | null | undefined, etapa?: string | null, telas?: TelaDoKds[] | null, numeracao?: NumeracaoDasLojas | null): T[] {
   const marcados = new Set(prioridadeDaEtapa(config, etapa));
   // A finalização que espera a produção inteira: o pedido chega nela na
   // ÚLTIMA baixa da produção, que é o `kdsFinishingAt` (o relógio da tela).
   const naUltimaBaixa = etapa === "finishing" && esperaTodaAProducao(telas, config);
   // Finalização separada: a ordem de chegada NELA, mesmo sem tipo marcado.
   const pelaChegadaNaFinalizacao = (etapa === "finishing" && finalizacaoSeparada(config)) || naUltimaBaixa;
-  if (marcados.size === 0 && !pelaChegadaNaFinalizacao) return pedidos;
+  if (marcados.size === 0 && !pelaChegadaNaFinalizacao && !numeracao) return pedidos;
   const quando = (p: T) => {
     if (naUltimaBaixa) {
       const ms = p?.kdsFinishingAt ? new Date(p.kdsFinishingAt as any).getTime() : NaN;
       if (Number.isFinite(ms)) return ms;
     }
     if (pelaChegadaNaFinalizacao) return chegadaNaFinalizacao(p);
+    return 0;
+  };
+  const pelaCriacao = (p: T) => {
     const ms = new Date(p?.createdAt as any).getTime();
     return Number.isFinite(ms) ? ms : 0;
   };
-  return [...pedidos].sort(
-    (a, b) =>
+  return [...pedidos].sort((a, b) => {
+    const pa = posicaoPeloNumero(a, numeracao);
+    const pb = posicaoPeloNumero(b, numeracao);
+    return (
       Number(!!b.prioridadeNaCozinha) - Number(!!a.prioridadeNaCozinha) ||
       Number(!!b.isRoutePriority) - Number(!!a.isRoutePriority) ||
       Number(marcados.has(tipoNaFila(b))) - Number(marcados.has(tipoNaFila(a))) ||
-      quando(a) - quando(b),
-  );
+      quando(a) - quando(b) ||
+      pa[0] - pb[0] ||
+      pa[1] - pb[1] ||
+      pelaCriacao(a) - pelaCriacao(b)
+    );
+  });
 }
 
 /**
