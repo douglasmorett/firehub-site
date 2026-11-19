@@ -89,6 +89,7 @@ import { categoriaEntraNaMarca, siglaDaMarca, type MarcasNoCardapio } from "@/li
 import { textoSobreCor } from "@/lib/multimarcas/vitrine";
 import { ehRetirada, etapaDoAcompanhamento } from "@/lib/status-para-o-cliente";
 import { codigoGuardado, guardarCodigoDoPedido } from "@/lib/codigo-do-pedido-no-navegador";
+import { precoNoUpsell, type UpsellConfig } from "@/lib/upsell-config";
 
 /** "12345678901" → "123.456.789-01", enquanto digita. */
 function formatarCpf(v: string): string {
@@ -146,6 +147,8 @@ type MenuProduct = {
   comboGroups?: any[];
   /** "Não vale cupom nem desconto neste item" (lib/cupons.ts). */
   semCupom?: boolean;
+  /** Linha que entrou pela janela do upsell: o % que ela mostrou. O servidor confere (lib/upsell-config.ts). */
+  upsellDesconto?: number;
 };
 
 type CartItem = MenuProduct & {
@@ -273,6 +276,8 @@ type Franchisee = {
   notaFiscal?: DocumentoNoPedido;
   /** Pedido agendado no site (lib/agendamento.ts). Nulo = desligado. */
   agendamentoConfig?: unknown;
+  /** O upsell da sacola, ligado e com itens (lib/upsell-config.ts). Nulo = sem janela. */
+  upsell?: UpsellConfig | null;
 };
 
 /**
@@ -1458,6 +1463,93 @@ export default function CustomerStorePage({
         quantity: qty || 1,
         price: finalPrice,
       }],
+    });
+  };
+
+  // ── UPSELL DA SACOLA (lib/upsell-config.ts) ──────────────────────────────
+  // Uma janela só, no "Continuar pedido", uma vez por sessão (não a cada item:
+  // "fica aparecendo toda hora, é chato"), com o que a loja escolheu, está à
+  // venda agora e ainda não está na sacola. A lista é tirada na hora de abrir:
+  // o que o cliente adiciona fica na janela marcado, em vez de sumir.
+  type OfertaDoUpsell = { produto: MenuProduct; desconto: number };
+  const [ofertasDoUpsell, setOfertasDoUpsell] = useState<OfertaDoUpsell[] | null>(null);
+  // A sacola do celular estava aberta? O modal do produto, ao fechar, devolve
+  // o histórico (history.back) e o "voltar" da sacola a fecha junto — o
+  // "Continuar" da janela a reabre para o checkout aparecer.
+  const sacolaAbertaNoUpsell = useRef(false);
+  const chaveDoUpsell = `fh_upsell_${franchisee.slug || franchisee.id}`;
+  const ofertasParaAbrir = (): OfertaDoUpsell[] => {
+    if (mesa || !franchisee.upsell) return [];
+    try { if (sessionStorage.getItem(chaveDoUpsell)) return []; } catch { /* sem storage: vale o estado */ }
+    return franchisee.upsell.itens
+      .map(o => ({ produto: activeTodayProducts.find(p => p.id === o.produtoId)!, desconto: o.desconto }))
+      .filter(o => o.produto && !cart.some(i => idDoProduto(i) === o.produto.id) && !(Number((o.produto as any).estoqueRestante) <= 0));
+  };
+  // O produto com o preço da oferta: `price` já com o %, e o riscado no preço
+  // de antes — é o que o card, o modal do produto e a sacola mostram. O % vai
+  // junto na linha; o servidor recalcula do banco e confere a oferta.
+  const comPrecoDoUpsell = (o: OfertaDoUpsell): MenuProduct => {
+    const price = precoNoUpsell(o.produto.price, o.desconto);
+    return { ...o.produto, price, precoDe: price < o.produto.price ? (o.produto.precoDe || o.produto.price) : o.produto.precoDe, upsellDesconto: o.desconto };
+  };
+  const adicionarDoUpsell = (o: OfertaDoUpsell) => {
+    const ofertado = comPrecoDoUpsell(o);
+    // Com perguntas, abre o modal do produto (o mesmo do cardápio), já com o
+    // preço da oferta; a linha nasce pelo addToCart com o % junto.
+    if (o.produto.comboGroups?.length || (o.produto.isCombo && o.produto.comboConfig)) { addToCart(ofertado); return; }
+    if (!cabeNoEstoque(o.produto, 1)) return;
+    // Linha própria (`_upsell`): o mesmo produto pego depois no cardápio não
+    // se junta a ela pelo preço da oferta.
+    setCart(prev => [...prev, { ...ofertado, id: o.produto.id + "_upsell", productId: o.produto.id, quantity: 1 }]);
+    trackPixelEvent("AddToCart", { content_name: o.produto.name, value: ofertado.price, currency: "BRL" });
+  };
+  const naSacolaPeloUpsell = (produtoId: string) => cart.some(i => idDoProduto(i) === produtoId && i.upsellDesconto != null);
+
+  // O "Continuar pedido" da sacola. A janela do upsell (acima) entra uma vez,
+  // antes do checkout; o "Continuar" dela chama esta mesma função de novo, e
+  // o mínimo do pedido é conferido outra vez com o que ela pôs na sacola.
+  const continuarPedido = (depoisDoUpsell = false) => {
+    if (mesa) { setIsCheckout(true); return; }
+    if (isBelowCartMin) {
+      avisar({
+        tipo: "falta",
+        titulo: "Falta pouco para o pedido mínimo",
+        texto: `O mínimo desta loja é R$ ${minOrderToLeaveCart.toFixed(2).replace(".", ",")}. Adicione mais R$ ${remainingForCartMin.toFixed(2).replace(".", ",")} em itens.`,
+      });
+      return;
+    }
+    if (!depoisDoUpsell) {
+      const ofertas = ofertasParaAbrir();
+      if (ofertas.length > 0) {
+        try { sessionStorage.setItem(chaveDoUpsell, "1"); } catch { /* sem storage: vale o estado */ }
+        sacolaAbertaNoUpsell.current = mobileCartOpen;
+        setOfertasDoUpsell(ofertas);
+        return;
+      }
+    }
+    // Só dá para retirada: já entra no checkout com ela marcada, em
+    // vez de deixar o cliente preencher o endereço para levar um
+    // "não atingiu o mínimo" no último clique.
+    if (somenteRetiradaPorValor) {
+      setDeliveryType("PICKUP");
+      esquecerCotacaoDaEntrega();
+      setDeliveryFee(0);
+      setDeliveryFeeCalculated(true);
+      setDeliveryAvailable(true);
+      setDeliveryMessage("Retirada no balcão selecionada.");
+    }
+    setIsCheckout(true);
+    trackPixelEvent("InitiateCheckout", { value: finalTotal, currency: "BRL" });
+    marcarNoFunil("checkout");
+    trackGaEvent("begin_checkout", {
+      currency: "BRL",
+      value: finalTotal,
+      items: cart.map(i => ({
+        item_id: idDoProduto(i),
+        item_name: i.name,
+        quantity: i.quantity,
+        price: i.price,
+      })),
     });
   };
 
@@ -2888,7 +2980,7 @@ export default function CustomerStorePage({
           ...(clubeApp.sessao && !mesa ? { sessaoDoCliente: clubeApp.sessao } : {}),
           // A instalação do app (apps/loja): prova de que o pedido é de dentro do aplicativo.
           ...(clubeApp.noApp && instalacaoDoApp() ? { instalacaoDoApp: instalacaoDoApp() } : {}),
-          items: cart.map(i => ({ menuProductId: idDoProduto(i), quantity: i.quantity, comboSelections: i.comboSelections || null, notes: i.notes || "", ...(i.marca ? { marca: i.marca } : {}) })),
+          items: cart.map(i => ({ menuProductId: idDoProduto(i), quantity: i.quantity, comboSelections: i.comboSelections || null, notes: i.notes || "", ...(i.marca ? { marca: i.marca } : {}), ...(i.upsellDesconto != null ? { upsellDesconto: i.upsellDesconto } : {}) })),
           // Cookies do GA4 desta pessoa. O `purchase` que o SERVIDOR manda
           // (src/lib/ga-purchase.ts) precisa deles para cair no mesmo visitante
           // e na mesma sessão — sem eles a venda vira "Direct" e o anúncio que
@@ -4902,41 +4994,7 @@ export default function CustomerStorePage({
           {!isCheckout ? (
             <button
               type="button"
-              onClick={() => {
-                if (mesa) { setIsCheckout(true); return; }
-                if (isBelowCartMin) {
-                  avisar({
-                    tipo: "falta",
-                    titulo: "Falta pouco para o pedido mínimo",
-                    texto: `O mínimo desta loja é R$ ${minOrderToLeaveCart.toFixed(2).replace(".", ",")}. Adicione mais R$ ${remainingForCartMin.toFixed(2).replace(".", ",")} em itens.`,
-                  });
-                  return;
-                }
-                // Só dá para retirada: já entra no checkout com ela marcada, em
-                // vez de deixar o cliente preencher o endereço para levar um
-                // "não atingiu o mínimo" no último clique.
-                if (somenteRetiradaPorValor) {
-                  setDeliveryType("PICKUP");
-                  esquecerCotacaoDaEntrega();
-                  setDeliveryFee(0);
-                  setDeliveryFeeCalculated(true);
-                  setDeliveryAvailable(true);
-                  setDeliveryMessage("Retirada no balcão selecionada.");
-                }
-                setIsCheckout(true);
-                trackPixelEvent("InitiateCheckout", { value: finalTotal, currency: "BRL" });
-                marcarNoFunil("checkout");
-                trackGaEvent("begin_checkout", {
-                  currency: "BRL",
-                  value: finalTotal,
-                  items: cart.map(i => ({
-                    item_id: idDoProduto(i),
-                    item_name: i.name,
-                    quantity: i.quantity,
-                    price: i.price,
-                  })),
-                });
-              }}
+              onClick={() => continuarPedido()}
               style={{
                 width: "100%",
                 padding: "13px",
@@ -5863,6 +5921,47 @@ export default function CustomerStorePage({
           aoFechar={fecharMapaDeConfirmacao}
           aoConfirmar={confirmarPontoNoMapa}
         />
+      )}
+
+      {/* UPSELL DA SACOLA — a janela do "Continuar pedido" (lib/upsell-config.ts).
+          Fica abaixo do modal do produto (z-index 9999), que abre por cima
+          dela quando a oferta tem perguntas. */}
+      {ofertasDoUpsell && franchisee.upsell && (
+        <div role="dialog" aria-modal="true" aria-label={franchisee.upsell.chamada} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.6)", zIndex: 9990, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }} onClick={() => setOfertasDoUpsell(null)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "20px", padding: "20px", maxWidth: "460px", width: "100%", maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", marginBottom: "14px" }}>
+              <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 900, color: "#0F172A" }}>{franchisee.upsell.chamada}</h3>
+              <button type="button" aria-label="Fechar" onClick={() => setOfertasDoUpsell(null)} style={{ background: "#F1F5F9", border: "none", borderRadius: "50%", width: 32, height: 32, flexShrink: 0, cursor: "pointer", fontWeight: 800 }}>✕</button>
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px" }}>
+              {ofertasDoUpsell.map(o => {
+                const ja = naSacolaPeloUpsell(o.produto.id);
+                return (
+                  <div key={o.produto.id} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px", borderRadius: "14px", border: `1.5px solid ${ja ? "#10B981" : "#E2E8F0"}`, background: ja ? "#ECFDF5" : "#fff" }}>
+                    {o.produto.imageUrl
+                      ? <img src={o.produto.imageUrl} alt="" style={{ width: 64, height: 64, borderRadius: 12, objectFit: "cover", flexShrink: 0 }} />
+                      : <div style={{ width: 64, height: 64, borderRadius: 12, background: "#F1F5F9", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.6rem", flexShrink: 0 }}>🍽️</div>}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 800, fontSize: "0.9rem", color: "#0F172A", marginBottom: "4px" }}>{o.produto.name}</div>
+                      <PrecoDoCard produto={comPrecoDoUpsell(o)} tamanho="0.95rem" cor="#0F172A" />
+                    </div>
+                    <button type="button" disabled={ja} onClick={() => adicionarDoUpsell(o)} style={{ flexShrink: 0, padding: "8px 12px", borderRadius: "10px", border: "none", background: ja ? "transparent" : "#0F172A", color: ja ? "#047857" : "#fff", fontWeight: 800, fontSize: "0.8rem", cursor: ja ? "default" : "pointer" }}>
+                      {ja ? "✓ Na sacola" : "+ Adicionar"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", gap: "8px", marginTop: "16px" }}>
+              <button type="button" onClick={() => { setOfertasDoUpsell(null); if (sacolaAbertaNoUpsell.current) setMobileCartOpen(true); continuarPedido(true); }} style={{ flex: 1, padding: "12px", borderRadius: "12px", border: "1.5px solid #E2E8F0", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.88rem", cursor: "pointer" }}>
+                Não, obrigado
+              </button>
+              <button type="button" onClick={() => { setOfertasDoUpsell(null); if (sacolaAbertaNoUpsell.current) setMobileCartOpen(true); continuarPedido(true); }} style={{ flex: 1, padding: "12px", borderRadius: "12px", border: "none", background: "#0F172A", color: "#fff", fontWeight: 800, fontSize: "0.88rem", cursor: "pointer" }}>
+                Continuar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {comboProduct && (
