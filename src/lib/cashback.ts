@@ -102,7 +102,9 @@ export function lerCashback(storeLoyalty: unknown): RegraDoCashback {
     canais: lerCanaisDoCashback(storeLoyalty),
     taxa,
     minimo: Math.max(0, num(l.minOrderValue, 0)),
-    maxResgatePct: Math.min(100, Math.max(0, num(l.maxRedeemPercent, 50))),
+    // Campo vazio na tela grava 0 e mostra "50" — o cardápio (CustomerStorePage)
+    // usa 50%. Ler 0 aqui fazia o servidor abater R$ 0 do que o cliente viu abatido.
+    maxResgatePct: Math.min(100, num(l.maxRedeemPercent, 0) > 0 ? num(l.maxRedeemPercent, 50) : 50),
     validadeDias: Math.max(0, Math.floor(num(l.expiresInDays, 0))),
     vip: l.vipActive === true
       ? {
