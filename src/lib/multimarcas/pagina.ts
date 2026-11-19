@@ -62,6 +62,20 @@ export type AtalhoDaPagina = {
   marcas: string[];
 };
 
+/**
+ * Um tipo de comida da fileira com foto embaixo do banner ("Hambúrguer",
+ * "Frango Frito", "Açaí"): tocar mostra os itens de TODAS as marcas dessas
+ * categorias do cardápio (Lucas, 16/11/2026).
+ */
+export type TipoDeComidaDaPagina = {
+  id: string;
+  nome: string;
+  /** A foto do círculo; null = a de um item do tipo (ou o emoji). */
+  foto: string | null;
+  /** Nomes das categorias do cardápio que entram (de qualquer marca). */
+  categorias: string[];
+};
+
 export type ConfigDaPagina = {
   nome: string;
   frase: string;
@@ -75,9 +89,14 @@ export type ConfigDaPagina = {
   destaques: string[];
   /** A fileira de atalhos embaixo do banner. Vazio = a página filtra pelo tipo de comida, como antes. */
   atalhos: AtalhoDaPagina[];
+  /**
+   * A fileira de tipos de comida com foto. null = automática (pelo nome das
+   * categorias e dos itens, lib/multimarcas/vitrine.ts); [] = não mostrar.
+   */
+  tiposDeComida: TipoDeComidaDaPagina[] | null;
 };
 
-export const LIMITES = { marcas: 30, banners: 12, categoriasPorMarca: 60, destaques: 20, atalhos: 12 } as const;
+export const LIMITES = { marcas: 30, banners: 12, categoriasPorMarca: 60, destaques: 20, atalhos: 12, tiposDeComida: 16 } as const;
 export const CORES_DAS_MARCAS = ["#1F1F23", "#E8590C", "#C92A2A", "#F08C00", "#2B8A3E", "#1864AB", "#7048E8", "#C2255C", "#0B7285", "#5C940D"];
 
 export const chaveDaCategoria = (nome: string) => String(nome || "").trim().toLowerCase();
@@ -160,6 +179,24 @@ export function limparConfig(bruto: unknown, nomeDaLoja = "Minhas marcas"): Conf
     const marcasDoAtalho = (Array.isArray(a?.marcas) ? a.marcas : []).filter((m: unknown) => typeof m === "string" && idsDasMarcas.has(m));
     return { id: aid, nome: texto(a?.nome, 24), marcas: [...new Set<string>(marcasDoAtalho)] };
   }).filter((a: AtalhoDaPagina) => a.nome);
+  // Tipos de comida: sem a lista (config antiga) = automático; tipo sem nome some.
+  const idsTipos = new Set<string>();
+  const tiposDeComida: TipoDeComidaDaPagina[] | null = !Array.isArray(b.tiposDeComida) ? null
+    : b.tiposDeComida.slice(0, LIMITES.tiposDeComida).map((t: any, i: number) => {
+        let tid = id(t?.id, "t", i);
+        while (idsTipos.has(tid)) tid = `${tid}x`;
+        idsTipos.add(tid);
+        const usadas = new Set<string>();
+        const categorias: string[] = [];
+        for (const c of Array.isArray(t?.categorias) ? t.categorias : []) {
+          const nome = texto(c, 80);
+          const k = chaveDaCategoria(nome);
+          if (!k || usadas.has(k) || categorias.length >= LIMITES.categoriasPorMarca) continue;
+          usadas.add(k);
+          categorias.push(nome);
+        }
+        return { id: tid, nome: texto(t?.nome, 24), foto: imagem(t?.foto), categorias };
+      }).filter((t: TipoDeComidaDaPagina) => t.nome);
   return {
     nome: texto(b.nome, 40) || nomeDaLoja.slice(0, 40),
     frase: texto(b.frase, 120),
@@ -168,6 +205,7 @@ export function limparConfig(bruto: unknown, nomeDaLoja = "Minhas marcas"): Conf
     banners,
     destaques: [...new Set((Array.isArray(b.destaques) ? b.destaques : []).map(idDeProduto).filter(Boolean) as string[])].slice(0, LIMITES.destaques),
     atalhos,
+    tiposDeComida,
   };
 }
 

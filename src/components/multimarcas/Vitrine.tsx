@@ -1,13 +1,15 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { createContext, forwardRef, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ArrowLeft, Bike, Check, ChevronRight, Clock, Minus, Plus, Search, ShoppingBag, Star, X } from "lucide-react";
-import { MARCA_DOS_EXTRAS, corParaTexto, marcasDoProduto, reais, textoSobreCor, type ConfigDaVitrine, type MarcaDaVitrine, type ProdutoDaVitrine } from "@/lib/multimarcas/vitrine";
+import { MARCA_DOS_EXTRAS, corParaTexto, descontoDaPromocao, marcasDoProduto, reais, textoSobreCor, tiposDeComidaDaVitrine, type ConfigDaVitrine, type MarcaDaVitrine, type ProdutoDaVitrine, type TipoDeComidaNaTela } from "@/lib/multimarcas/vitrine";
 import s from "./Vitrine.module.css";
 
 /**
  * A VITRINE DO MULTIMARCAS — como a home de um app de delivery (Lucas,
- * 13/11/2026): banners, a fileira de atalhos do dono ("Lanches", "Porções"),
+ * 13/11/2026): banners, os tipos de comida com foto ("Hambúrguer", "Açaí":
+ * tocar mostra os itens de todas as marcas — Lucas, 16/11), a fileira de
+ * atalhos do dono ("Lanches", "Porções"),
  * as marcas em cartões grandes com foto e "Aberto"/"Fechado", as promoções do
  * dia, as marcas uma embaixo da outra (nota, tipo, prazo), busca em todas e
  * uma fileira de destaques. Sem atalho cadastrado, a fileira é o filtro pelo
@@ -66,6 +68,23 @@ function Nota({ marca }: { marca: MarcaDaVitrine }) {
   );
 }
 
+/**
+ * O preço do item. Em promoção (Lucas, 16/11/2026: "em qualquer parte"): o de
+ * antes riscado, o de agora em verde e o selo "-37%". `semSelo` quando o selo
+ * já está na foto (Promoções do dia).
+ */
+function Preco({ p, className, semSelo }: { p: Pick<ProdutoDaVitrine, "preco" | "precoDe">; className: string; semSelo?: boolean }) {
+  const desconto = descontoDaPromocao(p.preco, p.precoDe);
+  if (!desconto) return <span className={className}>{reais(p.preco)}</span>;
+  return (
+    <span className={`${className} ${s.comPromocao}`}>
+      <del className={s.precoDe}>{reais(p.precoDe!)}</del>
+      <span className={s.precoPromocao}>{reais(p.preco)}</span>
+      {!semSelo && <span className={s.seloPromocao}>-{desconto}%</span>}
+    </span>
+  );
+}
+
 function Prazo({ config }: { config: ConfigDaVitrine }) {
   const { min, max, taxa } = config.entrega;
   const partes: ReactNode[] = [];
@@ -113,6 +132,9 @@ export default function Vitrine({ config, produtos, embutida = false, publica }:
   /** O filtro da fileira embaixo do banner: o id do atalho do dono ou, sem atalhos, o tipo de comida. */
   const [tipo, setTipo] = useState<string | null>(null);
   const secaoDasLojas = useRef<HTMLElement>(null);
+  /** O tipo de comida tocado na fileira com foto: a página mostra os itens dele, de todas as marcas. */
+  const [comida, setComida] = useState<string | null>(null);
+  const fileiraDeComida = useRef<HTMLElement>(null);
   const [busca, setBusca] = useState("");
   const [sacola, setSacola] = useState<ItemDaSacola[]>([]);
   const [sacolaAberta, setSacolaAberta] = useState(false);
@@ -166,6 +188,14 @@ export default function Vitrine({ config, produtos, embutida = false, publica }:
   const qtdItens = publica ? qtdDaLoja : sacola.reduce((t, i) => t + i.qtd, 0);
   const lojasNaSacola = [...new Set(sacola.map((i) => i.marca))].filter((m) => m && m !== MARCA_DOS_EXTRAS).length;
   const taxa = config.entrega.taxa ?? 0;
+
+  // Só o que a página mostra (marca escondida fica de fora); o "para acompanhar" entra.
+  const tiposDeComida = tiposDeComidaDaVitrine(config.tiposDeComida ?? null, produtos.filter((p) => p.marca === MARCA_DOS_EXTRAS || marcaDe(p)));
+  const comidaAtiva = tiposDeComida.find((t) => t.id === comida) ?? null;
+  function escolherComida(id: string | null) {
+    setComida(id);
+    if (id) requestAnimationFrame(() => fileiraDeComida.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }
 
   const termo = busca.trim().toLowerCase();
   const achados = termo.length >= 2
@@ -239,6 +269,27 @@ export default function Vitrine({ config, produtos, embutida = false, publica }:
             <>
               <Banners config={config} marcaPorId={marcaPorId} abrir={abrirMarca} abrirItem={abrirProduto} />
 
+              {tiposDeComida.length > 0 && (
+                <FileiraDeComida ref={fileiraDeComida} tipos={tiposDeComida} ativo={comidaAtiva?.id ?? null}
+                  escolher={(id) => escolherComida(comidaAtiva?.id === id ? null : id)} />
+              )}
+
+              {comidaAtiva ? (
+                <section className={s.secao}>
+                  <div className={s.tituloComAcao}>
+                    <h2 className={s.tituloSecao}>{comidaAtiva.nome} <small className={s.qtdDoTipo}>{comidaAtiva.produtos.length} ite{comidaAtiva.produtos.length > 1 ? "ns" : "m"}</small></h2>
+                    <button className={s.verTodas} onClick={() => setComida(null)}>Ver tudo</button>
+                  </div>
+                  <div className={s.listaProdutos}>
+                    {comidaAtiva.produtos.map((id) => PRODUTO.get(id)).filter((p): p is ProdutoDaVitrine => !!p).map((p) => (
+                      <LinhaDoProduto key={p.id} p={p} marca={marcaDe(p)} mostrarMarca
+                        fechada={!!marcaDe(p) && !marcaDe(p)!.aberta}
+                        toque={abrirProduto(p)} onAdicionar={publica ? undefined : () => adicionar(p)} />
+                    ))}
+                  </div>
+                </section>
+              ) : (<>
+
               {atalhos.length > 0 ? (
                 <nav className={`${s.filtros} ${s.atalhos}`} aria-label="Categorias">
                   <button className={tipo === null ? s.filtroAtivo : s.filtro} onClick={() => escolherAtalho(null)}>Todas</button>
@@ -275,7 +326,7 @@ export default function Vitrine({ config, produtos, embutida = false, publica }:
               <Promocoes marcaDe={marcaDe} passa={passaNoFiltro} toque={abrirProduto} />
 
               <section className={s.secao}>
-                <h2 className={s.tituloSecao}>Nossas marcas</h2>
+                <h2 className={s.tituloSecao}>Mais vendidos</h2>
                 {marcas.length === 0 && <p className={s.vazio}>As marcas aparecem aqui assim que forem cadastradas.</p>}
                 <div className={s.gradeDeLojas}>
                   {marcasFiltradas.map((m) => (
@@ -285,6 +336,7 @@ export default function Vitrine({ config, produtos, embutida = false, publica }:
               </section>
 
               <Destaques marcaPorId={marcaPorId} escolhidos={config.destaques} toque={abrirProduto} />
+              </>)}
             </>
           )}
         </main>
@@ -374,6 +426,22 @@ function Banners({ config, marcaPorId, abrir, abrirItem }: {
   );
 }
 
+/** Os tipos de comida com foto, numa fileira que rola para o lado (como a home do iFood). */
+const FileiraDeComida = forwardRef<HTMLElement, { tipos: TipoDeComidaNaTela[]; ativo: string | null; escolher: (id: string) => void }>(
+  function FileiraDeComida({ tipos, ativo, escolher }, ref) {
+    return (
+      <nav ref={ref} className={s.fileiraDeComida} aria-label="Tipos de comida">
+        {tipos.map((t) => (
+          <button key={t.id} className={t.id === ativo ? s.comidaAtiva : s.comida} onClick={() => escolher(t.id)} aria-pressed={t.id === ativo}>
+            <span className={s.comidaFoto}>{t.foto ? <img src={t.foto} alt="" loading="lazy" /> : <span aria-hidden>{t.emoji}</span>}</span>
+            <span className={s.comidaNome}>{t.nome}</span>
+          </button>
+        ))}
+      </nav>
+    );
+  },
+);
+
 function CartaoDaMarca({ marca, config, toque }: { marca: MarcaDaVitrine; config: ConfigDaVitrine; toque: Acao }) {
   return (
     <Toque className={`${s.cartao} ${marca.aberta ? "" : s.cartaoFechado}`} {...toque}>
@@ -437,15 +505,14 @@ function Promocoes({ marcaDe, passa, toque }: {
       <div className={todas ? s.gradeDePromocoes : s.carrossel}>
         {lista.map((p) => {
           const marca = marcaDe(p);
-          const de = p.precoDe && p.precoDe > p.preco ? p.precoDe : null;
-          const desconto = de ? Math.round((1 - p.preco / de) * 100) : 0;
+          const desconto = descontoDaPromocao(p.preco, p.precoDe);
           return (
             <Toque key={p.id} className={`${s.miniProduto} ${s.miniPromocao}`} {...toque(p)}>
               {desconto > 0 && <span className={s.seloDesconto}>-{desconto}%</span>}
               {p.foto ? <img src={p.foto} alt="" loading="lazy" /> : <span className={s.miniSemFoto} style={marca ? { background: marca.cor, color: textoSobreCor(marca.cor) } : undefined}>{iniciais(p.nome)}</span>}
               <span className={s.miniMarca}>{marca?.nome ?? "Para acompanhar"}</span>
               <strong>{p.nome}</strong>
-              <span className={s.miniPreco}>{de && <del className={s.precoDe}>{reais(de)}</del>} {reais(p.preco)}</span>
+              <Preco p={p} className={s.miniPreco} semSelo />
             </Toque>
           );
         })}
@@ -478,7 +545,7 @@ function Destaques({ marcaPorId, escolhidos, toque }: { marcaPorId: Map<string, 
             {p.foto ? <img src={p.foto} alt="" loading="lazy" /> : <span className={s.miniSemFoto} style={marcaPorId.get(p.marca) ? { background: marcaPorId.get(p.marca)!.cor, color: textoSobreCor(marcaPorId.get(p.marca)!.cor) } : undefined}>{iniciais(p.nome)}</span>}
             <span className={s.miniMarca}>{marcaPorId.get(p.marca)?.nome}</span>
             <strong>{p.nome}</strong>
-            <span className={s.miniPreco}>{reais(p.preco)}</span>
+            <Preco p={p} className={s.miniPreco} />
           </Toque>
         ))}
       </div>
@@ -570,7 +637,7 @@ function LinhaDoProduto({ p, marca, mostrarMarca, fechada, toque, onAdicionar }:
         {mostrarMarca && <span className={s.miniMarca}>{marca?.nome ?? "Para acompanhar"}</span>}
         <strong>{p.nome}</strong>
         {p.descricao && <span className={s.descricao}>{p.descricao}</span>}
-        <span className={s.preco}>{reais(p.preco)}</span>
+        <Preco p={p} className={s.preco} />
       </Toque>
       {/* Na página pública não há o "+": a foto também é o link do produto. */}
       {!onAdicionar && toque.href ? (
@@ -603,7 +670,7 @@ function FolhaDoProduto({ p, marca, fechada, onFechar, onAdicionar }: {
           <span className={s.miniMarca}>{marca?.nome ?? "Para acompanhar · vai em qualquer pedido"}</span>
           <h3>{p.nome}</h3>
           {p.descricao && <p className={s.descricao}>{p.descricao}</p>}
-          <p className={s.preco}>{reais(p.preco)}</p>
+          <p><Preco p={p} className={s.preco} /></p>
           <label className={s.obs}>
             Alguma observação?
             <textarea value={obs} onChange={(e) => setObs(e.target.value)} placeholder="Ex.: sem cebola, molho à parte" rows={2} maxLength={140} />
