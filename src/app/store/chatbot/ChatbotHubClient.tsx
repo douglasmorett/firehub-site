@@ -1630,6 +1630,11 @@ export default function ChatbotHubClient() {
                 detalhe: "O robô mandou as regras e a ficha da reserva, o cliente devolveu preenchida: vem com nome, data, horário e quantas pessoas, para a equipe confirmar.",
               },
               {
+                id: "reserva_nova",
+                titulo: "Reserva de mesa feita pelo robô",
+                detalhe: "Com o módulo Reservas ligado, o robô confere a vaga, grava e confirma sozinho: o aviso vem com nome, dia, horário, pessoas e a ocupação do horário. Também avisa quando o cliente cancela.",
+              },
+              {
                 id: "pedido_atrasado",
                 titulo: "Pedido atrasado que ainda não saiu",
                 detalhe: "Passou do prazo de entrega e continua na loja. Vem com o número do pedido, a hora que entrou e o prazo. Um aviso por pedido a cada hora.",

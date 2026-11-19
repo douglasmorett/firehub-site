@@ -34,6 +34,12 @@ export const SERVICOS_QUE_SO_A_LOJA_SABE: Termo[] = [
   { nome: "open bar", padrao: /\bopen (bar|food)\b/ },
   { nome: "wi-fi", padrao: /\bwi-?fi\b/ },
   { nome: "pet friendly", padrao: /\bpet[\s-]?friendly\b/ },
+  // A política da reserva (Douglas, 19/11/2026: "não inventar"): sinal, caução,
+  // consumação mínima, rolha e bolo de fora só se a loja escreveu.
+  { nome: "sinal da reserva", padrao: /\bsinal\b(?! (de |do )?(wi-?fi|internet|celular|transito))|\bcaucao\b|\btaxa (de|da|para) reserva\b/ },
+  { nome: "consumação mínima", padrao: /\bconsumacao minima\b|\bconsumo minimo\b/ },
+  { nome: "taxa de rolha", padrao: /\brolha\b/ },
+  { nome: "bolo de fora", padrao: /\b(levar|trazer|traga|leve)\b[^.?!]{0,20}\bbolos?\b|\bbolos? (de fora|proprio|de casa)\b/ },
 ];
 
 const normalizar = (t: string) =>

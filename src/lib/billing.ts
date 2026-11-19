@@ -905,6 +905,14 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       taxasExtras += firecheck;
       linhasExtras.push(`FireCheck R$${firecheck.toFixed(2)}`);
     }
+    // Reservas de mesa: R$ 49,90 À PARTE da mensalidade; ativo em algum dia do
+    // mês fora do teste = o mês inteiro (lib/reservas/assinatura.ts).
+    const { cobrancaDasReservasNoMes } = await import("@/lib/reservas/assinatura");
+    const reservas = await cobrancaDasReservasNoMes(franchiseeId, monthStart, monthEnd);
+    if (reservas > 0) {
+      taxasExtras += reservas;
+      linhasExtras.push(`Reservas de mesa R$${reservas.toFixed(2)}`);
+    }
   }
 
   const ifoodExtraCharge = taxasExtras;
@@ -1335,7 +1343,10 @@ export async function getCurrentCycleView(franchiseeId: string) {
   // FireCheck — a mesma conta do fechamento.
   const { cobrancaDoFirecheckNoMes } = await import("@/lib/firecheck-modulos/assinatura");
   const firecheck = cobraServicos ? await cobrancaDoFirecheckNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd) : 0;
-  const taxasDoCiclo = trafegoPago + totem + lojasExtras.valor + assessor + aplicativo + multimarcas + rotaAutomatica + tabletNaMesa + balanca + caixaDeMercado + cotacao + firecheck;
+  // Reservas de mesa — a mesma conta do fechamento.
+  const { cobrancaDasReservasNoMes } = await import("@/lib/reservas/assinatura");
+  const reservas = cobraServicos ? await cobrancaDasReservasNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd) : 0;
+  const taxasDoCiclo = trafegoPago + totem + lojasExtras.valor + assessor + aplicativo + multimarcas + rotaAutomatica + tabletNaMesa + balanca + caixaDeMercado + cotacao + firecheck + reservas;
 
   const calculada = emTeste ? 0 : Math.max(cycle.amountDue, devidoAgora);
   const indique = emTeste ? SEM_INDIQUE : await indiqueDoMes(Math.max(0, calculada - cycle.amountOffset));
@@ -1355,7 +1366,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
     // Discriminado para o painel poder mostrar a linha em vez de só inflar o
     // total — "por que subiu R$ 200?" tem que ter resposta na tela.
     mensalidadePrevista,
-    taxas: { trafegoPago, totem, lojasExtras: lojasExtras.valor, assessor, aplicativo, multimarcas, rotaAutomatica, tabletNaMesa, balanca, caixaDeMercado, cotacao, firecheck },
+    taxas: { trafegoPago, totem, lojasExtras: lojasExtras.valor, assessor, aplicativo, multimarcas, rotaAutomatica, tabletNaMesa, balanca, caixaDeMercado, cotacao, firecheck, reservas },
     lojasExtras,
     status: cycle.status,
     isExempt: false,
@@ -1413,7 +1424,8 @@ export async function previsaoDoFechamento(franchiseeId: string, yearMonth: stri
     + (await (await import("@/lib/roteirizacao-automatica/assinatura")).cobrancaDaRotaAutomaticaNoMes(franchiseeId, monthStart, monthEnd))
     + (await (await import("@/lib/tablet-da-mesa/assinatura")).cobrancaDoTabletNoMes(franchiseeId, monthStart, monthEnd))
     + (await (await import("@/lib/caixa-mercado/assinatura")).cobrancaDoCaixaNoMes(franchiseeId, monthStart, monthEnd))
-    + (await (await import("@/lib/firecheck-modulos/assinatura")).cobrancaDoFirecheckNoMes(franchiseeId, monthStart, monthEnd));
+    + (await (await import("@/lib/firecheck-modulos/assinatura")).cobrancaDoFirecheckNoMes(franchiseeId, monthStart, monthEnd))
+    + (await (await import("@/lib/reservas/assinatura")).cobrancaDasReservasNoMes(franchiseeId, monthStart, monthEnd));
   const agg = await prisma.customerOrder.aggregate({
     where: { franchiseeId, ...VENDAS_QUE_CONTAM, createdAt: { gte: inicio, lt: monthEnd } },
     _sum: CAMPOS_DO_BRUTO,

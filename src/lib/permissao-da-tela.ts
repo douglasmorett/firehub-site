@@ -61,6 +61,9 @@ const TELAS: Array<{ prefixo: string; abre: Array<Permissao> | typeof LIVRE }> =
   // (api/chatbot/conversas) e o balcão pede o Balcão — qualquer um abre a tela,
   // e cada metade avisa sozinha quando falta a outra caixinha.
   { prefixo: "/store/atendimento", abre: ["orders", "venda_presencial"] },
+  // Reservas: quem cuida do salão vê o dia, marca chegada e cria reserva;
+  // ligar o módulo cobra no boleto e é só do dono (a API barra: lib/reservas/sessao.ts).
+  { prefixo: "/store/reservas", abre: ["venda_presencial", "minha_loja"] },
   { prefixo: "/store/caixa", abre: ["venda_presencial"] },
   { prefixo: "/store/roteirizacao", abre: ["motoboys"] },
   { prefixo: "/store/motoboys", abre: ["motoboys"] },

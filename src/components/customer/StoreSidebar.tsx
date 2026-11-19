@@ -19,7 +19,7 @@ import Link, { useLinkStatus } from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
-  BarChart2, Bike, PlayCircle, BookOpen, Bot, CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList,
+  BarChart2, Bike, PlayCircle, BookOpen, Bot, CalendarCheck, CalendarDays, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList,
   Contact, Gauge, Home, LayoutGrid, LifeBuoy, LineChart, LogOut, MapPin, Menu, Mic, Monitor, Package, PieChart, Printer, Puzzle, Receipt,
   Scale, ScanBarcode, Send, ShoppingBag, ShoppingCart, Smartphone, Store, TabletSmartphone, Tag, Timer, Truck, Tv, UtensilsCrossed, Users, Wallet,
   X, Zap, type LucideIcon,
@@ -33,7 +33,7 @@ import SairDaConta from "@/components/SairDaConta";
 import { AtalhoDoOutroPainel } from "@/components/paineis/TrocarDePainel";
 
 const ICONES: Record<string, LucideIcon> = {
-  BarChart2, Bike, BookOpen, Bot, CalendarDays, CheckCircle2, ClipboardList, Contact, Gauge, Home, LayoutGrid, LifeBuoy, LineChart, MapPin,
+  BarChart2, Bike, BookOpen, Bot, CalendarCheck, CalendarDays, CheckCircle2, ClipboardList, Contact, Gauge, Home, LayoutGrid, LifeBuoy, LineChart, MapPin,
   Mic, Monitor, Package, PieChart, Printer, Puzzle, Receipt, Scale, ScanBarcode, Send, ShoppingBag, ShoppingCart, Store,
   Smartphone, TabletSmartphone, Tag, Timer, Truck, Tv, UtensilsCrossed, Users, Wallet, Zap,
 };
@@ -199,7 +199,7 @@ export default function StoreSidebar({
   const ehAtivo = (item: ItemDoMenu) => {
     const p = String(pathname || "");
     if (item.href === "/store") return p === "/store";
-    return p.startsWith(item.href);
+    return p.startsWith(item.href) || !!item.ativoTambemEm?.some((x) => p.startsWith(x));
   };
 
   return (
