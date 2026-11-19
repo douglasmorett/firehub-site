@@ -43,7 +43,10 @@ export type ConfigDeAgendamento = {
   intervaloMin: number;
   /** Encomenda: o site só aceita pedido agendado, nunca "para agora". */
   soAgendado: boolean;
-  /** Quanto tempo antes do horário o pedido sai de Agendamentos e vai para a cozinha. */
+  /**
+   * Quanto tempo antes do horário o pedido sai de Agendamentos e entra na
+   * cozinha (KDS). 0 = entra na hora em que é feito, como era antes.
+   */
   liberarAntesMin: number;
 };
 
@@ -65,7 +68,7 @@ export const CONFIG_DE_AGENDAMENTO_PADRAO: ConfigDeAgendamento = {
 export const OPCOES_DE_ANTECEDENCIA = [30, 60, 120, 240, 720, 1440, 2880];
 export const OPCOES_DE_DIAS_A_FRENTE = [0, 1, 2, 3, 7, 14, 30];
 export const OPCOES_DE_INTERVALO = [15, 30, 60];
-export const OPCOES_DE_LIBERACAO = [30, 60, 90, 120, 180];
+export const OPCOES_DE_LIBERACAO = [0, 30, 40, 60, 90, 120, 180];
 
 const HORA = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
@@ -319,15 +322,63 @@ export function camposDoPedidoAgendado(instante: Date): { scheduledDatetime: Dat
 }
 
 /**
- * O pedido agendado ainda está "guardado" (em Agendamentos, fora da cozinha)?
- * Sai quando falta `liberarAntesMin` para o horário.
+ * Agendado de verdade: o cliente marcou o horário (site, robô, balcão — a
+ * marca `agendado`) ou o parceiro mandou um horário com mais de 3 h de folga
+ * da criação (o iFood grava o PRAZO em `scheduledDatetime` em todo pedido; só
+ * a folga grande diz que foi agendado). A mesma régua da lista de
+ * Agendamentos do painel e de lib/pedidos-na-cozinha.ts (`dataDoPedido`).
+ */
+export const FOLGA_DO_AGENDADO_DO_PARCEIRO_MS = 3 * 60 * 60 * 1000;
+
+export type PedidoQuePodeSerAgendado = {
+  agendado?: boolean | null;
+  scheduledDatetime?: Date | string | null;
+  createdAt?: Date | string | null;
+};
+
+export function ehAgendadoDeVerdade(pedido: PedidoQuePodeSerAgendado): boolean {
+  if (!pedido.scheduledDatetime) return false;
+  const quando = new Date(pedido.scheduledDatetime).getTime();
+  if (!Number.isFinite(quando)) return false;
+  if (pedido.agendado === true) return true;
+  const criado = pedido.createdAt ? new Date(pedido.createdAt).getTime() : NaN;
+  return Number.isFinite(criado) && quando - criado > FOLGA_DO_AGENDADO_DO_PARCEIRO_MS;
+}
+
+/**
+ * O pedido agendado ainda está "guardado" (em Agendamentos, fora do KDS)?
+ * Sai quando falta `liberarAntesMin` para o horário. Com 0 nunca fica
+ * guardado: entra na cozinha assim que é feito (o comportamento antigo).
+ *
+ * O KDS (api/kds) e o painel (Pedidos › Agendamentos) perguntam aqui —
+ * Douglas, 19/11/2026, caso da Vania (Bom cheff): o pedido para buscar às
+ * 20h15 caiu na cozinha às 19h10.
  */
 export function aindaGuardado(
-  pedido: { agendado?: boolean | null; scheduledDatetime?: Date | string | null },
+  pedido: PedidoQuePodeSerAgendado,
   liberarAntesMin: number,
   agora: Date = new Date(),
 ): boolean {
-  if (!pedido.agendado || !pedido.scheduledDatetime) return false;
-  const quando = new Date(pedido.scheduledDatetime).getTime();
-  return Number.isFinite(quando) && quando - agora.getTime() > liberarAntesMin * 60_000;
+  if (!(liberarAntesMin > 0) || !ehAgendadoDeVerdade(pedido)) return false;
+  const quando = new Date(pedido.scheduledDatetime!).getTime();
+  return quando - agora.getTime() > liberarAntesMin * 60_000;
+}
+
+/**
+ * "Para quando?" do balcão do PDV ("HH:MM" no relógio da loja) → o instante.
+ * Hoje, se a hora ainda vem; senão amanhã (23:30 digitando "00:30"). Mais de
+ * 12 h à frente é engano de digitação ("19:05" às 19:10 queria dizer agora):
+ * volta null e o pedido sai normal, para agora.
+ */
+export function instanteDoHorarioDoBalcao(hora: unknown, timezone: string | null | undefined, agora: Date = new Date()): Date | null {
+  const h = String(hora ?? "").trim();
+  if (!HORA.test(h)) return null;
+  const tz = timezone || FUSO_PADRAO;
+  const hoje = dataNoFuso(agora, tz);
+  let quando = instanteDaHoraLocal(hoje, h, tz);
+  if (!quando) return null;
+  if (quando.getTime() <= agora.getTime()) quando = instanteDaHoraLocal(somarDias(hoje, 1), h, tz);
+  if (!quando) return null;
+  const falta = quando.getTime() - agora.getTime();
+  return falta > 0 && falta <= 12 * 60 * 60 * 1000 ? quando : null;
 }

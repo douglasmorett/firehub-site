@@ -1185,6 +1185,10 @@ export async function GET(req: NextRequest) {
         // precisa: a fila da nuvem já filtra por `printedAt`.
         printedAt: true,
         createdAt: true, updatedAt: true, scheduledDatetime: true,
+        // A marca do agendado do site/robô/balcão: sem ela, o primeiro poll
+        // tirava de Agendamentos o pedido com menos de 3 h de folga e ele
+        // caía em Em Produção antes da hora (lib/agendamento.ts, `aindaGuardado`).
+        agendado: true,
         // Os carimbos de etapa (lib/order-stages.ts): o "(5 min)" ao lado da
         // etapa no cartão — há quanto tempo o pedido está em produção, pronto,
         // na rua ou finalizado (lib/tempo-na-etapa.ts). Sem eles aqui, só a

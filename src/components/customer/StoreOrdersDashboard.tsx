@@ -73,7 +73,7 @@ import { ehDisputaParcial, lerCancelamentosParciais } from "@/lib/cancelamento-p
 import { origemDaVenda } from "@/lib/origem-da-venda";
 import MotivoDoCancelamento from "@/components/MotivoDoCancelamento";
 import ConfigDoAgendamento from "@/components/customer/ConfigDoAgendamento";
-import { lerConfigDeAgendamento, textoDoAgendamento, type ConfigDeAgendamento } from "@/lib/agendamento";
+import { aindaGuardado, lerConfigDeAgendamento, textoDoAgendamento, type ConfigDeAgendamento } from "@/lib/agendamento";
 import { motivoValido, MENSAGEM_SEM_MOTIVO, SUGESTOES_DE_MOTIVO } from "@/lib/motivo-do-cancelamento";
 import { copiarTexto, origemParaLinkDeFora } from "@/lib/copiar-texto";
 import { motoboysDosPedidos } from "@/lib/motoboys-do-pedido";
@@ -3527,17 +3527,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   }, []);
 
   // Calcular pedidos agendados ANTES do useEffect do som
-  const leadMs = scheduleLeadHours * 60 * 60 * 1000;
+  // Agendado no site/robô/balcão (marca `agendado`) vale com qualquer folga; o
+  // dos parceiros segue a regra das 3 h (o horário que eles mandam pode ser só
+  // o prazo). Fica aqui até faltar a liberação — a MESMA pergunta do KDS
+  // (lib/agendamento.ts, `aindaGuardado`); liberação 0 = vai direto.
   const scheduledOrders = orders.filter(o => {
-    if (!o.scheduledDatetime) return false;
-    const deadline = new Date(o.scheduledDatetime);
-    const diffMs = deadline.getTime() - new Date(o.createdAt).getTime();
-    // Agendado no site (marca `agendado`) vale com qualquer folga; o dos
-    // parceiros segue a regra das 3 h (o horário que eles mandam pode ser só o prazo).
-    const isFutureScheduled = o.agendado === true || diffMs > 3 * 60 * 60 * 1000;
     const isNotStarted = o.status === "NOVO" || o.status === "ACEITO";
-    const stillWaiting = deadline.getTime() - now.getTime() > leadMs;
-    return isFutureScheduled && isNotStarted && stillWaiting;
+    return isNotStarted && aindaGuardado(o, scheduleLeadHours * 60, now);
   });
   const scheduledOrderIds = new Set(scheduledOrders.map(o => o.id));
 
@@ -6851,7 +6847,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
                         <button
                           onClick={async () => {
-                            if (!confirm(`Antecipar pedido #${order.id.slice(-6).toUpperCase()} para agora?\n\nEle será movido para Novos Pedidos imediatamente.`)) return;
+                            if (!confirm(`Mandar o pedido #${order.id.slice(-6).toUpperCase()} para a cozinha agora?\n\nEle sai de Agendamentos, vai para Novos Pedidos e aparece no KDS na hora.`)) return;
                             try {
                               const res = await fetch("/api/customer-order/status", {
                                 method: "PUT",
@@ -6880,7 +6876,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                           onMouseEnter={e => { (e.target as HTMLElement).style.transform = "scale(1.02)"; (e.target as HTMLElement).style.boxShadow = "0 4px 16px rgba(28, 25, 23,0.35)"; }}
                           onMouseLeave={e => { (e.target as HTMLElement).style.transform = "scale(1)"; (e.target as HTMLElement).style.boxShadow = "none"; }}
                         >
-                          ⚡ Antecipar agendamento
+                          ⚡ Mandar para a cozinha agora
                         </button>
                       </div>
                     );

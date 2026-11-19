@@ -5,7 +5,8 @@
  *
  * Liga/desliga, entrega e/ou retirada, dias, horário (o de funcionamento ou
  * um próprio), antecedência mínima, até quantos dias à frente, o intervalo dos
- * horários, "só encomenda" e quando o pedido vai para a cozinha. A regra que
+ * horários, "só encomenda" e quando o pedido entra na cozinha (este vale
+ * mesmo com o site desligado: balcão, robô e iFood também agendam). A regra que
  * usa tudo isto é uma só, em lib/agendamento.ts — a mesma do site e da rota.
  *
  * A prévia embaixo mostra os horários que o cliente vai ver AGORA, calculados
@@ -84,7 +85,16 @@ export default function ConfigDoAgendamento({
       setSalvo(proximo);
       setCfg(proximo);
       onSalvo(proximo);
-      onAviso(proximo.ativo ? "📅 Agendamento salvo: o site já oferece os horários." : "Agendamento desligado no site.", proximo.ativo ? COR.ok : "#475569");
+      onAviso(
+        proximo.ativo
+          ? "📅 Agendamento salvo: o site já oferece os horários."
+          : salvo.ativo
+            ? "Agendamento desligado no site."
+            : proximo.liberarAntesMin > 0
+              ? `📅 Salvo: o pedido agendado entra na cozinha ${textoDaLiberacao(proximo.liberarAntesMin)} antes do horário.`
+              : "📅 Salvo: o pedido agendado entra na cozinha assim que é feito.",
+        proximo.ativo || !salvo.ativo ? COR.ok : "#475569",
+      );
     } catch {
       onAviso("❌ Não consegui salvar o agendamento. Confira a internet e tente de novo.", "#C92E09");
     } finally {
@@ -113,6 +123,23 @@ export default function ConfigDoAgendamento({
         </div>
         <Chave ligado={salvo.ativo} rotulo="Aceitar pedidos agendados" onClick={() => !salvando && salvar({ ...cfg, ativo: !salvo.ativo })} />
       </div>
+
+      {/* Vale com o agendamento do site desligado: o balcão, o robô e o iFood
+          também fazem pedido agendado (Vania/Bom cheff, 19/11/2026). */}
+      <Bloco titulo="Quando o pedido agendado entra na cozinha" ajuda="Quanto tempo antes do horário pedido pelo cliente. Até lá ele fica aqui em Agendamentos, fora do KDS. Vale para site, robô, balcão e iFood.">
+        {OPCOES_DE_LIBERACAO.map((m) => (
+          <Pilula key={m} ativo={cfg.liberarAntesMin === m} onClick={() => muda({ liberarAntesMin: m })}
+            titulo={m === 0 ? "O pedido agendado vai para a cozinha assim que é feito" : undefined}>
+            {m === 0 ? "Na hora (não segura)" : `${textoDaLiberacao(m)} antes`}
+          </Pilula>
+        ))}
+        {!salvo.ativo && cfg.liberarAntesMin !== salvo.liberarAntesMin && (
+          <button type="button" disabled={salvando} onClick={() => salvar({ ...salvo, liberarAntesMin: cfg.liberarAntesMin })}
+            style={{ padding: "6px 14px", borderRadius: 8, border: "none", background: COR.ok, color: "#fff", fontWeight: 800, cursor: "pointer", fontSize: "0.8rem", fontFamily: "inherit" }}>
+            {salvando ? "Salvando…" : "Salvar"}
+          </button>
+        )}
+      </Bloco>
 
       {salvo.ativo && (
         <>
@@ -155,12 +182,6 @@ export default function ConfigDoAgendamento({
           <Bloco titulo="Horários de quanto em quanto tempo">
             {OPCOES_DE_INTERVALO.map((m) => (
               <Pilula key={m} ativo={cfg.intervaloMin === m} onClick={() => muda({ intervaloMin: m })}>{m} min</Pilula>
-            ))}
-          </Bloco>
-
-          <Bloco titulo="Quando o pedido vai para a cozinha" ajuda="Até lá ele fica aqui em Agendamentos, fora de Novos e do KDS.">
-            {OPCOES_DE_LIBERACAO.map((m) => (
-              <Pilula key={m} ativo={cfg.liberarAntesMin === m} onClick={() => muda({ liberarAntesMin: m })}>{textoDaLiberacao(m)} antes</Pilula>
             ))}
           </Bloco>
 

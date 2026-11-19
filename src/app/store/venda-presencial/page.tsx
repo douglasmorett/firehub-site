@@ -227,6 +227,11 @@ export default function VendaPresencialPage() {
   const [notes, setNotes] = useState("");
   /** Dentro do Balcão: o cliente leva ou come aqui (lib/balcao-levar-ou-local.ts). */
   const [consumo, setConsumo] = useState<ConsumoNoBalcao>(CONSUMO_PADRAO);
+  // "Para quando?" — buscar/entregar mais tarde ("HH:MM"; vazio = agora). O
+  // servidor grava como pedido agendado: entra na cozinha a liberação da loja
+  // antes (Pedidos › Agendamentos). Vania/Bom cheff, 19/11/2026.
+  const [paraQuando, setParaQuando] = useState("");
+  const podeAgendarNoBalcao = orderType === "DELIVERY" || (orderType === "BALCAO" && consumo === "LEVAR");
   const [loading, setLoading] = useState(false);
   // Trava do Finalizar que vale NA HORA: `loading` só desabilita o botão no
   // próximo render, e dois toques rápidos na tela touch entravam os dois
@@ -730,6 +735,7 @@ export default function VendaPresencialPage() {
       deliveryType: orderType === "BALCAO" ? "RETIRADA" : orderType,
       // Não é tipo novo: o pedido segue RETIRADA. Só sai no topo da comanda.
       ...(orderType === "BALCAO" ? { consumoNoBalcao: consumo } : {}),
+      ...(paraQuando && podeAgendarNoBalcao ? { agendadoPara: paraQuando } : {}),
       // "Voucher/Vale - Banri": a bandeira vai junto, e o texto continua sendo
       // lido como vale pelo caixa e pela nota (lib/pagamento-na-entrega).
       paymentMethod: !dividir && paymentMethod === "Voucher/Vale" && bandeiraEscolhida
@@ -801,7 +807,7 @@ export default function VendaPresencialPage() {
       // pessoa errada ou o CPF de outro impresso na nota é o tipo de erro que
       // ninguém percebe até alguém reclamar. O pager já ficava para trás antes
       // deste campo existir — mesma falha, consertada junto.
-      setCart([]); setCustomerName(""); setCustomerPhone(""); setAddress(""); setBairro(""); setTableNum(""); setNotes(""); setChange(""); setPager(""); setDocumento(""); setVoucherBrand(""); setConsumo(CONSUMO_PADRAO);
+      setCart([]); setCustomerName(""); setCustomerPhone(""); setAddress(""); setBairro(""); setTableNum(""); setNotes(""); setChange(""); setPager(""); setDocumento(""); setVoucherBrand(""); setConsumo(CONSUMO_PADRAO); setParaQuando("");
       setTaxaEntrega(""); setTaxaNaMao(false); setTaxaAviso(null); setCotacaoDoBalcao(null);
       // Na conversa, o próximo pedido costuma ser do MESMO cliente (o "ah, e
       // manda mais uma Coca"): nome e telefone da conversa voltam aos campos.
@@ -1260,6 +1266,24 @@ export default function VendaPresencialPage() {
                   {CONSUMO_NO_CARD[c]}
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* Para quando? Buscar/entregar mais tarde: fica em Agendamentos e
+              entra no KDS a liberação da loja antes do horário. */}
+          {podeAgendarNoBalcao && (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: -4, marginBottom: 10 }}>
+              <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", whiteSpace: "nowrap" }}>🕐 {orderType === "DELIVERY" ? "Entregar às" : "Buscar às"}</span>
+              <input type="time" value={paraQuando} onChange={e => setParaQuando(e.target.value)} aria-label="Horário agendado (vazio = agora)"
+                style={{ padding: "5px 8px", borderRadius: 8, border: `1.5px solid ${paraQuando ? "#1C1917" : "#E2E8F0"}`, fontSize: "0.85rem", outline: "none", fontFamily: "inherit", fontWeight: paraQuando ? 800 : 500 }} />
+              {paraQuando ? (
+                <button type="button" onClick={() => setParaQuando("")}
+                  style={{ background: "none", border: "none", color: "#1C1917", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textDecoration: "underline", whiteSpace: "nowrap" }}>
+                  é para agora
+                </button>
+              ) : (
+                <span style={{ fontSize: "0.72rem", color: "#94A3B8" }}>vazio = agora</span>
+              )}
             </div>
           )}
 
