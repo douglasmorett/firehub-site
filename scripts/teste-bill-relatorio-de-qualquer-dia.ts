@@ -33,14 +33,17 @@ if (!LOJA) {
 
 (async () => {
   const ctx = { franchiseeId: LOJA, usuarioId: LOJA, canal: "WHATSAPP" as const }; // como no WhatsApp: sem fuso
-  const hoje: string = (await consultarRelatorio({ relatorio: "vendas" }, ctx) as any).hoje;
+  const hoje: string = (await consultarRelatorio({ relatorio: "vendas" }, ctx) as any).periodo.de;
   const menos = (n: number) => new Date(new Date(`${hoje}T12:00:00Z`).getTime() - n * 86400000).toISOString().slice(0, 10);
   const ontem = menos(1);
 
   // ── 2a. Ontem, vendas por período ──
   const v: any = await consultarRelatorio({ relatorio: "vendas", de: ontem }, ctx);
   assert.equal(v.ok, true, JSON.stringify(v).slice(0, 300));
-  assert.deepEqual(v.periodo, { de: ontem, ate: ontem });
+  assert.equal(v.periodo.de, ontem);
+  assert.equal(v.periodo.ate, ontem);
+  const nome = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"][new Date(`${ontem}T12:00:00Z`).getUTCDay()];
+  assert.equal(v.periodo.deComDia, `${nome} ${ontem.slice(8, 10)}/${ontem.slice(5, 7)}`);
   const texto = JSON.stringify(v.dados);
   assert.ok(texto.length > 50 && texto.length <= 14500, `tamanho ${texto.length}`);
   console.log(`✓ vendas de ontem (${ontem}):`, texto.slice(0, 260));

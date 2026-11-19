@@ -12,7 +12,7 @@
  */
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { hojeNaLoja } from "@/lib/relatorios/base";
+import { hojeNaLoja, NOMES_DOS_DIAS } from "@/lib/relatorios/base";
 import { comoQuemConversa } from "./sessao-do-bill";
 import type { ContextoDoAssessor } from "./ferramentas";
 
@@ -117,5 +117,7 @@ export async function consultarRelatorio(args: any, ctx: ContextoDoAssessor): Pr
   const corpo: any = await res.json().catch(() => null);
   if (!res.ok || !corpo) return { ok: false, erro: corpo?.error || `O relatório não abriu (${res.status}).` };
 
-  return { ok: true, relatorio: slug, periodo: { de, ate }, hoje, dados: caber(enxugar(corpo)) };
+  // O dia da semana pronto: no ensaio de 19/11 o modelo chamou terça de "segunda" ao fazer a conta sozinho.
+  const comDia = (d: string) => `${NOMES_DOS_DIAS[new Date(`${d}T12:00:00Z`).getUTCDay()]} ${d.split("-").reverse().slice(0, 2).join("/")}`;
+  return { ok: true, relatorio: slug, periodo: { de, ate, deComDia: comDia(de), ateComDia: comDia(ate) }, hoje: comDia(hoje), dados: caber(enxugar(corpo)) };
 }
