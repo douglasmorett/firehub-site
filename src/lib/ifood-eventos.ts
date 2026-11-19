@@ -21,6 +21,7 @@ import { ehEventoDeCodigo, marcarExigeCodigo } from "./ifood-logistics";
 import { registrarEventoDeShipping } from "./ifood-shipping";
 import { sobDemandaJaVinculado, vincularSobDemanda } from "./ifood-sob-demanda";
 import { montarItensDoPedidoIfood } from "./ifood-itens";
+import { semRebaixar } from "./ifood-status-do-evento";
 import { coordenadasDoIfood } from "@/lib/ifood-coordenadas";
 import { pontoEDistanciaDoParceiro } from "@/lib/distancia-da-entrega";
 import { aceitaSozinhoAgora } from "@/lib/loja-sem-conexao-no-banco";
@@ -892,12 +893,27 @@ export async function processarEventosIfood(opts: {
               log.push(`  ⚠️ Falha ao sincronizar prazo de ${orderId}: ${deadlineErr?.message}`);
             }
 
-            await (prisma.customerOrder as any).updateMany({
-              where: { ifoodOrderId: orderId } as any,
-              data: updateData,
+            // O status só sobe (lib/ifood-status-do-evento.ts): o eco do
+            // readyToPickup (RTP → PREPARANDO) devolvia para Em Produção o
+            // pedido que a loja já tinha dado como saiu/pronto. Prazo e código
+            // de coleta gravam sempre.
+            const { status: _status, ...resto } = updateData;
+            if (Object.keys(resto).length > 0) {
+              await (prisma.customerOrder as any).updateMany({
+                where: { ifoodOrderId: orderId } as any,
+                data: resto,
+              });
+            }
+            const gravou = await (prisma.customerOrder as any).updateMany({
+              where: { ifoodOrderId: orderId, ...semRebaixar(newStatus) } as any,
+              data: { status: newStatus },
             });
-            log.push(`  🔄 Status atualizado: ${orderId} → ${newStatus}`);
-            updated++;
+            if (gravou?.count) {
+              log.push(`  🔄 Status atualizado: ${orderId} → ${newStatus}`);
+              updated++;
+            } else {
+              log.push(`  ⏸️ Status mantido: ${orderId} já está em ${(exists as any)?.status} (evento pedia ${newStatus})`);
+            }
 
             // NFC-e: o pedido que o iFood despacha ou conclui não passava por
             // gancho nenhum e nunca tinha nota. lib/fiscal-automatico decide
