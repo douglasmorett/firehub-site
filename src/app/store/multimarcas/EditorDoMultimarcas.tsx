@@ -11,21 +11,23 @@
  * (Lucas, 11/11/2026: bebida só no Frangoso e no Braseou; o amarelo da marca).
  * Atalhos embaixo do banner ("Lanches", "Porções") com as marcas de cada um e
  * a foto do cartão grande de cada marca (Lucas, 13/11/2026).
+ * Tipos de comida com foto embaixo do banner ("Hambúrguer", "Açaí"): automático,
+ * escolhido pelo dono (nome, foto e categorias) ou desligado (Lucas, 16/11/2026).
  * Grava em PUT /api/store/multimarcas/pagina (lib/multimarcas/pagina.ts).
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Check, ChevronDown, Copy, ExternalLink, Eye, EyeOff, ImagePlus, Loader2, Plus, Search, Sparkles, Star, Trash2, X } from "lucide-react";
 import Vitrine from "@/components/multimarcas/Vitrine";
-import { MARCA_DOS_EXTRAS, marcasDoProduto, reais, textoSobreCor, type ConfigDaVitrine, type ProdutoDaVitrine } from "@/lib/multimarcas/vitrine";
-import type { AtalhoDaPagina, BannerDaPagina, ConfigDaPagina, MarcaDaPagina } from "@/lib/multimarcas/pagina";
+import { MARCA_DOS_EXTRAS, TIPOS_DE_COMIDA, marcasDoProduto, reais, sugestaoDeTiposDeComida, textoSobreCor, tiposDeComidaDaVitrine, type ConfigDaVitrine, type ProdutoDaVitrine } from "@/lib/multimarcas/vitrine";
+import type { AtalhoDaPagina, BannerDaPagina, ConfigDaPagina, MarcaDaPagina, TipoDeComidaDaPagina } from "@/lib/multimarcas/pagina";
 import s from "./Editor.module.css";
 
 type Categoria = { nome: string; emoji: string; produtos: number };
 type Dados = {
   config: ConfigDaPagina;
   salva: boolean;
-  limites: { marcas: number; banners: number; atalhos: number };
+  limites: { marcas: number; banners: number; atalhos: number; tiposDeComida: number };
   loja: { slug: string | null; nome: string; logo: string | null };
   categorias: Categoria[];
   sugestoes: string[];
@@ -147,7 +149,7 @@ export default function EditorDoMultimarcas({ onAviso }: { onAviso: (tipo: "ok" 
     const aberta = dados.vitrine.config.marcas[0]?.aberta ?? true;
     const vc: ConfigDaVitrine = {
       ...dados.vitrine.config,
-      nome: config.nome, frase: config.frase, cor: config.cor, banners: config.banners, destaques: config.destaques, atalhos: config.atalhos,
+      nome: config.nome, frase: config.frase, cor: config.cor, banners: config.banners, destaques: config.destaques, atalhos: config.atalhos, tiposDeComida: config.tiposDeComida,
       marcas: config.marcas.map((m) => ({
         id: m.id, nome: m.nome, tipo: m.tipo, cor: m.cor, logo: m.logo, capa: m.capa, fundo: m.fundo, oculta: m.oculta,
         nota: notas.get(m.id)?.nota ?? null, avaliacoes: notas.get(m.id)?.avaliacoes ?? 0, aberta,
@@ -176,6 +178,10 @@ export default function EditorDoMultimarcas({ onAviso }: { onAviso: (tipo: "ok" 
   };
   const mudarAtalho = (i: number, campo: Partial<AtalhoDaPagina>) => {
     setConfig((c) => (c ? { ...c, atalhos: c.atalhos.map((a, k) => (k === i ? { ...a, ...campo } : a)) } : c));
+    setMudou(true);
+  };
+  const mudarTipo = (i: number, campo: Partial<TipoDeComidaDaPagina>) => {
+    setConfig((c) => (c?.tiposDeComida ? { ...c, tiposDeComida: c.tiposDeComida.map((t, k) => (k === i ? { ...t, ...campo } : t)) } : c));
     setMudou(true);
   };
   const erroDeImagem = (m: string) => onAviso("erro", "Imagem não enviada", m);
@@ -233,6 +239,25 @@ export default function EditorDoMultimarcas({ onAviso }: { onAviso: (tipo: "ok" 
     mudarAtalho(i, { marcas: a.marcas.includes(marcaId) ? a.marcas.filter((x) => x !== marcaId) : [...a.marcas, marcaId] });
   }
 
+  /** "Escolher eu mesmo": começa pelo que o automático acharia (as categorias de cada tipo). */
+  function escolherTiposEuMesmo() {
+    const sugestao = sugestaoDeTiposDeComida(previa!.produtos).map((t) => ({ ...t, id: novoId("t") }));
+    mudar({ ...config!, tiposDeComida: sugestao.length ? sugestao.slice(0, dados!.limites.tiposDeComida) : [{ id: novoId("t"), nome: TIPOS_DE_COMIDA[0].nome, foto: null, categorias: [] }] });
+  }
+
+  function novoTipo(nome: string) {
+    const lista = config!.tiposDeComida ?? [];
+    if (lista.length >= dados!.limites.tiposDeComida) return;
+    mudar({ ...config!, tiposDeComida: [...lista, { id: novoId("t"), nome, foto: null, categorias: [] }] });
+  }
+
+  /** Põe ou tira a categoria do cardápio deste tipo (pode estar em mais de um). */
+  function alternarCategoriaNoTipo(i: number, nome: string) {
+    const t = config!.tiposDeComida![i];
+    const k = chave(nome);
+    mudarTipo(i, { categorias: t.categorias.some((c) => chave(c) === k) ? t.categorias.filter((c) => chave(c) !== k) : [...t.categorias, nome] });
+  }
+
   async function salvar() {
     setSalvando(true);
     try {
@@ -250,6 +275,7 @@ export default function EditorDoMultimarcas({ onAviso }: { onAviso: (tipo: "ok" 
   const link = dados.loja.slug ? `https://firehubfood.com.br/marcas/${dados.loja.slug}` : null;
   const sugestoes = dados.sugestoes.filter((n) => !config.marcas.some((m) => chave(m.nome) === chave(n)));
   const fotos = dados.vitrine.produtos.filter((p) => p.foto).slice(0, 60);
+  const tiposAchados = tiposDeComidaDaVitrine(null, previa.produtos);
   const marcaPorId = new Map(config.marcas.map((m) => [m.id, m]));
   const destaques = config.destaques ?? [];
   const produtoPorId = new Map(previa.produtos.map((p) => [p.id, p]));
@@ -510,9 +536,76 @@ export default function EditorDoMultimarcas({ onAviso }: { onAviso: (tipo: "ok" 
 
           {config.marcas.length > 0 && (
             <section className={s.bloco}>
+              <div>
+                <h2>5. Tipos de comida com foto</h2>
+                <p className={s.dica}>A fileira de fotos redondas logo abaixo do banner (Hambúrguer, Frango Frito, Açaí…). O cliente toca e vê os itens desse tipo de <b>todas</b> as marcas. No automático, a página monta pelo nome das categorias e dos itens.</p>
+              </div>
+              <div className={s.marcasDaCategoria} role="group" aria-label="Como montar os tipos de comida">
+                <button className={config.tiposDeComida === null ? s.chipMarcado : s.chip} aria-pressed={config.tiposDeComida === null}
+                  onClick={() => mudar({ ...config, tiposDeComida: null })}>{config.tiposDeComida === null && <Check size={13} />} Automático</button>
+                <button className={config.tiposDeComida?.length ? s.chipMarcado : s.chip} aria-pressed={!!config.tiposDeComida?.length}
+                  onClick={() => { if (!config.tiposDeComida?.length) escolherTiposEuMesmo(); }}>{!!config.tiposDeComida?.length && <Check size={13} />} Escolher eu mesmo</button>
+                <button className={config.tiposDeComida?.length === 0 ? s.chipMarcado : s.chip} aria-pressed={config.tiposDeComida?.length === 0}
+                  onClick={() => mudar({ ...config, tiposDeComida: [] })}>{config.tiposDeComida?.length === 0 && <Check size={13} />} Não mostrar</button>
+              </div>
+              {config.tiposDeComida === null && (tiposAchados.length
+                ? <small className={s.dica}>Achados no seu cardápio: {tiposAchados.map((t) => `${t.emoji} ${t.nome} (${t.produtos.length})`).join(" · ")}. Para trocar a foto, o nome ou as categorias, toque em <b>Escolher eu mesmo</b>.</small>
+                : <small className={s.textoAlerta}>O automático não achou dois tipos de comida pelo nome das categorias e dos itens: a fileira não aparece. Toque em Escolher eu mesmo.</small>)}
+              {!!config.tiposDeComida?.length && (
+                <>
+                  {config.tiposDeComida.map((t, i) => (
+                    <div key={t.id} className={s.marca}>
+                      <div className={s.marcaTopo}>
+                        <CampoDeImagem valor={t.foto} rotulo="Foto" quadrado onMudar={(url) => mudarTipo(i, { foto: url })} onErro={erroDeImagem} />
+                        <div className={s.marcaCampos}>
+                          <input className={s.inputNome} value={t.nome} maxLength={24} placeholder="Nome (ex.: Hambúrguer)" aria-label="Nome do tipo de comida" onChange={(e) => mudarTipo(i, { nome: e.target.value })} />
+                          {fotos.length > 0 && (
+                            <select value="" aria-label="Usar uma foto do cardápio" onChange={(e) => e.target.value && mudarTipo(i, { foto: e.target.value })}>
+                              <option value="">Ou use uma foto do cardápio…</option>
+                              {fotos.map((p) => <option key={p.id} value={p.foto!}>{p.nome}</option>)}
+                            </select>
+                          )}
+                        </div>
+                        <div className={s.botoesDoItem}>
+                          <button onClick={() => mudar({ ...config, tiposDeComida: mover(config.tiposDeComida!, i, -1) })} aria-label="Subir"><ArrowUp size={15} /></button>
+                          <button onClick={() => mudar({ ...config, tiposDeComida: mover(config.tiposDeComida!, i, 1) })} aria-label="Descer"><ArrowDown size={15} /></button>
+                          <button onClick={() => mudar({ ...config, tiposDeComida: config.tiposDeComida!.filter((_, k) => k !== i) })} aria-label="Apagar"><Trash2 size={15} /></button>
+                        </div>
+                      </div>
+                      <span className={s.rotulo}>Categorias do cardápio que entram (de qualquer marca)</span>
+                      <div className={s.categorias}>
+                        {dados.categorias.map((c) => {
+                          const tem = t.categorias.some((x) => chave(x) === chave(c.nome));
+                          return (
+                            <button key={c.nome} className={tem ? s.chipMarcado : s.chip} onClick={() => alternarCategoriaNoTipo(i, c.nome)} aria-pressed={tem}>
+                              {tem && <Check size={13} />} {c.emoji} {c.nome} <small>{c.produtos}</small>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {t.categorias.length === 0 && <small className={s.textoAlerta}>Sem categoria: este tipo não aparece na página.</small>}
+                      {!t.foto && t.categorias.length > 0 && <small className={s.dica}>Sem foto, vale a de um item do tipo.</small>}
+                    </div>
+                  ))}
+                  {config.tiposDeComida.length < dados.limites.tiposDeComida && (
+                    <div className={s.sugestoes}>
+                      <Plus size={15} /> Tipo:
+                      {TIPOS_DE_COMIDA.filter((x) => !config.tiposDeComida!.some((t) => chave(t.nome) === chave(x.nome))).map((x) => (
+                        <button key={x.id} onClick={() => novoTipo(x.nome)}>+ {x.emoji} {x.nome}</button>
+                      ))}
+                      <button onClick={() => novoTipo("Novo tipo")}>+ Outro</button>
+                    </div>
+                  )}
+                </>
+              )}
+            </section>
+          )}
+
+          {config.marcas.length > 0 && (
+            <section className={s.bloco}>
               <div className={s.blocoTopo}>
                 <div>
-                  <h2>5. Atalhos embaixo do banner</h2>
+                  <h2>6. Atalhos embaixo do banner</h2>
                   <p className={s.dica}>Escreva os atalhos (ex.: Lanches, Porções, Novidades) e toque nas marcas de cada um. O cliente toca no atalho e vê só essas marcas. Sem atalho, a página filtra pelo tipo de comida das marcas.</p>
                 </div>
                 <button className={s.botaoEscuro} onClick={() => novoAtalho()} disabled={config.atalhos.length >= dados.limites.atalhos}><Plus size={16} /> Atalho</button>
@@ -553,7 +646,7 @@ export default function EditorDoMultimarcas({ onAviso }: { onAviso: (tipo: "ok" 
           )}
 
           <section className={s.bloco}>
-            <h2>6. Aparência da página</h2>
+            <h2>7. Aparência da página</h2>
             <label className={s.campo}>Nome que aparece no topo
               <input value={config.nome} maxLength={40} onChange={(e) => mudar({ ...config, nome: e.target.value })} />
             </label>

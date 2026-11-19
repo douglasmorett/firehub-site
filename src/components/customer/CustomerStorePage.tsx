@@ -183,8 +183,12 @@ const emReais = (n: number) => n.toFixed(2).replace(".", ",");
  * Os três lugares que mostram preço no cardápio passam por aqui de propósito:
  * enquanto cada um desenhava o seu, bastava alguém mexer num para o mesmo
  * produto aparecer com dois preços em duas telas da mesma loja.
+ *
+ * `verde`: loja com Multimarcas — o preço da promoção e o selo em verde, como
+ * na página das marcas (Lucas, 16/11/2026). As outras lojas seguem em vermelho.
  */
-function PrecoDoCard({ produto, tamanho, cor }: { produto: any; tamanho: string; cor: string }) {
+function PrecoDoCard({ produto, tamanho, cor, verde }: { produto: any; tamanho: string; cor: string; verde?: boolean }) {
+  const corDaPromocao = verde ? "#2B8A3E" : "#DC2626";
   const de = precoMinimoAntesDaPromocao(produto);
   const agora = precoMinimoDoProduto(produto);
   // Promoção só numa opção ("a Grande"): o "a partir de" é o da Pequena, não
@@ -207,16 +211,16 @@ function PrecoDoCard({ produto, tamanho, cor }: { produto: any; tamanho: string;
           R$ {emReais(de)}
         </span>
       )}
-      <span style={{ fontWeight: 900, fontSize: tamanho, color: de !== null ? "#DC2626" : cor }}>
+      <span style={{ fontWeight: 900, fontSize: tamanho, color: de !== null ? corDaPromocao : cor }}>
         R$ {emReais(agora)}
       </span>
       {de !== null && (
-        <span style={{ fontSize: "0.62rem", fontWeight: 800, color: "#FFF", background: "#DC2626", borderRadius: "999px", padding: "1px 6px" }}>
+        <span style={{ fontSize: "0.62rem", fontWeight: 800, color: "#FFF", background: corDaPromocao, borderRadius: "999px", padding: "1px 6px" }}>
           -{Math.round(((de - agora) / de) * 100)}%
         </span>
       )}
       {de === null && opcoesEmPromocao.length > 0 && (
-        <span style={{ fontSize: "0.62rem", fontWeight: 800, color: "#FFF", background: "#DC2626", borderRadius: "999px", padding: "1px 7px" }}>
+        <span style={{ fontSize: "0.62rem", fontWeight: 800, color: "#FFF", background: corDaPromocao, borderRadius: "999px", padding: "1px 7px" }}>
           🏷️ {opcoesEmPromocao.slice(0, 2).join(" e ")} em promoção
         </span>
       )}
@@ -5120,7 +5124,7 @@ export default function CustomerStorePage({
           setBusca={setSearchTerm}
           quantidade={getQty}
           abrir={p => setComboProduct(p as any)}
-          preco={(p, tamanho, cor) => <PrecoDoCard produto={p} tamanho={tamanho} cor={cor} />}
+          preco={(p, tamanho, cor) => <PrecoDoCard produto={p} tamanho={tamanho} cor={cor} verde={!!multimarcas} />}
           itensNaSacola={cartCount}
           totalDaSacola={finalTotal}
           abrirSacola={() => setMobileCartOpen(true)}
@@ -5474,7 +5478,7 @@ export default function CustomerStorePage({
               produtos={highlightProducts}
               quantidade={getQty}
               abrir={p => setComboProduct(p as any)}
-              preco={p => <PrecoDoCard produto={p} tamanho="0.95rem" cor="#0F172A" />}
+              preco={p => <PrecoDoCard produto={p} tamanho="0.95rem" cor="#0F172A" verde={!!multimarcas} />}
             />
           )}
 
@@ -5547,7 +5551,7 @@ export default function CustomerStorePage({
                           </div>
                         )}
                         <p className="product-price">
-                          <PrecoDoCard produto={p} tamanho="1rem" cor="#C62828" />
+                          <PrecoDoCard produto={p} tamanho="1rem" cor="#C62828" verde={!!multimarcas} />
                         </p>
                       </div>
                       <div className="product-actions">
@@ -5880,6 +5884,7 @@ export default function CustomerStorePage({
             isCombo: comboProduct.isCombo
           }}
           linkDoProduto={mesa ? undefined : linkDoProduto(comboProduct.id)}
+          promocaoEmVerde={!!multimarcas}
           onClose={() => setComboProduct(null)}
           onConfirm={(selections, extraSum, qty, comboNotes) => {
             const temGrupos = Boolean(comboProduct.comboGroups?.length);
@@ -6052,7 +6057,7 @@ export default function CustomerStorePage({
                         </span>
                         <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#0F172A", marginTop: "2px" }}>{p.name}</div>
                         <div style={{ display: "flex", alignItems: "baseline", gap: "6px", marginTop: "4px" }}>
-                          <PrecoDoCard produto={p} tamanho="0.95rem" cor="#059669" />
+                          <PrecoDoCard produto={p} tamanho="0.95rem" cor="#059669" verde={!!multimarcas} />
                         </div>
                       </div>
                     </div>

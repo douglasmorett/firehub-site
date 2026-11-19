@@ -123,6 +123,7 @@ export async function vitrineDaLoja(franchisee: any, config: ConfigDaPagina): Pr
       banners: config.banners,
       destaques: config.destaques,
       atalhos: config.atalhos,
+      tiposDeComida: config.tiposDeComida,
     },
   };
 }

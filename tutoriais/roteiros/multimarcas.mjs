@@ -351,7 +351,7 @@ export default {
         }
         await ctx.ate(0.7);
         const previa = p.getByLabel("Como o cliente vê");
-        await palco.mover(previa.getByRole("heading", { name: "Nossas marcas" }), { ms: 700 });
+        await palco.mover(previa.getByRole("heading", { name: "Mais vendidos" }), { ms: 700 });
       },
     },
     {
@@ -394,7 +394,7 @@ export default {
       acao: async (palco, ctx) => {
         const p = palco.pagina;
         await p.goto(`${ctx.BASE}/marcas/${LOJA.slug}`, { waitUntil: "load", timeout: 60_000 });
-        const marcas = p.getByRole("heading", { name: "Nossas marcas" });
+        const marcas = p.getByRole("heading", { name: "Mais vendidos" });
         await marcas.waitFor({ state: "visible", timeout: 30_000 });
         await dormir(400);
         const cartoes = [p.getByRole("link", { name: /Burguer do Bairro/ }).first(), p.getByRole("link", { name: /Pizza da Esquina/ }).first()];

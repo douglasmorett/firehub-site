@@ -8,7 +8,7 @@ import { limparConfig, marcaDaCategoria, mapaDeCategorias } from "../src/lib/mul
 import { categoriaEntraNaMarca, marcasNoCardapio, siglaDaMarca } from "../src/lib/multimarcas/no-cardapio";
 import { itensComMarca } from "../src/lib/multimarcas/itens";
 import { emPromocao, notasPorMarca } from "../src/lib/multimarcas/carga";
-import { corParaTexto, textoSobreCor } from "../src/lib/multimarcas/vitrine";
+import { corParaTexto, descontoDaPromocao, sugestaoDeTiposDeComida, textoSobreCor, tipoAutomatico, tiposDeComidaDaVitrine } from "../src/lib/multimarcas/vitrine";
 import { diaDaSemanaDaLoja } from "../src/lib/cardapio-interno";
 
 let casos = 0;
@@ -178,5 +178,56 @@ ok(() => assert.equal(emPromocao({ name: "Batata", price: 10, category: "Promoç
 // O dia de depois de amanhã: nunca é hoje, nem com a madrugada contando como ontem.
 const diaQueNaoE = diaDaSemanaDaLoja("America/Sao_Paulo", new Date(Date.now() + 2 * 24 * 60 * 60 * 1000));
 ok(() => assert.equal(emPromocao({ name: "Smash", price: 20, precoDe: 25, availableDays: [diaQueNaoE] }, "America/Sao_Paulo"), false));
+
+// ─── vitrine de 16/11 (Lucas): promoção em todo lugar e tipos de comida com foto ───
+ok(() => assert.equal(descontoDaPromocao(29.9, 47.9), 38));
+ok(() => assert.equal(descontoDaPromocao(20, 20), 0)); // sem preço de antes maior: sem selo
+ok(() => assert.equal(descontoDaPromocao(20, null), 0));
+// Config antiga, sem a lista: automático. [] = não mostrar. Tipo sem nome some; foto insegura não passa.
+ok(() => assert.equal(c.tiposDeComida, null));
+ok(() => assert.deepEqual(limparConfig({ tiposDeComida: [] }).tiposDeComida, []));
+const comTipos = limparConfig({ tiposDeComida: [
+  { id: "t1", nome: " Hambúrguer ", foto: "javascript:x", categorias: ["Burguers", "burguers ", "Combos"] },
+  { id: "t1", nome: "Açaí", foto: "/uploads/lojas/acai.webp", categorias: ["Açaí"] },
+  { id: "t3", nome: "", categorias: ["Bebidas"] },
+] });
+ok(() => assert.equal(comTipos.tiposDeComida!.length, 2));
+ok(() => assert.equal(comTipos.tiposDeComida![0].nome, "Hambúrguer"));
+ok(() => assert.deepEqual(comTipos.tiposDeComida![0].categorias, ["Burguers", "Combos"]));
+ok(() => assert.equal(comTipos.tiposDeComida![0].foto, null));
+ok(() => assert.notEqual(comTipos.tiposDeComida![0].id, comTipos.tiposDeComida![1].id));
+const cardapio = [
+  { id: "p1", categoria: "Braseou Burgers", nome: "Smash duplo", foto: "/uploads/smash.webp" },
+  { id: "p2", categoria: "Combos", nome: "Combo X-Frango + fritas", foto: null }, // lanche antes do frango
+  { id: "p3", categoria: "Frangoso Baldes", nome: "Balde 12 pedaços", foto: "/uploads/balde.webp" },
+  { id: "p4", categoria: "Combos", nome: "Tiras de frango crocantes", foto: null },
+  { id: "p5", categoria: "Salgados", nome: "Coxinha de frango", foto: null }, // salgado antes do frango
+  { id: "p6", categoria: "Doces", nome: "Esfiha doce de chocolate", foto: null }, // doce antes do salgado
+  { id: "p7", categoria: "Massas", nome: "Espaguete à bolonhesa", foto: null }, // "bolo" de bolonhesa não é sobremesa
+  { id: "p8", categoria: "Bebidas", nome: "Coca lata", foto: null },
+];
+ok(() => assert.deepEqual(cardapio.map(tipoAutomatico), ["hamburguer", "hamburguer", "frango", "frango", "salgadinhos", "sobremesas", null, "bebidas"]));
+const auto = tiposDeComidaDaVitrine(null, cardapio);
+// Na ordem da fileira (Hambúrguer, Frango Frito, …), com a foto do primeiro item que tem.
+ok(() => assert.deepEqual(auto.map((t) => t.id), ["hamburguer", "frango", "salgadinhos", "sobremesas", "bebidas"]));
+ok(() => assert.deepEqual(auto[0].produtos, ["p1", "p2"]));
+ok(() => assert.equal(auto[1].foto, "/uploads/balde.webp"));
+ok(() => assert.equal(auto[2].foto, null)); // sem foto de item: a tela usa o emoji
+ok(() => assert.deepEqual(tiposDeComidaDaVitrine(null, cardapio.slice(0, 2)), [])); // um tipo só não ajuda a escolher
+ok(() => assert.deepEqual(tiposDeComidaDaVitrine([], cardapio), [])); // "não mostrar"
+// Escolhido pelo dono: pelas categorias (de qualquer marca), a foto dele vence; tipo sem item some.
+const meus = tiposDeComidaDaVitrine([
+  { id: "a", nome: "Frango Frito", foto: "/uploads/minha.webp", categorias: ["frangoso baldes", "Combos"] },
+  { id: "b", nome: "Japonês", foto: null, categorias: ["Sushis"] },
+], cardapio);
+ok(() => assert.equal(meus.length, 1));
+ok(() => assert.deepEqual(meus[0].produtos, ["p2", "p3", "p4"]));
+ok(() => assert.equal(meus[0].foto, "/uploads/minha.webp"));
+ok(() => assert.equal(meus[0].emoji, "🍗"));
+// "Escolher eu mesmo" começa pelas categorias em que a maioria é do tipo ("Combos": 1 lanche, 1 frango → lanche, empate vale).
+const sugestao = sugestaoDeTiposDeComida(cardapio);
+ok(() => assert.deepEqual(sugestao.find((t) => t.id === "hamburguer")?.categorias, ["Braseou Burgers", "Combos"]));
+ok(() => assert.deepEqual(sugestao.find((t) => t.id === "frango")?.categorias, ["Frangoso Baldes"]));
+ok(() => assert.equal(sugestao.some((t) => t.categorias.includes("Massas")), false));
 
 console.log(`✅ teste-multimarcas-pagina: ${casos} casos ok`);

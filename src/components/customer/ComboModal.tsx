@@ -155,6 +155,8 @@ interface ComboModalProps {
    * WhatsApp, no Stories). Mesa e balcão não passam: lá não há o que mandar.
    */
   linkDoProduto?: string;
+  /** Loja com Multimarcas: a promoção em verde com o selo "-37%", como na página das marcas (Lucas, 16/11/2026). */
+  promocaoEmVerde?: boolean;
 }
 
 /**
@@ -177,7 +179,7 @@ interface ComboModalProps {
  */
 const semAcento = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
-export default function ComboModal({ product, onClose, onConfirm, inicial, rotuloDoBotao, buscaNasOpcoes, linkDoProduto }: ComboModalProps) {
+export default function ComboModal({ product, onClose, onConfirm, inicial, rotuloDoBotao, buscaNasOpcoes, linkDoProduto, promocaoEmVerde }: ComboModalProps) {
   const [linkCopiado, setLinkCopiado] = useState(false);
   const groups = product.comboGroups || [];
   const [comboQty, setComboQty] = useState(() => Math.max(1, Math.min(99, Math.floor(Number(inicial?.qty) || 1))));
@@ -546,7 +548,7 @@ export default function ComboModal({ product, onClose, onConfirm, inicial, rotul
                   R$ {precoDeTabela.toFixed(2).replace(".", ",")}
                 </span>
               )}
-              <span style={{ fontSize: "1.15rem", fontWeight: 800, color: emPromocao ? "#C92E09" : "#0F766E" }}>
+              <span style={{ fontSize: "1.15rem", fontWeight: 800, color: emPromocao ? (promocaoEmVerde ? "#2B8A3E" : "#C92E09") : "#0F766E" }}>
                 {/* Com preço base 0, o "a partir de" é o MÍNIMO do produto, não a
                     base crua — senão um pastel cujo valor inteiro está no tamanho
                     (Baby R$ 15,90) anuncia "A partir de R$ 0,00" no topo do modal,
@@ -564,8 +566,10 @@ export default function ComboModal({ product, onClose, onConfirm, inicial, rotul
                       : `A partir de R$ ${precoMinimoDoProduto(product as any).toFixed(2).replace(".", ",")}`}
               </span>
               {emPromocao && (
-                <span style={{ fontSize: "0.68rem", fontWeight: 800, color: "#FFF", background: "#C92E09", padding: "2px 8px", borderRadius: "12px" }}>
-                  🏷️ PROMOÇÃO
+                <span style={{ fontSize: "0.68rem", fontWeight: 800, color: "#FFF", background: promocaoEmVerde ? "#2B8A3E" : "#C92E09", padding: "2px 8px", borderRadius: "12px" }}>
+                  {promocaoEmVerde && Math.round((1 - unitFinalPrice / precoDeTabela) * 100) > 0
+                    ? `-${Math.round((1 - unitFinalPrice / precoDeTabela) * 100)}%`
+                    : "🏷️ PROMOÇÃO"}
                 </span>
               )}
               {extraSum > 0 && !emPromocao && product.price > 0 && (
