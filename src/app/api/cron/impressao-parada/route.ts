@@ -27,7 +27,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { avisarDono } from "@/lib/alertas-do-dono";
-import { sendEmail } from "@/lib/mail";
 import { horaLocal } from "@/lib/painel-do-dono";
 import { traduzErroDeImpressao } from "@/lib/erro-de-impressao";
 
@@ -76,9 +75,7 @@ export async function GET(req: NextRequest) {
   try {
     // Toda loja cujo Assistente já consultou a fila alguma vez — sem consulta
     // nenhuma não há "parou", há "nunca vinculou", que é a faixa do painel que
-    // resolve. Loja sem número de alerta entra também: o e-mail da operação
-    // (abaixo) é o canal que sobra para ela — a Brasa Burguer, a loja do caso,
-    // não tinha número cadastrado em 06/09/2026.
+    // resolve.
     const lojas = await prisma.user.findMany({
       where: { ownerId: null, printQueuePolledAt: { not: null } },
       select: {
@@ -156,16 +153,12 @@ export async function GET(req: NextRequest) {
       }
 
       if (mensagem && aoEnviar) {
-        // Dois canais: o WhatsApp do dono (só sai se a loja cadastrou número de
-        // alerta e ligou este aviso) e o e-mail da operação do FireHub, que é
-        // quem liga para a loja quando ninguém lá viu. Carimba se QUALQUER um
-        // saiu — sem carimbo o e-mail repetiria a cada 5 minutos; e, se nenhum
-        // saiu, a loja continua elegível na próxima rodada.
-        const [zap, mail] = await Promise.all([
-          avisarDono(loja.id, "impressao_parada", mensagem),
-          avisarOperacao(loja.storeName, mensagem),
-        ]);
-        if (zap || mail) { aoEnviar(); avisosEnviados++; }
+        // Só o WhatsApp do dono (sai se a loja cadastrou número de alerta e
+        // ligou este aviso). O e-mail para a operação do FireHub saiu em
+        // 18/11/2026 — Douglas: "não quero ficar recebendo esses e-mails de
+        // impressão parada". Sem envio, a loja continua elegível na próxima
+        // rodada, mas não há quem receba: nada repete.
+        if (await avisarDono(loja.id, "impressao_parada", mensagem)) { aoEnviar(); avisosEnviados++; }
       }
 
       if (JSON.stringify(novos) !== JSON.stringify(carimbos)) {
@@ -185,24 +178,6 @@ export async function GET(req: NextRequest) {
     console.error("[impressao-parada] Falha:", err?.message);
     return NextResponse.json({ ok: false, error: err?.message }, { status: 500 });
   }
-}
-
-/**
- * E-mail para quem opera o FireHub (ALERTA_EMAIL_OPERACAO, o mesmo endereço do
- * aviso de queda do 99Food). Chega mesmo quando a loja não cadastrou número de
- * alerta — e é a operação quem liga para a loja.
- */
-async function avisarOperacao(loja: string | null, mensagem: string): Promise<boolean> {
-  const operacao = (process.env.ALERTA_EMAIL_OPERACAO || "contatohakim@gmail.com").trim();
-  const seguro = mensagem.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const html = `<pre style="font-family:inherit;font-size:15px;white-space:pre-wrap">${seguro}</pre>`;
-  const r = await sendEmail({
-    to: operacao,
-    subject: `[FireHub] Impressão parada — ${loja || "loja"}`,
-    html,
-    text: mensagem,
-  }).catch(() => null);
-  return r?.success === true;
 }
 
 type LojaAvisada = { storeName: string | null; storeTimezone: string | null };
