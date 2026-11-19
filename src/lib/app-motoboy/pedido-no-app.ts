@@ -65,7 +65,7 @@ function pontoExato(latLng: unknown): { lat: number; lng: number } | null {
  * O Lucas (Frangoso, 03/10/2026): "às vezes o motoboy não precisa usar GPS,
  * eu vejo no mapa onde é e vou embora".
  */
-export function pontoNoMapa(latLng: unknown): { lat: number; lng: number; aproximado: boolean } | null {
+export function pontoNoMapa(latLng: unknown): { lat: number; lng: number; aproximado: boolean; confira: boolean } | null {
   if (!latLng || typeof latLng !== "object") return null;
   const p = latLng as { lat?: unknown; lng?: unknown; origem?: unknown };
   const lat = Number(p.lat);
@@ -73,7 +73,11 @@ export function pontoNoMapa(latLng: unknown): { lat: number; lng: number; aproxi
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) return null;
   const origem = String(p.origem ?? "").trim();
   // "bairro" = centro do bairro: serve para a direção, não para a porta.
-  return { lat, lng, aproximado: /^bairro|centr[oó]ide|dicion/i.test(origem) };
+  const aproximado = /^bairro|centr[oó]ide|dicion/i.test(origem);
+  // `confira` é só o AVISO na tela: o ponto achado pelo texto ("mapa") pode
+  // ser a rua de mesmo nome em outro bairro (Uberaba, 19/11/2026). Não muda a
+  // navegação nem o "chegando" — esses seguem o `aproximado`.
+  return { lat, lng, aproximado, confira: aproximado || origem === "mapa" };
 }
 
 /**

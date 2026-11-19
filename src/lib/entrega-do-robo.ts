@@ -347,9 +347,13 @@ export function semBairroInformado(
   pedido: { bairro?: string | null; partes?: PartesDoEndereco; endereco?: string | null },
 ): VeredictoDeEntrega {
   if (veredito.modo !== "BAIRRO" || veredito.resultado !== "FORA") return veredito;
-  if (String(pedido.bairro || "").trim()) return veredito;
+  // Nome de CONDOMÍNIO no lugar do bairro ("Condomínio Mário Franco") não é
+  // bairro fora da lista: é o lugar que não se reconheceu — pergunta o bairro
+  // em vez de dizer que não entrega (Uberaba, 19/11/2026).
+  const ehCondominio = (t: unknown) => /^\s*(?:condom[íi]nio|cond\.?)\s+\S/i.test(String(t || ""));
+  if (String(pedido.bairro || "").trim() && !ehCondominio(pedido.bairro)) return veredito;
   if (/\bbairro\s*:?\s+[a-zà-ú]/i.test(String(pedido.endereco || ""))) return veredito;
-  const palpite = String(pedido.partes?.neighborhood || "").trim();
+  const palpite = String((ehCondominio(pedido.bairro) ? pedido.bairro : pedido.partes?.neighborhood) || "").trim();
   return {
     ...veredito,
     resultado: "DESCONHECIDO",

@@ -150,6 +150,13 @@ export type AchadoNoIbgeParaOMapa = Ponto & {
   precisao: "endereco" | "rua";
   /** O bairro oficial do ponto: o polígono da malha do Censo, ou a localidade do CNEFE. */
   bairro: string;
+  /**
+   * false = a rua é a única da cidade com esse nome, mas fica em outro bairro e
+   * o IBGE não conhece o bairro escrito (nome de condomínio): é palpite, não a
+   * casa (lib/geocoding.ts pede a confirmação). Sem bairro escrito, ou a rua
+   * no bairro escrito ou perto do centro dele: true.
+   */
+  bairroConfere: boolean;
 };
 
 const PRAZO_DO_IBGE_MS = 2500;
@@ -192,13 +199,7 @@ export async function enderecoNoIbge(p: PedidoAoIbge): Promise<AchadoNoIbgeParaO
       `SELECT "tipo", "nome", "chave", "chaveSemTitulo", "bairro", "numeros", "lats", "lngs" FROM "IbgeRua" WHERE "id" = ANY($1::bigint[])`,
       ids.slice(0, 400),
     );
-    const centroDoBairro = (nome: string): Ponto | null => {
-      const n = normalizar(nome);
-      const iguais = m.bairros.filter((b) => normalizar(b.nome) === n);
-      const lista = iguais.length > 0 ? iguais : m.bairros.filter((b) => mesmoBairro(nome, b.nome));
-      const b = [...lista].sort((x, y) => y.enderecos - x.enderecos)[0];
-      return b ? { lat: Number(b.lat), lng: Number(b.lng) } : null;
-    };
+    const centroDoBairro = (nome: string) => centroDoBairroDoMunicipio(m, nome);
     const achado = acharNoIbge({ logradouros, numero, bairro }, linhas, { centroDoBairro, loja: p.loja, limiteKm: p.raioKm });
     if (!achado) return null;
 
@@ -215,6 +216,7 @@ export async function enderecoNoIbge(p: PedidoAoIbge): Promise<AchadoNoIbgeParaO
       precisao,
       bairro: nomeDoBairro,
       displayName: `${rua}${comNumero} - ${nomeDoBairro}, ${cidade}`,
+      bairroConfere: !bairro || achado.porque !== "unica" || centroDoBairro(bairro) != null,
     } satisfies AchadoNoIbgeParaOMapa;
   })();
   let relogio: ReturnType<typeof setTimeout> | undefined;
@@ -223,6 +225,42 @@ export async function enderecoNoIbge(p: PedidoAoIbge): Promise<AchadoNoIbgeParaO
     return await Promise.race([trabalho, prazo]);
   } catch (e: any) {
     console.warn(`[IBGE] busca falhou, segue o mapa: ${e?.message}`);
+    return null;
+  } finally {
+    clearTimeout(relogio);
+    trabalho.catch(() => undefined);
+  }
+}
+
+/** O centro do bairro com este nome no município: o igual, senão o parecido; entre vários, o de mais endereços. */
+function centroDoBairroDoMunicipio(m: DoMunicipio, nome: string): Ponto | null {
+  const n = normalizar(nome);
+  const iguais = m.bairros.filter((b) => normalizar(b.nome) === n);
+  const lista = iguais.length > 0 ? iguais : m.bairros.filter((b) => mesmoBairro(nome, b.nome));
+  const b = [...lista].sort((x, y) => y.enderecos - x.enderecos)[0];
+  return b ? { lat: Number(b.lat), lng: Number(b.lng) } : null;
+}
+
+/**
+ * O centro do bairro ESCRITO pelo cliente, na base do IBGE do município. null =
+ * o município não foi importado, o IBGE não conhece o bairro, ou o banco não
+ * respondeu a tempo. É o "bairro conhecido" quando o mapa aberto não o conhece
+ * (lib/geocoding.ts, `bairroNoIbge`).
+ */
+export async function centroDoBairroNoIbge(p: { bairro: string; cidade: string; uf?: string | null }): Promise<Ponto | null> {
+  if (!/^postgres/i.test(process.env.DATABASE_URL || "") || !String(p.bairro || "").trim()) return null;
+  const trabalho = (async () => {
+    const codigo = await municipioImportado(p.cidade, p.uf);
+    if (!codigo) return null;
+    const m = await doMunicipio(codigo);
+    return m ? centroDoBairroDoMunicipio(m, p.bairro) : null;
+  })();
+  let relogio: ReturnType<typeof setTimeout> | undefined;
+  const prazo = new Promise<null>((r) => { relogio = setTimeout(() => r(null), PRAZO_DO_IBGE_MS); });
+  try {
+    return await Promise.race([trabalho, prazo]);
+  } catch (e: any) {
+    console.warn(`[IBGE] centro do bairro falhou: ${e?.message}`);
     return null;
   } finally {
     clearTimeout(relogio);

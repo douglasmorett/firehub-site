@@ -46,7 +46,7 @@ import { repasseDaFaixaKm, repasseDoBairro } from "@/lib/repasse-do-entregador";
 import { buscarCep, digitosDoCep } from "@/lib/cep";
 import { comPrazoDaExtensao } from "@/lib/prazo-automatico";
 import { pontoDaRuaPelasEntregasDaLoja } from "@/lib/rua-das-entregas-servidor";
-import { enderecoNoIbge, type PedidoAoIbge } from "@/lib/enderecos-ibge-servidor";
+import { centroDoBairroNoIbge, enderecoNoIbge, type PedidoAoIbge } from "@/lib/enderecos-ibge-servidor";
 import { estadoPeloEndereco } from "@/lib/geocodificacao";
 import { lerApelidos } from "@/lib/bairro-pelo-endereco";
 
@@ -532,6 +532,7 @@ async function avaliarEntregaNoMapa(
       : {}),
     // A base do IBGE do município da loja (lib/enderecos-ibge-servidor.ts).
     ibge: (p: Omit<PedidoAoIbge, "uf">) => enderecoNoIbge({ ...p, uf: estadoPeloEndereco(loja.storeAddress) }),
+    bairroNoIbge: (bairro: string, cidade: string) => centroDoBairroNoIbge({ bairro, cidade, uf: estadoPeloEndereco(loja.storeAddress) }),
   };
 
   // ── ÁREA DE RISCO VENCE TUDO ─────────────────────────────────────────
