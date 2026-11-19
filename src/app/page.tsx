@@ -808,14 +808,14 @@ export default function Home() {
           <div className="lp-marquee-trilho">
             {[0, 1].map((rep) => (
               <div key={rep} style={{ display: "flex", gap: "4.5rem", alignItems: "center" }} aria-hidden={rep === 1}>
-                <div className="lp-logo"><img src="/images/logos/ifood-88.webp" alt="iFood" width={83} height={44} loading="lazy" decoding="async" /></div>
-                <div className="lp-logo"><img src="/images/logos/99.svg" alt="99Food" style={{ maxHeight: 36 }} width={36} height={36} loading="lazy" decoding="async" /></div>
-                <div className="lp-logo"><img src="/images/logos/keeta.png" alt="Keeta" style={{ maxHeight: 34 }} width={64} height={34} loading="lazy" decoding="async" /></div>
-                <div className="lp-logo"><img src="/images/logos/jotaja-88.webp" alt="Jotajá" width={44} height={44} loading="lazy" decoding="async" /></div>
-                <div className="lp-logo"><img src="/images/logos/brendi-68.webp" alt="Brendi" style={{ maxHeight: 34 }} width={130} height={34} loading="lazy" decoding="async" /></div>
-                <div className="lp-logo"><img src="/images/logos/anotaai-logo.svg" alt="Anota AI" style={{ maxHeight: 34 }} loading="lazy" decoding="async" /></div>
+                <div className="lp-logo"><img src="/images/logos/ifood-88.webp" alt="iFood" width={83} height={44} decoding="async" /></div>
+                <div className="lp-logo"><img src="/images/logos/99.svg" alt="99Food" style={{ maxHeight: 36 }} width={36} height={36} decoding="async" /></div>
+                <div className="lp-logo"><img src="/images/logos/keeta.png" alt="Keeta" style={{ maxHeight: 34 }} width={64} height={34} decoding="async" /></div>
+                <div className="lp-logo"><img src="/images/logos/jotaja-88.webp" alt="Jotajá" width={44} height={44} decoding="async" /></div>
+                <div className="lp-logo"><img src="/images/logos/brendi-68.webp" alt="Brendi" style={{ maxHeight: 34 }} width={130} height={34} decoding="async" /></div>
+                <div className="lp-logo"><img src="/images/logos/anotaai-logo.svg" alt="Anota AI" style={{ maxHeight: 34 }} decoding="async" /></div>
                 <div className="lp-logo lp-logo-txt" style={{ color: "#7C3AED" }}>wabiz</div>
-                <div className="lp-logo"><img src="/images/logos/foody-80.webp" alt="Foody Delivery" style={{ maxHeight: 40 }} width={120} height={40} loading="lazy" decoding="async" /></div>
+                <div className="lp-logo"><img src="/images/logos/foody-80.webp" alt="Foody Delivery" style={{ maxHeight: 40 }} width={120} height={40} decoding="async" /></div>
               </div>
             ))}
           </div>
