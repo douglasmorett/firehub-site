@@ -50,6 +50,7 @@ import {
 } from "@/lib/entrega-do-pedido";
 import { tempoDeEntregaParaGravar } from "@/lib/previsao-da-entrega";
 import { lerConsumoNoBalcao, notasComConsumo } from "@/lib/balcao-levar-ou-local";
+import { camposDoPedidoAgendado, instanteDoHorarioDoBalcao, marcaDoAgendamento } from "@/lib/agendamento";
 
 /**
  * Quanto o balcão espera o mapa quando o PDV não mandou a cotação. O atendente
@@ -239,7 +240,7 @@ export async function registrarVendaPresencial(opcoes: {
     : deliveryType === "DELIVERY" ? "DELIVERY"
     : "BALCAO";
   const configDaLoja = await prisma.user
-    .findUnique({ where: { id: targetFranchiseeId }, select: { balcaoConfig: true, fiscalConfig: true } as any })
+    .findUnique({ where: { id: targetFranchiseeId }, select: { balcaoConfig: true, fiscalConfig: true, storeTimezone: true } as any })
     .catch(() => null);
   const problemaNoPager = problemaDoPagerObrigatorio((configDaLoja as any)?.balcaoConfig, tipoDeLancamento, pagerNumber);
   if (problemaNoPager) return resposta({ error: problemaNoPager }, { status: 400 });
@@ -368,7 +369,20 @@ export async function registrarVendaPresencial(opcoes: {
   // Balcão, e escrito AQUI a partir do campo do corpo — a tela nunca monta a
   // etiqueta. Corpo sem o campo (garçom, aba velha do PDV) grava como hoje.
   const consumo = tipoDeLancamento === "BALCAO" ? lerConsumoNoBalcao(data.consumoNoBalcao) : null;
-  const notasDoPedido = notasComConsumo([String(notes || "").trim(), ...notasDeEntrega].filter(Boolean).join(" "), consumo);
+
+  // "Para quando?" — buscar ou entregar mais tarde (Vania/Bom cheff,
+  // 19/11/2026: "buscar 20,15" na observação e a cozinha fazia na hora). Grava
+  // como o agendado do site (lib/agendamento.ts): fica em Pedidos ›
+  // Agendamentos e entra no KDS a liberação da loja antes do horário. Mesa e
+  // "consumir no local" não agendam. Hora inválida ou passada = pedido para agora.
+  const fusoDaLoja = (configDaLoja as any)?.storeTimezone as string | null | undefined;
+  const instanteAgendado = tipoDeLancamento !== "MESA" && consumo !== "LOCAL"
+    ? instanteDoHorarioDoBalcao(data.agendadoPara, fusoDaLoja)
+    : null;
+  const notasDoPedido = notasComConsumo(
+    [instanteAgendado ? marcaDoAgendamento(instanteAgendado, fusoDaLoja) : "", String(notes || "").trim(), ...notasDeEntrega].filter(Boolean).join(" "),
+    consumo,
+  );
 
   const dailyOrderNumber = await generateDailyOrderNumber(targetFranchiseeId);
 
@@ -439,6 +453,7 @@ export async function registrarVendaPresencial(opcoes: {
       ...(tempoDaEntrega != null ? { tempoEntregaMin: tempoDaEntrega } : {}),
       status: "ACEITO",
       source: "PRESENCIAL",
+      ...(instanteAgendado ? camposDoPedidoAgendado(instanteAgendado) : {}),
       items: {
         create: items.map((item: any) => ({
           menuProductId: item.menuProductId,

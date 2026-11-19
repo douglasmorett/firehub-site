@@ -28,7 +28,7 @@ import {
   type TelaDoKds,
 } from "@/lib/kds-telas";
 import { chaveDoContador } from "@/lib/order-number";
-import { lerConfigDeAgendamento } from "@/lib/agendamento";
+import { aindaGuardado, lerConfigDeAgendamento } from "@/lib/agendamento";
 import { lembrarPor } from "@/lib/cache-curto";
 import { lerEnquantoNadaMuda } from "@/lib/novidade-da-loja";
 import { COOKIE_DA_LOJA_ATIVA, lojasDaVisao } from "@/lib/loja-ativa";
@@ -206,8 +206,9 @@ async function kdsDeVerdade(req: NextRequest) {
       ];
     }
 
-    // ── PEDIDO AGENDADO NO SITE (lib/agendamento.ts) ──────────────────────
-    // Fica fora da cozinha até faltar `liberarAntesMin` para o horário, e
+    // ── PEDIDO AGENDADO: SITE, ROBÔ, BALCÃO E PARCEIRO (lib/agendamento.ts) ──
+    // Fica fora da cozinha até faltar `liberarAntesMin` para o horário
+    // (Pedidos › Agendamentos › "Quando o pedido entra na cozinha"), e
     // entra pela HORA MARCADA, não pela criação: a encomenda feita na quarta
     // para sábado tem mais de 48 h e o corte abaixo a esconderia para sempre.
     //
@@ -221,6 +222,7 @@ async function kdsDeVerdade(req: NextRequest) {
           .then((c) => (c ? structuredClone(c) : null))
           .catch(() => null)
       : null;
+    // 0 = a loja não segura: o agendado entra na cozinha assim que é feito.
     const liberarAntesMin = lerConfigDeAgendamento(configDaLoja?.agendamentoConfig).liberarAntesMin;
     const liberadoAte = new Date(Date.now() + liberarAntesMin * 60_000);
 
@@ -229,7 +231,9 @@ async function kdsDeVerdade(req: NextRequest) {
       status: { notIn: ["CANCELADO", "ENTREGUE", "ENCERRADO", "CRIANDO_IA", "AGUARDANDO_PAGAMENTO"] },
       AND: [
         { OR: [{ createdAt: { gte: safeCutoff } }, { agendado: true, scheduledDatetime: { gte: safeCutoff } }] },
-        { OR: [{ agendado: false }, { scheduledDatetime: null }, { scheduledDatetime: { lte: liberadoAte } }] },
+        ...(liberarAntesMin > 0
+          ? [{ OR: [{ agendado: false }, { scheduledDatetime: null }, { scheduledDatetime: { lte: liberadoAte } }] }]
+          : []),
       ],
     };
 
@@ -282,6 +286,10 @@ async function kdsDeVerdade(req: NextRequest) {
             },
           },
           kdsStage: true,
+          // O agendado do parceiro (iFood com horário marcado) não tem a marca
+          // `agendado`: a folga de 3 h é conferida depois da busca (`aindaGuardado`).
+          agendado: true,
+          scheduledDatetime: true,
           kdsStationId: true,
           kdsProductionAt: true,
           kdsFinishingAt: true,
@@ -337,9 +345,12 @@ async function kdsDeVerdade(req: NextRequest) {
         take: 100,
       });
 
-    let orders = await withRetry(() =>
+    // O banco já tirou o agendado do site/robô/balcão fora da janela; o do
+    // parceiro (só a folga entre criação e horário diz que é agendado) sai aqui.
+    const agoraDaCozinha = new Date();
+    let orders = (await withRetry(() =>
       buscarPedidos(where, [{ prioridadeNaCozinha: "desc" }, { isRoutePriority: "desc" }, { createdAt: "asc" }]),
-    );
+    )).filter((o) => !aindaGuardado(o, liberarAntesMin, agoraDaCozinha));
     // ── A PRIORIDADE DA LOJA TAMBÉM FORA DA JANELA DE 100 ────────────────
     // `take: 100` pega os mais antigos, e a prioridade (mais abaixo) só
     // reordena o que veio. Loja com mais de 100 pedidos na produção (baixa
@@ -355,7 +366,7 @@ async function kdsDeVerdade(req: NextRequest) {
           300,
         ).catch(() => [] as typeof orders);
         const jaTem = new Set(orders.map((o) => o.id));
-        const novos = prioritarios.filter((o) => !jaTem.has(o.id));
+        const novos = prioritarios.filter((o) => !jaTem.has(o.id) && !aindaGuardado(o, liberarAntesMin, agoraDaCozinha));
         if (novos.length > 0) orders = [...orders, ...novos];
       }
     }
