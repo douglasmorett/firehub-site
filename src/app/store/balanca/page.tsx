@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import BalancaClient from "./BalancaClient";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "FireHub — Balança" };
+export const metadata = { title: "FireHub — Balança automática" };
 
 /**
  * /store/balanca — o módulo de self-service por quilo: apresentação, ativação
