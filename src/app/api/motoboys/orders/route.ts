@@ -943,7 +943,66 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ success: true, jaEntregue: r.jaEstava, entregueMesmoCancelado: true });
     }
 
+    // ── O CLIENTE PAGOU DE OUTRO JEITO ──────────────────────────────────────
+    //
+    // "Tava dinheiro e pagou no débito": o entregador informa na baixa e o
+    // pedido passa a dizer a verdade. Sem isto o acerto do motoboy
+    // (api/motoboy-report) cobrava dele um dinheiro que ele não recebeu, o
+    // fechamento de caixa fechava na forma errada, e a loja consertava no
+    // caderno (dono, 17/09/2026). Só quando não é pagamento online, e só se a
+    // forma realmente mudou — confirmar "Dinheiro" num pedido em dinheiro não
+    // vira registro. O rastro fica em editHistory, com o nome do entregador.
+    //
+    // A NFC-e normalmente já saiu quando o pedido saiu (lib/fiscal-momento),
+    // com a forma de antes — e fica assim: a troca vale para o caixa e o
+    // acerto, não para a nota, e o rastro diz com que forma a nota ficou
+    // (avisoDaNotaNaTrocaDePagamento). Travar a troca por causa da nota
+    // deixava o "Débito (Cobrar na Entrega)" pago em dinheiro com a forma
+    // errada para sempre. Pedido que foi para a rua sem nota: a emissão logo
+    // abaixo lê o pedido DEPOIS desta escrita e já sai na forma certa.
+    //
+    // Calculada ANTES da checagem de "já entregue": no 99Food o código é
+    // conferido num passo próprio, o 99 conclui o pedido e o webhook marca
+    // ENTREGUE aqui antes de o entregador escolher a forma. A baixa seguinte
+    // chegava num pedido já finalizado e a troca era jogada fora com
+    // "success" (Kazoku Sushi, 13/11/2026: "o motoboy troca a forma e não
+    // muda no sistema"). Agora a troca vale também nesse caso.
+    const formaInformada = String(pagamento || "").trim();
+    let trocaDePagamento: Record<string, unknown> = {};
+    if (formaInformada) {
+      const { FORMAS_DE_PAGAMENTO_NA_ENTREGA, formaCanonica, podeTrocarPagamento } = await import("@/lib/pagamento-na-entrega");
+      const { avisoDaNotaNaTrocaDePagamento, empilharEdicao } = await import("@/lib/edicao-de-pedido");
+      const valida = (FORMAS_DE_PAGAMENTO_NA_ENTREGA as readonly string[]).includes(formaInformada);
+      const mudou = formaCanonica(order.paymentMethod) !== formaInformada;
+      if (valida && mudou && podeTrocarPagamento(order as any).pode) {
+        const notaFica = avisoDaNotaNaTrocaDePagamento(order, formaInformada);
+        trocaDePagamento = {
+          paymentMethod: formaInformada,
+          // Troco é conta de dinheiro; em cartão, pix ou vale não existe.
+          changeAmount: formaInformada === "Dinheiro" ? ((order as any).changeAmount ?? null) : null,
+          ...((order as any).paymentMethods != null ? { paymentMethods: Prisma.DbNull } : {}),
+          editHistory: empilharEdicao((order as any).editHistory, {
+            quando: new Date().toISOString(),
+            quem: `Motoboy ${motoboyAtivo.name}`,
+            acao: "PAGAMENTO",
+            descricao:
+              `Pagamento: ${order.paymentMethod || "não informado"} → ${formaInformada} (informado na entrega)` +
+              (notaFica ? ` — ${notaFica.rastro}` : ""),
+            totalAntes: order.totalAmount,
+            totalDepois: order.totalAmount,
+          }),
+        };
+      }
+    }
+
+    const gravarTrocaNoPedidoJaEntregue = async () => {
+      if (apenasConferirCodigo || !Object.keys(trocaDePagamento).length) return;
+      await prisma.customerOrder.update({ where: { id: order.id }, data: trocaDePagamento as any });
+      console.log(`[Motoboy Entrega] 💳 pagamento de ${order.id} (já entregue): ${order.paymentMethod} → ${formaInformada} (${motoboyAtivo.name})`);
+    };
+
     if ((STATUS_FINALIZADOS as readonly string[]).includes(order.status)) {
+      await gravarTrocaNoPedidoJaEntregue();
       return NextResponse.json({ success: true, jaEntregue: true });
     }
     if ((STATUS_CANCELADOS as readonly string[]).includes(order.status)) {
@@ -1155,52 +1214,6 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ success: true, codigoDispensado: true });
     }
 
-    // ── O CLIENTE PAGOU DE OUTRO JEITO ──────────────────────────────────────
-    //
-    // "Tava dinheiro e pagou no débito": o entregador informa na baixa e o
-    // pedido passa a dizer a verdade. Sem isto o acerto do motoboy
-    // (api/motoboy-report) cobrava dele um dinheiro que ele não recebeu, o
-    // fechamento de caixa fechava na forma errada, e a loja consertava no
-    // caderno (dono, 17/09/2026). Só quando não é pagamento online, e só se a
-    // forma realmente mudou — confirmar "Dinheiro" num pedido em dinheiro não
-    // vira registro. O rastro fica em editHistory, com o nome do entregador.
-    //
-    // A NFC-e normalmente já saiu quando o pedido saiu (lib/fiscal-momento),
-    // com a forma de antes — e fica assim: a troca vale para o caixa e o
-    // acerto, não para a nota, e o rastro diz com que forma a nota ficou
-    // (avisoDaNotaNaTrocaDePagamento). Travar a troca por causa da nota
-    // deixava o "Débito (Cobrar na Entrega)" pago em dinheiro com a forma
-    // errada para sempre. Pedido que foi para a rua sem nota: a emissão logo
-    // abaixo lê o pedido DEPOIS desta escrita e já sai na forma certa.
-    const formaInformada = String(pagamento || "").trim();
-    let trocaDePagamento: Record<string, unknown> = {};
-    if (formaInformada) {
-      const { FORMAS_DE_PAGAMENTO_NA_ENTREGA, formaCanonica, podeTrocarPagamento } = await import("@/lib/pagamento-na-entrega");
-      const { avisoDaNotaNaTrocaDePagamento, empilharEdicao } = await import("@/lib/edicao-de-pedido");
-      const valida = (FORMAS_DE_PAGAMENTO_NA_ENTREGA as readonly string[]).includes(formaInformada);
-      const mudou = formaCanonica(order.paymentMethod) !== formaInformada;
-      if (valida && mudou && podeTrocarPagamento(order as any).pode) {
-        const notaFica = avisoDaNotaNaTrocaDePagamento(order, formaInformada);
-        trocaDePagamento = {
-          paymentMethod: formaInformada,
-          // Troco é conta de dinheiro; em cartão, pix ou vale não existe.
-          changeAmount: formaInformada === "Dinheiro" ? ((order as any).changeAmount ?? null) : null,
-          ...((order as any).paymentMethods != null ? { paymentMethods: Prisma.DbNull } : {}),
-          editHistory: empilharEdicao((order as any).editHistory, {
-            quando: new Date().toISOString(),
-            quem: `Motoboy ${motoboyAtivo.name}`,
-            acao: "PAGAMENTO",
-            descricao:
-              `Pagamento: ${order.paymentMethod || "não informado"} → ${formaInformada} (informado na entrega)` +
-              (notaFica ? ` — ${notaFica.rastro}` : ""),
-            totalAntes: order.totalAmount,
-            totalDepois: order.totalAmount,
-          }),
-        };
-        console.log(`[Motoboy Entrega] 💳 pagamento de ${order.id}: ${order.paymentMethod} → ${formaInformada} (${motoboyAtivo.name})`);
-      }
-    }
-
     // ── ESCRITA ATÔMICA: o Postgres decide a corrida ────────────────────────
     //
     // Dois toques rápidos no botão (ou o mesmo request duplicado pelo 4G)
@@ -1240,6 +1253,9 @@ export async function PATCH(req: NextRequest) {
         ...(infoCodigo ? { ifoodDropCodeInfo: { ...infoCodigo, quando: new Date().toISOString() } } : {}),
       },
     });
+    if (escrita.count === 1 && Object.keys(trocaDePagamento).length) {
+      console.log(`[Motoboy Entrega] 💳 pagamento de ${order.id}: ${order.paymentMethod} → ${formaInformada} (${motoboyAtivo.name})`);
+    }
     if (escrita.count === 0) {
       const agora = await prisma.customerOrder.findUnique({
         where: { id: order.id },
@@ -1248,6 +1264,7 @@ export async function PATCH(req: NextRequest) {
       if (agora && (STATUS_CANCELADOS as readonly string[]).includes(agora.status)) {
         return NextResponse.json({ error: "Este pedido foi CANCELADO — não entregue. Confirme com a loja." }, { status: 409 });
       }
+      await gravarTrocaNoPedidoJaEntregue();
       return NextResponse.json({ success: true, jaEntregue: true });
     }
 
