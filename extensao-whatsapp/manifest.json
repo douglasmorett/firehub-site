@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "FireHub — Balcão no WhatsApp",
+  "version": "1.0.0",
+  "description": "Abre o balcão do FireHub ao lado do WhatsApp Web: monte o pedido olhando a conversa, com o nome e o telefone do cliente já preenchidos.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Abrir o balcão do FireHub",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "permissions": ["sidePanel", "storage"],
+  "host_permissions": [
+    "https://web.whatsapp.com/*",
+    "https://firehubfood.com.br/*",
+    "https://www.firehubfood.com.br/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "js": ["whatsapp.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "opcoes.html"
+}

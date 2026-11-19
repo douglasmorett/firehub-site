@@ -57,6 +57,10 @@ const TELAS: Array<{ prefixo: string; abre: Array<Permissao> | typeof LIVRE }> =
   { prefixo: "/store/painel-de-senhas", abre: ["kds", "orders", "venda_presencial", "minha_loja"] },
   { prefixo: "/store/venda-presencial", abre: ["venda_presencial"] },
   { prefixo: "/store/mesas", abre: ["venda_presencial"] },
+  // A tela grande do WhatsApp: as conversas pedem o painel de pedidos
+  // (api/chatbot/conversas) e o balcão pede o Balcão — qualquer um abre a tela,
+  // e cada metade avisa sozinha quando falta a outra caixinha.
+  { prefixo: "/store/atendimento", abre: ["orders", "venda_presencial"] },
   { prefixo: "/store/caixa", abre: ["venda_presencial"] },
   { prefixo: "/store/roteirizacao", abre: ["motoboys"] },
   { prefixo: "/store/motoboys", abre: ["motoboys"] },
