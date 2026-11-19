@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { arquivosDoTutorial, duracaoEmMinutos, type Tutorial } from "@/lib/tutoriais";
 import { tutoriaisEnviados } from "@/lib/tutoriais-no-servidor";
@@ -18,7 +19,7 @@ export function Topo() {
       <div className={css.topoMiolo}>
         <Link href="/" className={css.marca}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/firehub-flame.png" alt="" width={26} height={26} />
+          <img src="/firehub-flame-96.webp" alt="" width={26} height={26} />
           FireHub
         </Link>
         <Link href="/tutoriais" className={css.topoLink}>
@@ -32,8 +33,17 @@ export function Topo() {
 export function CartaoDoTutorial({ tutorial }: { tutorial: Tutorial }) {
   return (
     <Link href={`/tutoriais/${tutorial.id}`} className={css.cartao}>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img className={css.capa} src={arquivosDoTutorial(tutorial).capa} alt="" loading="lazy" />
+      {/* Pelo otimizador do Next: a capa.jpg (~100–280 KB) vira WebP do tamanho
+          do cartão. Capa em endereço externo vai sem otimizar (sem remotePatterns). */}
+      <Image
+        className={css.capa}
+        src={arquivosDoTutorial(tutorial).capa}
+        alt={`Capa do vídeo: ${tutorial.titulo}`}
+        width={640}
+        height={360}
+        sizes="(max-width: 640px) 50vw, 240px"
+        unoptimized={!arquivosDoTutorial(tutorial).capa.startsWith("/")}
+      />
       <span className={css.cartaoTexto}>
         <span className={css.cartaoTitulo}>{tutorial.titulo}</span>
         <span className={css.cartaoMeta}>{duracaoEmMinutos(tutorial.duracao)}</span>

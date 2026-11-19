@@ -226,6 +226,20 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      // ── Fora da busca: painéis, login e telas de operação ─────────────────
+      //
+      // O robots.ts tira estes caminhos do rastreamento; o cabeçalho tira do
+      // ÍNDICE o que o Google achou por link de fora (ele mostrava /login e
+      // /store com o título da home). Só cabeçalho: nada muda para quem usa.
+      // `:resto*` também casa o caminho sem nada depois (/store).
+      ...[
+        "/admin/:resto*", "/store/:resto*", "/vendedor/:resto*", "/garcom/:resto*", "/kds/:resto*",
+        "/tablet/:resto*", "/tv/:resto*", "/totem/:resto*", "/embaixador/:resto*",
+        "/atendimento-lateral", "/contingencia/:resto*", "/escala/:resto*", "/e/:resto*",
+        "/material/:resto*", "/login", "/esqueci-senha", "/redefinir-senha/:resto*", "/api/:resto*",
+        "/loja/:slug/pedido/:resto*", "/loja/:slug/avaliar/:resto*", "/loja/:slug/mesa/:resto*",
+        "/loja/:slug/equipe", "/loja/:slug/motoboy",
+      ].map((source) => ({ source, headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }] })),
       {
         // A prévia do Tablet na mesa abre DENTRO da aba do painel (iframe em
         // app/store/tablet-na-mesa/EditorDaTelaDoTablet.tsx): só ela aceita

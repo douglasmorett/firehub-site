@@ -35,6 +35,28 @@ const JSON_LD = JSON.stringify({
       },
     },
     {
+      // O produto: Plano Único de 2% das vendas, mínimo R$ 100 e máximo R$ 400
+      // por mês (o mesmo calcPrice da seção de planos, abaixo).
+      "@type": "SoftwareApplication",
+      "@id": "https://firehubfood.com.br/#sistema",
+      name: "FireHub",
+      url: "https://firehubfood.com.br",
+      applicationCategory: "BusinessApplication",
+      applicationSubCategory: "Sistema para restaurante e delivery",
+      operatingSystem: "Web, Android, iOS",
+      inLanguage: "pt-BR",
+      image: "https://firehubfood.com.br/og/firehub-og.png",
+      description: "Sistema para restaurante e delivery: cardápio digital, gestão de pedidos, robô de WhatsApp com IA, integração com iFood e 99Food, PDV, mesas, app do entregador, NFC-e e financeiro. Teste grátis por 15 dias.",
+      publisher: { "@id": "https://firehubfood.com.br/#empresa" },
+      offers: {
+        "@type": "AggregateOffer",
+        priceCurrency: "BRL",
+        lowPrice: "100",
+        highPrice: "400",
+        description: "Plano Único: 2% do faturamento que passa pelo FireHub, mínimo de R$ 100 e máximo de R$ 400 por mês. 15 dias grátis.",
+      },
+    },
+    {
       "@type": "WebSite",
       "@id": "https://firehubfood.com.br/#site",
       name: "FireHub",
@@ -119,6 +141,13 @@ const FAQ = [
   { q: "E se a internet da loja cair?", a: "Com o Modo Contingência ativado, o computador do caixa assume em menos de 1 minuto: você continua lançando pedido, abrindo mesa e imprimindo. Quando a conexão volta, tudo sobe sozinho para o sistema, sem duplicar. Está incluído no plano, sem custo a mais." },
   { q: "Existe multa para cancelar?", a: "Absolutamente não. Você cancela quando quiser, sem burocracia, sem multa, sem surpresas." },
 ];
+
+// As perguntas da seção FAQ, para o Google (mesmo texto que aparece na página).
+const JSON_LD_FAQ = JSON.stringify({
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: FAQ.map((f) => ({ "@type": "Question", name: f.q, acceptedAnswer: { "@type": "Answer", text: f.a } })),
+});
 
 // ── Pedidos do quadro do topo. Exemplo ilustrativo: nenhum é de loja real. ──
 const PEDIDOS_DEMO = [
@@ -537,12 +566,13 @@ export default function Home() {
   return (
     <main>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON_LD }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON_LD_FAQ }} />
       <div className="lp-progresso" ref={progresso} />
 
       {/* NAV */}
       <nav className={`nav ${scrolled ? "scrolled" : ""}`}>
         <a href="/" className="nav-logo">
-          <img src="/firehub-flame.png" alt="FireHub" />
+          <img src="/firehub-flame-96.webp" alt="FireHub" width={36} height={36} />
           <div>
             <div className="nav-logo-text"><span className="fire">FIRE</span><span className="hub">HUB</span></div>
             <div className="nav-sub">Sistema para restaurantes</div>
@@ -778,14 +808,14 @@ export default function Home() {
           <div className="lp-marquee-trilho">
             {[0, 1].map((rep) => (
               <div key={rep} style={{ display: "flex", gap: "4.5rem", alignItems: "center" }} aria-hidden={rep === 1}>
-                <div className="lp-logo"><img src="/images/logos/ifood.png" alt="iFood" /></div>
-                <div className="lp-logo"><img src="/images/logos/99.svg" alt="99Food" style={{ maxHeight: 36 }} /></div>
-                <div className="lp-logo"><img src="/images/logos/keeta.png" alt="Keeta" style={{ maxHeight: 34 }} /></div>
-                <div className="lp-logo"><img src="/images/logos/jotaja.png" alt="Jotajá" /></div>
-                <div className="lp-logo"><img src="/images/logos/brendi.webp" alt="Brendi" style={{ maxHeight: 34 }} /></div>
-                <div className="lp-logo"><img src="/images/logos/anotaai-logo.svg" alt="Anota AI" style={{ maxHeight: 34 }} /></div>
+                <div className="lp-logo"><img src="/images/logos/ifood-88.webp" alt="iFood" width={83} height={44} loading="lazy" decoding="async" /></div>
+                <div className="lp-logo"><img src="/images/logos/99.svg" alt="99Food" style={{ maxHeight: 36 }} width={36} height={36} loading="lazy" decoding="async" /></div>
+                <div className="lp-logo"><img src="/images/logos/keeta.png" alt="Keeta" style={{ maxHeight: 34 }} width={64} height={34} loading="lazy" decoding="async" /></div>
+                <div className="lp-logo"><img src="/images/logos/jotaja-88.webp" alt="Jotajá" width={44} height={44} loading="lazy" decoding="async" /></div>
+                <div className="lp-logo"><img src="/images/logos/brendi-68.webp" alt="Brendi" style={{ maxHeight: 34 }} width={130} height={34} loading="lazy" decoding="async" /></div>
+                <div className="lp-logo"><img src="/images/logos/anotaai-logo.svg" alt="Anota AI" style={{ maxHeight: 34 }} loading="lazy" decoding="async" /></div>
                 <div className="lp-logo lp-logo-txt" style={{ color: "#7C3AED" }}>wabiz</div>
-                <div className="lp-logo"><img src="/images/logos/foody.png" alt="Foody Delivery" style={{ maxHeight: 40 }} /></div>
+                <div className="lp-logo"><img src="/images/logos/foody-80.webp" alt="Foody Delivery" style={{ maxHeight: 40 }} width={120} height={40} loading="lazy" decoding="async" /></div>
               </div>
             ))}
           </div>
@@ -1171,6 +1201,9 @@ export default function Home() {
                   fica no rodapé de propósito, para não competir com o funil
                   do sistema lá em cima. */}
               <a href="/prazos">🔥 FireHub Prazos (extensão)</a>
+              <a href="/tutoriais">Tutoriais em vídeo</a>
+              <a href="/termos">Termos de Uso</a>
+              <a href="/privacidade">Política de Privacidade</a>
             </div>
             <div className="footer-col">
               <h3>Contato</h3>
@@ -1181,7 +1214,7 @@ export default function Home() {
           <div className="footer-bottom">
             <p>© {new Date().getFullYear()} FireHub Food Technology. Todos os direitos reservados.</p>
             <div className="footer-social">
-              <a href="https://instagram.com/firehubfood" target="_blank" rel="noopener">📸</a>
+              <a href="https://instagram.com/firehubfood" target="_blank" rel="noopener" aria-label="Instagram do FireHub">📸</a>
             </div>
           </div>
         </div>

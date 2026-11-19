@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
+import { metadataDaPagina } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "Política de Privacidade — App FireHub",
-  description:
-    "Quais dados o app FireHub (loja, garçom e tablet da mesa) usa, para quê, onde ficam guardados e como apagá-los.",
-};
+export const metadata: Metadata = metadataDaPagina({
+  titulo: "Política de Privacidade — App FireHub",
+  descricao: "Política de Privacidade do app FireHub (loja, garçom e tablet da mesa): quais dados o app usa, para quê, onde ficam guardados e como apagá-los.",
+  caminho: "/privacidade-app-firehub",
+});
 
 /**
  * Política de privacidade do App FireHub (apps/firehub, br.com.firehub.app).

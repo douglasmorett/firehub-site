@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import { IMAGEM_OG_PADRAO } from "@/lib/seo";
 
 export const metadata: Metadata = {
   title: "FireHub e FireCheck — links",
-  description: "FireHub: sistema completo para restaurante e delivery. FireCheck: checklist e ponto com IA para qualquer equipe.",
+  description: "Links oficiais do FireHub, sistema completo para restaurante e delivery, e do FireCheck, checklist e ponto com IA para qualquer equipe.",
+  alternates: { canonical: "/links" },
   openGraph: {
     title: "FireHub e FireCheck",
     description: "Sistema para restaurante e checklist com IA para qualquer equipe. Teste grátis.",
@@ -10,7 +12,9 @@ export const metadata: Metadata = {
     siteName: "FireHub",
     locale: "pt_BR",
     type: "website",
+    images: [IMAGEM_OG_PADRAO],
   },
+  twitter: { card: "summary_large_image", images: [IMAGEM_OG_PADRAO.url] },
 };
 
 /**

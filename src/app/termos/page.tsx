@@ -1,10 +1,12 @@
 import { Metadata } from "next";
+import { metadataDaPagina } from "@/lib/seo";
 import TextoDosTermos from "@/components/termos/TextoDosTermos";
 
-export const metadata: Metadata = {
-  title: "Termos de Uso — FireHub Food",
-  description: "Termos de Uso e Condições Gerais do FireHub: cobrança, funcionamento, responsabilidades e dados.",
-};
+export const metadata: Metadata = metadataDaPagina({
+  titulo: "Termos de Uso — FireHub Food",
+  descricao: "Termos de Uso e Condições Gerais do FireHub, sistema para restaurante e delivery: cobrança, funcionamento, responsabilidades, dados e cancelamento.",
+  caminho: "/termos",
+});
 
 /**
  * O texto mora em components/termos/TextoDosTermos.tsx — o mesmo que o painel

@@ -1,23 +1,17 @@
 import type { Metadata } from "next";
 import { todosOsTutoriais } from "@/lib/tutoriais";
+import { SITE, jsonLd, metadataDaPagina, trilha } from "@/lib/seo";
 import { Ajuda, CartaoDoTutorial, Rodape, Topo, enviadosAgora } from "./partes";
 import css from "./tutoriais.module.css";
 
 // Lê o disco a cada visita: o vídeo aparece aqui assim que é enviado ao servidor.
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "Tutoriais em vídeo — FireHub",
-  description: "Vídeos curtos, gravados no painel do FireHub, mostrando como usar cada tela: pedidos, cozinha, mesas, balcão, cardápio, entrega, impressoras e mais.",
-  openGraph: {
-    title: "Tutoriais em vídeo do FireHub",
-    description: "Como usar cada tela do painel, em vídeos curtos.",
-    url: "/tutoriais",
-    siteName: "FireHub",
-    locale: "pt_BR",
-    type: "website",
-  },
-};
+export const metadata: Metadata = metadataDaPagina({
+  titulo: "Tutoriais em vídeo do sistema FireHub",
+  descricao: "Vídeos curtos, gravados no painel do FireHub, mostrando como usar cada tela: pedidos, cozinha, mesas, balcão, cardápio, entrega, impressoras e mais.",
+  caminho: "/tutoriais",
+});
 
 /**
  * TODOS OS TUTORIAIS, SEM LOGIN — a lista que o robô do atendimento manda
@@ -26,8 +20,17 @@ export const metadata: Metadata = {
  */
 export default function TutoriaisEmVideo() {
   const grupos = todosOsTutoriais(enviadosAgora());
+  const ids = [...new Set(grupos.flatMap((g) => g.tutoriais.map((t) => t.id)))];
+  const lista = {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    name: "Tutoriais em vídeo do FireHub",
+    itemListElement: ids.map((id, i) => ({ "@type": "ListItem", position: i + 1, url: `${SITE}/tutoriais/${id}` })),
+  };
   return (
     <div className={css.fundo}>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(trilha([["Início", "/"], ["Tutoriais", "/tutoriais"]])) }} />
+      {ids.length > 0 && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(lista) }} />}
       <Topo />
       <main className={css.pagina}>
         <h1 className={css.titulo}>Tutoriais em vídeo</h1>

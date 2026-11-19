@@ -16,9 +16,10 @@ import MedidorDaPagina from "./MedidorDaPagina";
 import { FluxoDoPrazo, EmailDeAcesso, FichaDaLoja, MarcarColuna, AbasAbertas } from "./Ilustracoes";
 
 export const metadata: Metadata = {
-  title: "FireHub Prazos — o prazo do iFood muda sozinho quando a cozinha enche",
+  title: "FireHub Prazos: o prazo do iFood muda sozinho",
+  alternates: { canonical: "/prazos" },
   description:
-    "Extensão para o Chrome que olha a fila do seu painel de pedidos e escreve o prazo certo no iFood e o tempo de preparo no 99Food. R$ 29,90 por mês, 7 dias de garantia.",
+    "Extensão para o Chrome que olha a fila do painel de pedidos e escreve o prazo certo no iFood e o preparo no 99Food. R$ 29,90 por mês, 7 dias de garantia.",
   openGraph: {
     title: "O prazo do seu iFood muda sozinho quando a cozinha enche",
     description: "A extensão olha a fila da sua cozinha e escreve o prazo certo no iFood e no 99Food. Você deixa o portal aberto e ela faz o resto.",
