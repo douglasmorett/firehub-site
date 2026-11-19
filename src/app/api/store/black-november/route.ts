@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { Variante } from "@/lib/black-november";
-import { cobrarAnual, ErroDaBlackNovember, marcarVisto, previaDaBlackNovember, situacaoDaBlackNovember } from "@/lib/black-november-no-banco";
+import { cobrarAnual, ErroDaBlackNovember, registrarNaJanela, previaDaBlackNovember, situacaoDaBlackNovember } from "@/lib/black-november-no-banco";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -13,7 +13,8 @@ export const maxDuration = 30;
  * (components/customer/BlackNovember.tsx, regra em lib/black-november.ts).
  *
  * GET: a janela aparece? e com qual copy (teto/fixo).
- * POST { acao: "visto" }: fechou — grava no servidor, vale em todo aparelho.
+ * POST { acao: "exibiu" | "fechou" | "nao-ver-mais" }: a janela abriu (conta
+ *   o dia: no máximo 1 vez por dia), fechou por agora, ou não quer ver mais.
  * POST { acao: "cobrar", forma: "cartao" | "pix" }: gera a cobrança no Asaas
  *   do FireHub e devolve o invoiceUrl.
  *
@@ -55,13 +56,13 @@ export async function POST(req: NextRequest) {
   }
   const variante = variantePedida(corpo?.variante ?? null);
 
-  if (corpo?.acao === "visto") {
-    await marcarVisto(loja.id, "fechou", variante);
+  if (corpo?.acao === "exibiu" || corpo?.acao === "fechou" || corpo?.acao === "nao-ver-mais") {
+    await registrarNaJanela(loja.id, corpo.acao, variante);
     return NextResponse.json({ ok: true });
   }
 
   if (corpo?.acao === "cobrar" && (corpo.forma === "cartao" || corpo.forma === "pix")) {
-    await marcarVisto(loja.id, corpo.forma, variante);
+    await registrarNaJanela(loja.id, corpo.forma, variante);
     try {
       return NextResponse.json({ ok: true, ...(await cobrarAnual(loja.id, corpo.forma)) });
     } catch (err: any) {

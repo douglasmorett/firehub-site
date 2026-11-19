@@ -3,7 +3,7 @@
  * conta do FireHub. A regra mora em lib/black-november.ts.
  *
  * Tudo fica em `User.onboardingData.blackNovember2026` (Json que já existe,
- * sem coluna nova): vistoEm, a variante mostrada, as cobranças geradas e o
+ * sem coluna nova): exibições (1 por dia), "Não ver mais", a variante, as cobranças e o
  * anual pago. A escrita troca SÓ essa chave (`||` do jsonb), para não apagar
  * os outros campos do onboardingData, e é serializada por loja com um
  * advisory lock — o cartão em 12x manda um webhook por parcela, ao mesmo tempo.
@@ -16,8 +16,8 @@ import { getAsaasKey } from "@/lib/asaas";
 import { lojaIsenta, vendasQueContam, getCurrentYearMonth } from "@/lib/billing";
 import {
   aplicarPagamento, CHAVE_DA_BLACK_NOVEMBER, corpoDaCobranca, FIM_DA_BLACK_NOVEMBER, lerEstado, lojaDaReferencia,
-  quemVe, VALOR_DO_ANUAL, varianteDaLoja,
-  type CobrancaDaBlackNovember, type EstadoDaBlackNovember, type Forma, type Variante,
+  quemVe, registrarEvento, VALOR_DO_ANUAL, varianteDaLoja,
+  type CobrancaDaBlackNovember, type EstadoDaBlackNovember, type EventoDaJanela, type Forma, type Variante,
 } from "@/lib/black-november";
 
 export const previaDaBlackNovember = () => process.env.PREVIEW_BLACK_NOVEMBER === "1";
@@ -84,10 +84,9 @@ export async function varianteDaLojaNoBanco(lojaId: string, fuso?: string | null
   return varianteDaLoja({ mesPassado: passado?.totalSales ?? 0, ultimos30Dias });
 }
 
-/** Fechou a janela (X, Esc, fora) ou clicou: não volta em aparelho nenhum. */
-export async function marcarVisto(lojaId: string, saida: "fechou" | Forma, variante: Variante | null) {
-  return gravarEstado(lojaId, (e) => e.vistoEm ? (e.saida === "fechou" && saida !== "fechou" ? { ...e, saida } : null)
-    : { ...e, vistoEm: new Date().toISOString(), saida, variante });
+/** Abriu (conta o dia), fechou, "Não ver mais" ou clicou para pagar — vale em todo aparelho. */
+export async function registrarNaJanela(lojaId: string, evento: EventoDaJanela, variante: Variante | null) {
+  return gravarEstado(lojaId, (e) => registrarEvento(e, evento, variante, new Date()));
 }
 
 // ── ASAAS DA CONTA DO FIREHUB ───────────────────────────────────────────────

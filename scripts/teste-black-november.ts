@@ -4,13 +4,14 @@
  *
  *   npx tsx scripts/teste-black-november.ts
  *
- * Regra do Douglas (19/11/2026): todas as lojas, uma vez, só o dono; fora
+ * Regra do Douglas (19/11/2026): todas as lojas, no máximo 1 vez por dia até
+ * "Não ver mais" ou pagar, só o dono; fora
  * isentas, embaixadores, loja em onboarding, anual já pago e depois de 30/11.
  * "Economize R$ 800" só para quem vende no ritmo do teto (R$ 20 mil/mês).
  */
 import {
   aplicarPagamento, anualCobreOMes, CHAVE_DA_BLACK_NOVEMBER, corpoDaCobranca, ECONOMIA_NO_TETO, lojaDaReferencia, mesesDoAnual,
-  quemVe, temAnualPago, VALOR_DA_PARCELA, varianteDaLoja, vencimentoDaCobranca,
+  quemVe, registrarEvento, temAnualPago, VALOR_DA_PARCELA, varianteDaLoja, vencimentoDaCobranca,
   type EstadoDaBlackNovember, type QuemVe,
 } from "../src/lib/black-november";
 
@@ -46,14 +47,34 @@ confere("embaixador não vê", motivo(quemVe(base({ embaixador: true }))), "emba
 confere("loja criada há 3 h (onboarding) não vê", motivo(quemVe(base({}, { createdAt: new Date(agora.getTime() - 3 * 3600_000) }))), "loja-nova");
 confere("loja com 25 h vê", motivo(quemVe(base({}, { createdAt: new Date(agora.getTime() - 25 * 3600_000) }))), "mostra");
 confere("loja sem nenhum produto no cardápio não vê", motivo(quemVe(base({ produtosNoCardapio: 0 }))), "sem-cardapio");
-confere("já viu (fechou em outro aparelho) não vê",
-  motivo(quemVe(base({}, { onboardingData: { [CHAVE_DA_BLACK_NOVEMBER]: { vistoEm: "2026-11-18T20:00:00Z", saida: "fechou" } } }))), "ja-viu");
+confere("viu ontem e fechou no X: hoje vê de novo",
+  motivo(quemVe(base({}, { onboardingData: { [CHAVE_DA_BLACK_NOVEMBER]: { vistoEm: "2026-11-18T20:00:00Z", ultimaExibicao: "2026-11-18", saida: "fechou" } } }))), "mostra");
 confere("outras chaves do onboardingData não atrapalham",
   motivo(quemVe(base({}, { onboardingData: { comoConheceu: "Instagram", tutoriaisOcultos: true } }))), "mostra");
 const comAnual = { [CHAVE_DA_BLACK_NOVEMBER]: { anual: { de: "2026-11", ate: "2027-10", pagoEm: "2026-11-05T12:00:00Z", forma: "pix", asaasPaymentId: "pay_1", valor: 4000 } } };
 confere("anual já pago não vê", motivo(quemVe(base({}, { onboardingData: comAnual }))), "anual-pago");
 confere("30/11 às 23:59 ainda vê", motivo(quemVe(base({ agora: new Date("2026-11-30T23:59:00-03:00") }))), "mostra");
 confere("01/12 à meia-noite já não vê", motivo(quemVe(base({ agora: new Date("2026-12-01T00:00:00-03:00") }))), "acabou");
+
+console.log("— 1 vez por dia até \"Não ver mais\" ou pagar");
+const comEstado = (e: EstadoDaBlackNovember | null, quando: Date) => motivo(quemVe(base({ agora: quando }, { onboardingData: { comoConheceu: "Instagram", [CHAVE_DA_BLACK_NOVEMBER]: e } })));
+const as21h = new Date("2026-11-19T21:00:00-03:00");
+const abriu = registrarEvento({}, "exibiu", "teto", as21h)!;
+const fechouNoX = registrarEvento(abriu, "fechou", "teto", new Date("2026-11-19T21:01:00-03:00"))!;
+confere("abriu às 21h: grava o dia de Brasília", [abriu.ultimaExibicao, abriu.exibicoes], ["2026-11-19", 1]);
+confere("fechou no X hoje: não volta hoje", comEstado(fechouNoX, new Date("2026-11-19T23:30:00-03:00")), "ja-viu-hoje");
+confere("…e volta amanhã", comEstado(fechouNoX, new Date("2026-11-20T08:00:00-03:00")), "mostra");
+confere("o dia vira à meia-noite de Brasília, não à do UTC (23:30 de 19/11 = 02:30Z do dia 20)", comEstado(fechouNoX, new Date("2026-11-20T02:30:00Z")), "ja-viu-hoje");
+const amanha = registrarEvento(fechouNoX, "exibiu", "teto", new Date("2026-11-20T08:00:00-03:00"))!;
+confere("abriu de novo no dia seguinte: conta 2 exibições, guarda a 1ª vez", [amanha.exibicoes, amanha.vistoEm, amanha.ultimaExibicao], [2, abriu.vistoEm, "2026-11-20"]);
+const clicouSemPagar = registrarEvento(amanha, "cartao", "teto", new Date("2026-11-20T08:01:00-03:00"))!;
+confere("clicou em Quero aproveitar e não pagou: volta no outro dia", comEstado(clicouSemPagar, new Date("2026-11-21T08:00:00-03:00")), "mostra");
+const naoQuer = registrarEvento(amanha, "nao-ver-mais", "teto", new Date("2026-11-20T08:02:00-03:00"))!;
+confere("Não ver mais: nunca mais (nem amanhã, nem dia 29)",
+  [comEstado(naoQuer, new Date("2026-11-21T08:00:00-03:00")), comEstado(naoQuer, new Date("2026-11-29T08:00:00-03:00"))], ["nao-quer-ver", "nao-quer-ver"]);
+confere("Não ver mais duas vezes não regrava", registrarEvento(naoQuer, "nao-ver-mais", null, new Date()), null);
+confere("registrar evento não apaga cobranças nem o anual", Object.keys(registrarEvento({ cobrancas: [], anual: null }, "exibiu", "fixo", as21h)!).sort(),
+  ["anual", "cobrancas", "exibicoes", "ultimaExibicao", "variante", "vistoEm"]);
 
 console.log("— Qual copy (teto × fixo)");
 confere("R$ 20 mil no mês passado = teto", varianteDaLoja({ mesPassado: 20000, ultimos30Dias: 0 }), "teto");
@@ -89,6 +110,8 @@ confere("e manda apagar o cartão pendente", r1.apagar.map((c) => c.asaasPayment
 confere("as cobranças ficam PAGA e CANCELADA", r1.estado?.cobrancas?.map((c) => c.status), ["CANCELADA", "PAGA"]);
 const r2 = aplicarPagamento(r1.estado!, { id: "pay_p1", status: "RECEIVED" }, "PAYMENT_RECEIVED", { agora: pagouEm });
 confere("webhook repetido não muda nada", [r2.resultado, r2.estado], ["SEM_MUDANCA", null]);
+confere("pagou: nunca mais aparece (nem amanhã, nem dia 30)",
+  [comEstado(r1.estado, new Date("2026-11-21T08:00:00-03:00")), comEstado(r1.estado, new Date("2026-11-30T20:00:00-03:00"))], ["anual-pago", "anual-pago"]);
 
 const c1 = aplicarPagamento(estado, { id: "pay_c1", installment: "ins_1", status: "CONFIRMED" }, "PAYMENT_CONFIRMED", { agora: pagouEm });
 const c7 = aplicarPagamento(c1.estado!, { id: "pay_c7", installment: "ins_1", status: "CONFIRMED" }, "PAYMENT_CONFIRMED", { agora: pagouEm });

@@ -16,6 +16,13 @@
  * mensalidade (lib/billing.ts, `vendasQueContam`): R$ 20 mil é onde os 2%
  * chegam nos R$ 400 (FIREHUB_PLAN.THRESHOLD).
  *
+ * ── QUANTAS VEZES APARECE (Douglas, 19/11/2026) ───────────────────────────
+ *
+ * No máximo 1 vez por dia por loja (dia de Brasília, `ultimaExibicao`), até a
+ * loja clicar em "Não ver mais" (`naoVerMais`) ou pagar o anual. Fechar no X,
+ * Esc ou clique fora fecha só por agora; clicar para pagar e não pagar também
+ * não para — volta no dia seguinte.
+ *
  * ── O ANUAL PAGO ──────────────────────────────────────────────────────────
  *
  * Fica em `User.onboardingData.blackNovember2026.anual` = { de, ate } (meses
@@ -62,9 +69,17 @@ export type CobrancaDaBlackNovember = {
   simulada?: boolean;
 };
 
+export type EventoDaJanela = "exibiu" | "fechou" | "nao-ver-mais" | Forma;
+
 export type EstadoDaBlackNovember = {
+  /** Primeira vez que a janela abriu. */
   vistoEm?: string | null;
-  /** Como saiu da janela: fechou, ou clicou para pagar. */
+  /** Dia (AAAA-MM-DD, Brasília) da última vez que abriu: no máximo 1 por dia. */
+  ultimaExibicao?: string | null;
+  exibicoes?: number;
+  /** Clicou em "Não ver mais": não volta nunca. */
+  naoVerMais?: string | null;
+  /** Como saiu da última vez: fechou, ou clicou para pagar. */
   saida?: "fechou" | "cartao" | "pix" | null;
   variante?: Variante | null;
   cobrancas?: CobrancaDaBlackNovember[];
@@ -96,6 +111,21 @@ export function somarMeses(anoMes: string, n: number): string {
 export function anoMesNoFuso(quando: Date, fuso = "America/Sao_Paulo"): string {
   const p = new Intl.DateTimeFormat("en-CA", { timeZone: fuso, year: "numeric", month: "2-digit" }).formatToParts(quando);
   return `${p.find((x) => x.type === "year")!.value}-${p.find((x) => x.type === "month")!.value}`;
+}
+
+/** "AAAA-MM-DD" no horário de Brasília. */
+export function diaEmBrasilia(quando: Date): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(quando);
+}
+
+/** O que cada evento da janela grava (null = nada muda). */
+export function registrarEvento(e: EstadoDaBlackNovember, evento: EventoDaJanela, variante: Variante | null, agora: Date): EstadoDaBlackNovember | null {
+  const quando = agora.toISOString();
+  if (evento === "exibiu") {
+    return { ...e, vistoEm: e.vistoEm || quando, ultimaExibicao: diaEmBrasilia(agora), exibicoes: (e.exibicoes || 0) + 1, variante: variante ?? e.variante ?? null };
+  }
+  if (evento === "nao-ver-mais") return e.naoVerMais ? null : { ...e, naoVerMais: quando };
+  return { ...e, saida: evento };
 }
 
 /** Os 12 meses que o anual cobre: do mês do pagamento (ou do fim do teste, se depois). */
@@ -150,7 +180,7 @@ export type QuemVe = {
 
 export type MotivoDeNaoVer =
   | "acabou" | "nao-e-o-dono" | "suporte" | "isenta" | "embaixador"
-  | "loja-nova" | "sem-cardapio" | "ja-viu" | "anual-pago";
+  | "loja-nova" | "sem-cardapio" | "nao-quer-ver" | "ja-viu-hoje" | "anual-pago";
 
 /**
  * Quem vê a janela. Ordem: o que vale para todos primeiro (a data), depois a
@@ -170,7 +200,8 @@ export function quemVe(e: QuemVe): { mostrar: true } | { mostrar: false; motivo:
   if (e.embaixador) return nao("embaixador");
   const estado = lerEstado(e.loja.onboardingData);
   if (temAnualPago(e.loja.onboardingData, anoMesNoFuso(e.agora, e.fuso))) return nao("anual-pago");
-  if (estado.vistoEm) return nao("ja-viu");
+  if (estado.naoVerMais) return nao("nao-quer-ver");
+  if (estado.ultimaExibicao && estado.ultimaExibicao >= diaEmBrasilia(e.agora)) return nao("ja-viu-hoje");
   if (e.agora.getTime() - new Date(e.loja.createdAt).getTime() < HORAS_DE_LOJA_NOVA * 3600_000) return nao("loja-nova");
   if (e.produtosNoCardapio <= 0) return nao("sem-cardapio");
   return { mostrar: true };

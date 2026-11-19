@@ -4,8 +4,10 @@
  * A janela da Black November FireHub no painel (regra: lib/black-november.ts;
  * servidor: /api/store/black-november).
  *
- * - Uma vez por loja: fechar (X, Esc, clique fora) ou clicar grava no
- *   SERVIDOR; o localStorage só poupa a consulta neste aparelho.
+ * - No máximo 1 vez por dia por loja (o servidor guarda o dia em que abriu),
+ *   até o dono clicar em "Não ver mais" ou pagar o anual. Fechar no X, Esc ou
+ *   clique fora fecha só por hoje. O localStorage só poupa a consulta neste
+ *   aparelho no mesmo dia ("sempre" depois do "Não ver mais").
  * - Nunca empilha: espera não haver nenhuma outra janela do painel aberta
  *   (role="dialog" / aria-modal — central de tutoriais, novidades, termos…)
  *   por 2 s seguidos antes de abrir. Não abre no KDS, totem e telas de TV.
@@ -21,6 +23,8 @@ type Situacao = { mostrar: boolean; variante?: Variante; emTeste?: boolean; prev
 type Resultado = { invoiceUrl: string; simulado?: boolean; corpo?: Record<string, unknown>; forma: "cartao" | "pix" };
 
 const CHAVE_LOCAL = "fh_black_november_2026_visto_";
+const hojeEmBrasilia = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+const lembrar = (usuarioId: string, valor: string) => { try { localStorage.setItem(CHAVE_LOCAL + usuarioId, valor); } catch {} };
 const SEM_ABRIR = ["/store/totem", "/store/kds", "/store/painel-de-senhas", "/store/caixa-mercado/caixa", "/store/balanca"];
 const WHATSAPP = "https://wa.me/5522981118514?text=Quero+a+Black+November+do+FireHub";
 
@@ -43,17 +47,16 @@ export default function BlackNovember({ usuarioId }: { usuarioId: string }) {
     try { pedida = new URLSearchParams(window.location.search).get("variante"); } catch {}
     if (pedida === "teto" || pedida === "fixo") forcada.current = pedida;
     try {
-      if (!forcada.current && localStorage.getItem(CHAVE_LOCAL + usuarioId) === "1") return;
+      const lembrado = localStorage.getItem(CHAVE_LOCAL + usuarioId);
+      if (!forcada.current && (lembrado === "sempre" || lembrado === hojeEmBrasilia())) return;
     } catch {}
     let vivo = true;
     fetch(`/api/store/black-november${forcada.current ? `?variante=${forcada.current}` : ""}`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((d: Situacao | null) => {
         if (!vivo || !d) return;
-        if (!d.mostrar) {
-          try { localStorage.setItem(CHAVE_LOCAL + usuarioId, "1"); } catch {}
-          return;
-        }
+        // Não é hoje: pergunta de novo amanhã (a loja nova ganha cardápio, etc.).
+        if (!d.mostrar) { lembrar(usuarioId, hojeEmBrasilia()); return; }
         setSituacao(d);
       })
       .catch(() => { /* sem rede, a janela fica para depois */ });
@@ -74,26 +77,31 @@ export default function BlackNovember({ usuarioId }: { usuarioId: string }) {
         window.clearInterval(iv);
         foco.current = document.activeElement;
         setAberto(true);
+        // Abriu: conta o dia no servidor (vale para todos os aparelhos da loja).
+        if (!situacao.previa) lembrar(usuarioId, hojeEmBrasilia());
+        fetch("/api/store/black-november", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ acao: "exibiu", variante: situacao.variante }),
+        }).catch(() => {});
       }
     }, 400);
     return () => window.clearInterval(iv);
-  }, [situacao, aberto]);
+  }, [situacao, aberto, usuarioId]);
 
   const variante: Variante = situacao?.variante === "teto" ? "teto" : "fixo";
   const previa = !!situacao?.previa;
 
-  const fechar = useCallback(() => {
+  // X, Esc e clique fora fecham só por hoje; "Não ver mais" fecha de vez.
+  const fechar = useCallback((acao: "fechou" | "nao-ver-mais" = "fechou") => {
     setAberto(false);
     setSituacao(null);
-    if (!previa) { try { localStorage.setItem(CHAVE_LOCAL + usuarioId, "1"); } catch {} }
-    if (!resultado) {
-      fetch("/api/store/black-november", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ acao: "visto", variante }),
-      }).catch(() => {});
-    }
+    if (acao === "nao-ver-mais" && !previa) lembrar(usuarioId, "sempre");
+    fetch("/api/store/black-november", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ acao, variante }),
+    }).catch(() => {});
     (foco.current as HTMLElement | null)?.focus?.();
-  }, [previa, resultado, usuarioId, variante]);
+  }, [previa, usuarioId, variante]);
 
   // Esc fecha; foco preso na janela; a página de trás não rola.
   useEffect(() => {
@@ -126,7 +134,6 @@ export default function BlackNovember({ usuarioId }: { usuarioId: string }) {
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok || !d?.invoiceUrl) throw new Error(d?.error || "Não deu para gerar a cobrança agora.");
-      if (!previa) { try { localStorage.setItem(CHAVE_LOCAL + usuarioId, "1"); } catch {} }
       if (aba && !d.simulado) aba.location.href = d.invoiceUrl;
       else aba?.close();
       setResultado({ invoiceUrl: d.invoiceUrl, simulado: d.simulado, corpo: d.corpo, forma });
@@ -145,7 +152,7 @@ export default function BlackNovember({ usuarioId }: { usuarioId: string }) {
       <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@800;900&display=swap" precedence="default" />
       <style>{ESTILO}</style>
       <div ref={janela} className="bn-janela" role="dialog" aria-modal="true" aria-labelledby="bn-titulo" aria-describedby="bn-oferta" tabIndex={-1} data-black-november>
-        <button type="button" className="bn-fechar" onClick={fechar} aria-label="Fechar">
+        <button type="button" className="bn-fechar" onClick={() => fechar()} aria-label="Fechar">
           <X size={20} strokeWidth={2.2} aria-hidden />
         </button>
 
@@ -165,19 +172,31 @@ export default function BlackNovember({ usuarioId }: { usuarioId: string }) {
           </h2>
 
           {resultado ? (
-            <Depois resultado={resultado} onFechar={fechar} />
+            <Depois resultado={resultado} onFechar={() => fechar()} />
           ) : (
             <>
               <div id="bn-oferta">
                 {variante === "teto" ? (
                   <>
-                    <p className="bn-chamada">Contrate 1 ano e economize R$&nbsp;800.</p>
-                    <p className="bn-apoio">São 2 meses grátis: 12 meses no teto de R$&nbsp;400 custariam R$&nbsp;4.800. Na Black November, o ano inteiro sai por R$&nbsp;4.000.</p>
+                    <div className="bn-destaque">
+                      <div className="bn-destaque-linha">
+                        <span className="bn-destaque-rotulo">Economize</span>
+                        <span className="bn-destaque-numero">R$&nbsp;800</span>
+                      </div>
+                      <div className="bn-destaque-sub">2 meses grátis contratando 1 ano</div>
+                    </div>
+                    <p className="bn-apoio">12 meses no teto de R$&nbsp;400 custariam R$&nbsp;4.800. Na Black November, o ano inteiro sai por R$&nbsp;4.000.</p>
                   </>
                 ) : (
                   <>
-                    <p className="bn-chamada">1 ano de FireHub por R$&nbsp;4.000.</p>
-                    <p className="bn-apoio">Venda quanto quiser: a mensalidade não sobe. O valor fica fechado pelos próximos 12 meses.</p>
+                    <div className="bn-destaque">
+                      <div className="bn-destaque-linha">
+                        <span className="bn-destaque-rotulo">1 ano por</span>
+                        <span className="bn-destaque-numero">R$&nbsp;4.000</span>
+                      </div>
+                      <div className="bn-destaque-sub">Venda quanto quiser — a mensalidade não sobe</div>
+                    </div>
+                    <p className="bn-apoio">O valor do FireHub fica fechado pelos próximos 12 meses.</p>
                   </>
                 )}
                 {situacao.emTeste && (
@@ -222,6 +241,7 @@ export default function BlackNovember({ usuarioId }: { usuarioId: string }) {
                 Oferta válida até 30/11/2026. Plano anual, sem devolução se cancelar no meio do ano.
                 O pagamento é pelo Asaas, em nome de GRUPO HAKIM LTDA, a empresa do FireHub.
               </p>
+              <button type="button" className="bn-nao-ver" onClick={() => fechar("nao-ver-mais")}>Não ver mais</button>
             </>
           )}
         </div>
@@ -365,11 +385,21 @@ const ESTILO = `
   color:var(--bn-laranja-claro); font-weight:700; letter-spacing:.02em; font-size:.74rem; white-space:nowrap}
 .bn-titulo{
   margin:18px 0 14px; font-family:"Big Shoulders Display", Inter, sans-serif; font-weight:900;
-  font-size:clamp(3rem, 7.4vw, 4.4rem); line-height:.86; letter-spacing:-.01em; text-transform:uppercase; color:var(--bn-marfim);
+  font-size:clamp(3rem, 6.6vw, 3.9rem); line-height:.86; letter-spacing:-.01em; text-transform:uppercase; color:var(--bn-marfim);
   text-wrap:balance;
 }
 .bn-titulo span{display:inline-block}
 .bn-laranja{color:var(--bn-laranja)}
+.bn-destaque{
+  margin:2px 0 12px; padding:14px 18px 14px; border-radius:16px; position:relative; overflow:hidden;
+  background:linear-gradient(135deg, rgba(255,107,26,.22), rgba(255,107,26,.06) 60%, rgba(255,107,26,.02));
+  border:1px solid rgba(255,138,61,.5);
+  box-shadow:inset 0 1px 0 rgba(255,190,140,.18), 0 12px 30px -18px rgba(255,107,26,.8);
+}
+.bn-destaque-linha{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; font-family:"Big Shoulders Display", Inter, sans-serif; text-transform:uppercase; line-height:.9}
+.bn-destaque-rotulo{font-size:1.7rem; font-weight:800; color:var(--bn-marfim); letter-spacing:.01em}
+.bn-destaque-numero{font-size:3.6rem; font-weight:900; color:var(--bn-laranja); letter-spacing:-.01em; font-variant-numeric:tabular-nums}
+.bn-destaque-sub{margin-top:6px; font-size:.98rem; font-weight:800; color:var(--bn-marfim); letter-spacing:-.01em}
 .bn-chamada{margin:0 0 8px; font-size:1.3rem; line-height:1.25; font-weight:800; letter-spacing:-.015em; color:var(--bn-marfim); text-wrap:balance}
 .bn-chamada.bn-menor{font-size:1.12rem}
 .bn-apoio{margin:0 0 6px; font-size:.92rem; line-height:1.55; color:var(--bn-texto2); max-width:48ch}
@@ -397,8 +427,10 @@ const ESTILO = `
   flex:1 1 220px; padding:0 22px; font-size:1.02rem; border:0; color:#160A03; background:var(--bn-laranja);
   box-shadow:0 10px 24px -10px rgba(255,107,26,.75), inset 0 1px 0 rgba(255,255,255,.35);
 }
-.bn-primario:hover:not(:disabled){background:var(--bn-laranja-claro); transform:translateY(-1px)}
-.bn-primario:active:not(:disabled){transform:translateY(0) scale(.985)}
+.bn-primario{animation:bn-pulso 2.4s cubic-bezier(.45,0,.55,1) 1s infinite}
+.bn-primario:hover:not(:disabled){animation:none; background:var(--bn-laranja-claro); transform:scale(1.02); box-shadow:0 0 0 5px rgba(255,107,26,.2), 0 14px 30px -10px rgba(255,107,26,.85)}
+.bn-primario:disabled,.bn-primario:focus-visible{animation:none}
+.bn-primario:active:not(:disabled){transform:scale(.985)}
 .bn-secundario{
   flex:0 1 auto; padding:0 18px; font-size:.92rem; color:var(--bn-marfim); background:transparent; border:1px solid rgba(251,244,236,.22);
 }
@@ -411,6 +443,10 @@ const ESTILO = `
 }
 .bn-fechar:hover{background:rgba(251,244,236,.12); color:var(--bn-marfim)}
 .bn-letras{margin:16px 0 0; font-size:.74rem; line-height:1.55; color:var(--bn-texto3); max-width:60ch}
+.bn-nao-ver{align-self:flex-start; margin:10px 0 0; padding:4px 0; min-height:0; background:none; border:0; cursor:pointer;
+  font-family:inherit; font-size:.76rem; font-weight:600; color:var(--bn-texto3); text-decoration:underline; text-underline-offset:3px}
+.bn-nao-ver:hover{color:var(--bn-texto2)}
+.bn-nao-ver:focus-visible{outline:2px solid var(--bn-laranja-claro); outline-offset:3px; border-radius:4px}
 .bn-erro{margin:0 0 14px; padding:10px 12px; border-radius:12px; font-size:.86rem; line-height:1.45;
   background:rgba(239,68,68,.12); border:1px solid rgba(239,68,68,.35); color:#FECACA}
 .bn-erro a{color:var(--bn-marfim); font-weight:700; text-underline-offset:3px}
@@ -426,6 +462,10 @@ const ESTILO = `
 @keyframes bn-sobe{from{opacity:0; transform:translateY(18px) scale(.98)}}
 @keyframes bn-tampa{0%{transform:translateY(0)} 45%{transform:translateY(-9px) rotate(-1.5deg)} 100%{transform:translateY(0)}}
 @keyframes bn-gira{to{transform:rotate(360deg)}}
+@keyframes bn-pulso{
+  0%,100%{transform:scale(1); box-shadow:0 10px 24px -10px rgba(255,107,26,.75), 0 0 0 0 rgba(255,107,26,0), inset 0 1px 0 rgba(255,255,255,.35)}
+  50%{transform:scale(1.04); box-shadow:0 14px 34px -10px rgba(255,107,26,.95), 0 0 0 7px rgba(255,107,26,.16), inset 0 1px 0 rgba(255,255,255,.35)}
+}
 
 @media (max-width:640px){
   .bn-fundo{align-items:flex-end; padding:0}
@@ -436,13 +476,17 @@ const ESTILO = `
   .bn-conteudo{padding:20px 20px calc(20px + env(safe-area-inset-bottom))}
   .bn-titulo{margin:14px 0 12px; font-size:3.1rem}
   .bn-chamada{font-size:1.15rem}
+  .bn-destaque{padding:12px 14px}
+  .bn-destaque-rotulo{font-size:1.45rem}
+  .bn-destaque-numero{font-size:3rem}
+  .bn-destaque-sub{font-size:.92rem}
   .bn-preco{padding:14px; margin:16px 0 14px}
   .bn-valor{font-size:1.9rem}
   .bn-primario,.bn-secundario{flex:1 1 100%}
 }
 @keyframes bn-sobe-celular{from{transform:translateY(40px); opacity:0}}
 @media (prefers-reduced-motion:reduce){
-  .bn-fundo,.bn-janela,.bn-tampa-grupo{animation:none}
+  .bn-fundo,.bn-janela,.bn-tampa-grupo,.bn-primario{animation:none}
   .bn-primario,.bn-secundario{transition:none}
 }
 `;
