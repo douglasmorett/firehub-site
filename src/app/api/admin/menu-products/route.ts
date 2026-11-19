@@ -2,12 +2,11 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { orderByCardapio, podeOrdenarProdutos } from "@/lib/menu-order";
 import { prisma } from "@/lib/prisma";
-import { Prisma } from "@prisma/client";
 import { resolveScope, canTouch } from "@/lib/escopo-do-cardapio";
 import { comboItemId, dadosDoGrupo } from "@/lib/grupo-do-combo";
 import { quantidadeDeItensNaComposicao, ERRO_COMBO_SEM_COMPOSICAO } from "@/lib/combo-e-pergunta";
 import { isDataUrl, saveDataUrl } from "@/lib/storage";
-import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo, CATEGORIAS_DE_INTEGRACAO, PREFIXOS_DE_ESPELHO, lerHorarioDoProduto, comDisponibilidadeAnotada } from "@/lib/cardapio-interno";
+import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo, CATEGORIAS_DE_INTEGRACAO, PREFIXOS_DE_ESPELHO, comDisponibilidadeAnotada } from "@/lib/cardapio-interno";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
 import { lojasDaVisao, COOKIE_DA_LOJA_ATIVA } from "@/lib/loja-ativa";
 import { aplicarPrecoNoCardapio } from "@/lib/preco-por-canal";
@@ -17,7 +16,7 @@ import { refazerMeiasDaLoja } from "@/lib/meio-a-meio-no-banco";
 import { PREFIXO_DA_MEIA } from "@/lib/meio-a-meio";
 import { esquecerPausaPeloEstoque } from "@/lib/pausa-pelo-estoque-no-banco";
 import { avisarKeetaDaPausa, avisarKeetaDoCardapio } from "@/lib/keeta/cardapio";
-import { proximoCodigoPDV } from "@/lib/espelho-de-integracao";
+import { criarComCodigoPDV, excluirProdutoDaLoja, saneiaHorario, saneiaPromocao, soColunasDoProduto } from "@/lib/produto-do-cardapio";
 import { conferirOpcoesParaAplicar } from "@/lib/preco-da-opcao-em-todas";
 
 // Escopo por loja (resolveScope/canTouch) em src/lib/escopo-do-cardapio.ts e
@@ -226,43 +225,8 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(products);
 }
 
-/**
- * PREÇO PROMOCIONAL: grava só o que é promoção de verdade.
- *
- * A regra do campo é uma só — tem que ser MENOR que o preço de venda. Vazio,
- * zero, negativo e lixo apagam a promoção (é assim que o lojista a encerra:
- * limpando o campo). Já um número MAIOR OU IGUAL ao preço de venda é recusado
- * com 400, não zerado em silêncio: a tela impede o caso, então quem chega aqui
- * assim é uma integração ou um dedo errado — e uma promoção que some sozinha é
- * pior do que um erro que explica o motivo.
- *
- * `precoAtual` é o preço já gravado, para o PUT que muda só a promoção e não
- * manda `price` no corpo.
- *
- * Devolve a mensagem do erro, ou null quando está tudo certo.
- */
-function saneiaPromocao(dados: any, precoAtual?: number | null): string | null {
-  if (!("promoPrice" in dados)) return null;
-
-  const promo = Number(dados.promoPrice);
-  if (!Number.isFinite(promo) || promo <= 0) {
-    dados.promoPrice = null;
-    return null;
-  }
-
-  const preco = Number(dados.price ?? precoAtual);
-  if (!Number.isFinite(preco) || preco <= 0) {
-    dados.promoPrice = null;
-    return null;
-  }
-
-  if (promo >= preco) {
-    return `O preço promocional (R$ ${promo.toFixed(2)}) precisa ser MENOR que o preço de venda (R$ ${preco.toFixed(2)}).`;
-  }
-
-  dados.promoPrice = promo;
-  return null;
-}
+// Promoção, horário, colunas gravadas, código PDV e exclusão:
+// lib/produto-do-cardapio.ts (o Bill grava pelos mesmos).
 
 /**
  * Impede que imagem em base64 volte a ser gravada dentro do banco.
@@ -297,39 +261,6 @@ async function normalizarImagem(rest: any) {
  * número que a tela leu antes das vendas desse meio tempo. O restante e a
  * marca de esgotado que a tela de venda recebe também não voltam ao banco.
  */
-/**
- * Horário do produto (`availableHours`): chega `{de, ate}` ou nulo e vai para
- * o banco como JSON. Nulo = o dia todo. Horário que não se lê é recusado em
- * vez de gravado: gravado, ele valeria como "o dia todo" sem ninguém saber.
- */
-function saneiaHorario(dados: any): string | null {
-  if (dados?.availableHours === undefined) return null;
-  if (dados.availableHours === null || dados.availableHours === "") {
-    dados.availableHours = null;
-    return null;
-  }
-  const horario = lerHorarioDoProduto(dados.availableHours);
-  if (!horario) return "Horário do produto: informe o início e o fim (HH:MM), diferentes um do outro.";
-  dados.availableHours = JSON.stringify(horario);
-  return null;
-}
-
-/**
- * Só colunas do próprio produto chegam ao Prisma. O corpo ia inteiro para o
- * create/update, e uma chave de relação (`franchisee`, `orderItems`,
- * `pausaPeloEstoque`...) com escrita aninhada mexia em outras tabelas: um
- * `franchisee: { update: { role: "ADMIN" } }` tornava o lojista ADMIN.
- * `id` e `franchiseeId` também saem: quem decide a loja é a sessão.
- */
-const COLUNAS_DO_PRODUTO = new Set<string>(Object.values(Prisma.MenuProductScalarFieldEnum));
-// Carimbo e vínculo do espelho (lib/espelho-de-integracao.ts) nunca vêm do corpo.
-const SO_O_SERVIDOR_GRAVA = new Set(["id", "franchiseeId", "origemIntegracao", "codigoExterno", "vinculadoA"]);
-function soColunasDoProduto(dados: any) {
-  for (const k of Object.keys(dados)) {
-    if (!COLUNAS_DO_PRODUTO.has(k) || SO_O_SERVIDOR_GRAVA.has(k)) delete dados[k];
-  }
-}
-
 function saneiaEstoque(dados: any): string | null {
   const informado = dados?.estoque;
   const pausar = dados?.estoquePausar;
@@ -404,12 +335,8 @@ export async function POST(req: NextRequest) {
 
   const { recipeItems: fichaDoOriginal, fiscalBreakdown, comboConfig, ...copiaDoOriginal } = original || { recipeItems: [] };
 
-  // Código PDV: o número que o lojista digita no marketplace para o pedido
-  // entrar ligado ao produto (lib/espelho-de-integracao.ts). Só quando o
-  // corpo não trouxe um; se dois cadastros ao mesmo tempo pegarem o mesmo
-  // número (P2002), tenta uma vez com o próximo.
-  const semCodigoPDV = rest.codigoPDV == null;
-  if (semCodigoPDV) rest.codigoPDV = await proximoCodigoPDV(franchiseeId);
+  // Código PDV (lib/produto-do-cardapio.ts): o número que o lojista digita no
+  // marketplace para o pedido entrar ligado ao produto.
   const criarProduto = () => prisma.menuProduct.create({
     data: {
       ...copiaDoOriginal,
@@ -426,14 +353,7 @@ export async function POST(req: NextRequest) {
       } : undefined
     }
   });
-  let product: Awaited<ReturnType<typeof criarProduto>>;
-  try {
-    product = await criarProduto();
-  } catch (e: any) {
-    if (!semCodigoPDV || e?.code !== "P2002") throw e;
-    rest.codigoPDV = await proximoCodigoPDV(franchiseeId);
-    product = await criarProduto();
-  }
+  const product = await criarComCodigoPDV(rest, franchiseeId, criarProduto);
 
   // A cópia entra LOGO ABAIXO do original, como o lojista espera ver. Repetir
   // o sortOrder não basta: no empate vale o nome, e "Combo Família" cairia em
@@ -661,28 +581,9 @@ export async function DELETE(req: NextRequest) {
   const lojaDoProduto = existing.franchiseeId;
   if (lojaDoProduto) after(() => avisarKeetaDoCardapio(lojaDoProduto).catch((e) => console.error("[Keeta] aviso do cardápio:", e?.message || e)));
 
-  try {
-    // 1. Remover o item dos combos DA PRÓPRIA LOJA em que ele estiver vinculado.
-    //    Antes o deleteMany era global e podia apagar o vínculo dentro do combo
-    //    de outra franquia. Se sobrar referência de fora, o delete abaixo falha
-    //    no FK e cai no soft delete — o produto some do cardápio do mesmo jeito.
-    await prisma.comboGroupItem.deleteMany({
-      where: {
-        menuProductId: productId,
-        comboGroup: { menuProduct: { franchiseeId: existing.franchiseeId } },
-      }
-    });
-
-    // 2. Excluir o produto do cardápio
-    await prisma.menuProduct.delete({ where: { id: productId } });
-    return NextResponse.json({ success: true });
-  } catch (err) {
-    // Soft delete se falhar por restrição em histórico de pedidos anteriores
-    await prisma.menuProduct.update({ where: { id: productId }, data: { active: false } });
-    // Excluído não volta sozinho quando o insumo for reposto.
-    if (existing.franchiseeId) await esquecerPausaPeloEstoque(existing.franchiseeId, [productId]);
-    return NextResponse.json({ success: true, softDeleted: true });
-  }
+  // Com pedido no histórico vira soft delete (lib/produto-do-cardapio.ts).
+  const { softDeleted } = await excluirProdutoDaLoja(existing.franchiseeId, productId);
+  return NextResponse.json(softDeleted ? { success: true, softDeleted: true } : { success: true });
 }
 
 /**

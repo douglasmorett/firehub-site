@@ -3,7 +3,8 @@ import { avisarKeetaDoCardapio } from "@/lib/keeta/cardapio";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { chaveDaCategoria, planoDeApagar, planoDeRenomear, renomearNasConfigs } from "@/lib/categoria-renomear";
+import { chaveDaCategoria, planoDeApagar, planoDeRenomear } from "@/lib/categoria-renomear";
+import { gravarRenomeioDaCategoria, produtosDaCategoria, renomearNasConfigsDaLoja } from "@/lib/categoria-no-banco";
 import { podeComoNaTela, type QuemPede } from "@/lib/permissoes-da-equipe";
 
 // ─── ESCOPO POR LOJA (isolamento multi-tenant) ──────────────────────────────
@@ -195,32 +196,9 @@ export async function PUT(req: NextRequest) {
   const plano = planoDeRenomear({ atual, nomeAntigo, nomeNovo: name, categorias });
   if (plano.erro !== undefined) return NextResponse.json({ error: plano.erro }, { status: plano.status });
 
-  const ids = await produtosDaCategoria(loja, plano.nomeAntigo);
-
-  const categoria = await prisma.$transaction(async (tx) => {
-    if (ids.length > 0) {
-      await tx.menuProduct.updateMany({ where: { id: { in: ids }, franchiseeId: loja }, data: { category: plano.nomeFinal } });
-    }
-    await renomearNasConfigsDaLoja(tx, loja, plano.nomeAntigo, plano.nomeFinal);
-
-    if (plano.juntarEm) {
-      if (plano.apagarId) await tx.menuCategory.delete({ where: { id: plano.apagarId } });
-      return tx.menuCategory.findUnique({ where: { id: plano.juntarEm } });
-    }
-    if (plano.renomearId) {
-      return tx.menuCategory.update({ where: { id: plano.renomearId }, data: { ...visual, name: plano.nomeFinal } });
-    }
-    // Virtual: nasce a linha, no lugar em que a tela já mostrava a categoria.
-    return tx.menuCategory.create({
-      data: {
-        name: plano.nomeFinal,
-        emoji: emoji || "🍽️",
-        color: color || "#64748B",
-        imageUrl: imageUrl ?? null,
-        sortOrder: typeof sortOrder === "number" ? sortOrder : categorias.length,
-        franchiseeId: loja,
-      },
-    });
+  // Produtos, configs e a linha, numa transação (lib/categoria-no-banco.ts).
+  const { categoria, ids } = await gravarRenomeioDaCategoria(loja, plano, visual, {
+    emoji, color, imageUrl, sortOrder: typeof sortOrder === "number" ? sortOrder : categorias.length,
   });
 
   return NextResponse.json({
@@ -229,33 +207,6 @@ export async function PUT(req: NextRequest) {
     removidaId: plano.apagarId,
     produtos: ids.length,
   });
-}
-
-// Ids dos produtos da loja nesta categoria. A comparação é sem maiúscula e sem
-// espaço nas pontas, como a tela agrupa — o `equals insensitive` do Prisma não
-// apara espaço, e o produto importado com "Pizzas " ficaria para trás.
-async function produtosDaCategoria(loja: string, nome: string): Promise<string[]> {
-  const produtos = await prisma.menuProduct.findMany({
-    where: { franchiseeId: loja },
-    select: { id: true, category: true },
-  });
-  const chave = chaveDaCategoria(nome);
-  return produtos.filter((p) => chaveDaCategoria(p.category) === chave).map((p) => p.id);
-}
-
-// Impressora por categoria, telas do KDS e "só na finalização" guardam a
-// categoria pelo NOME: sem isto, renomear tirava a categoria da impressora e
-// da tela da cozinha sem ninguém perceber.
-async function renomearNasConfigsDaLoja(tx: any, loja: string, antigo: string, novo: string) {
-  if (antigo.trim() === novo.trim()) return;
-  const dono = await tx.user.findUnique({
-    where: { id: loja },
-    select: { printerConfig: true, kdsScreens: true, kdsConfig: true },
-  });
-  if (!dono) return;
-  const mudou = renomearNasConfigs(dono, antigo, novo);
-  if (Object.keys(mudou).length === 0) return;
-  await tx.user.update({ where: { id: loja }, data: mudou });
 }
 
 // PATCH — reordenar categorias em lote
