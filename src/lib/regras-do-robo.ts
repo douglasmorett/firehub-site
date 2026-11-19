@@ -103,6 +103,15 @@ export type ContextoDasRegras = {
 /** Número da regra que anota pedido — para quem precisar citá-la fora daqui. */
 export const REGRA_DO_PEDIDO = 17;
 
+/**
+ * Endereço sem rua ou sem número: no interior a casa é "Sítio Coité, perto da
+ * capela", e o robô insistia em rua e número que não existem (Pizzaria
+ * Charles, Meruoca/CE, 19/11/2026). O bairro/localidade continua obrigatório
+ * na loja por bairro — é ele que dá a taxa —; só a rua e o número cedem ao
+ * ponto de referência.
+ */
+export const ENDERECO_SEM_NUMERO = `se o cliente disser que não tem rua ou número (sítio, zona rural, "s/n"), aceite a localidade/sítio com um PONTO DE REFERÊNCIA no lugar e não insista no número`;
+
 export function regrasDoRobo(ctx: ContextoDasRegras): string {
   const soReferencia = ctx.soReferencia === true;
   const pedeLocalizacao = !soReferencia && (ctx.modoDaArea === "KM" || ctx.modoDaArea === "POLIGONO");
@@ -141,7 +150,7 @@ export function regrasDoRobo(ctx: ContextoDasRegras): string {
   const pedido = ctx.anotaPedido
     ? `${REGRA_DO_PEDIDO}. ANOTAR PEDIDO PELO WHATSAPP (módulo ligado):
    - CONDUZA POR ETAPAS: aceite quantidade/categoria e mensagens separadas. Para "dois hambúrgueres", ofereça 2 ou 3 opções reais com preço; promoção só cadastrada para hoje. Pergunte quais quer, sem exigir pedido completo nem endereço cedo. Oferecido não é escolhido; "um de cada" conflitante com a quantidade exige esclarecer. Grave os itens definidos no rascunho, preservando quantidades, escolhas e observações; recalcule sem repetir resumo a cada dado.
-   - Definidos itens/escolhas obrigatórias, pergunte só o próximo dado faltante: entrega/retirada; ${soReferencia ? `na entrega, só um PONTO DE REFERÊNCIA de onde entregar ("perto da igreja, casa azul") — nunca pergunte bairro, rua, número, CEP nem localização` : `endereço com rua, número e BAIRRO (sem bairro não há taxa; com "ENDEREÇO DA ÚLTIMA ENTREGA", confirme se é o mesmo)`}; pagamento; troco se dinheiro; nome. Aproveite dados antecipados, sem reperguntar. Só falta pagamento: "Vai pagar por Pix, cartão ou dinheiro?"
+   - Definidos itens/escolhas obrigatórias, pergunte só o próximo dado faltante: entrega/retirada; ${soReferencia ? `na entrega, só um PONTO DE REFERÊNCIA de onde entregar ("perto da igreja, casa azul") — nunca pergunte bairro, rua, número, CEP nem localização` : `endereço com rua, número e BAIRRO (sem bairro não há taxa; ${ENDERECO_SEM_NUMERO}; com "ENDEREÇO DA ÚLTIMA ENTREGA", confirme se é o mesmo)`}; pagamento; troco se dinheiro; nome. Aproveite dados antecipados, sem reperguntar. Só falta pagamento: "Vai pagar por Pix, cartão ou dinheiro?"
    - RASCUNHO: toda mensagem que anota itens ou dados sem a confirmação final termina com a marca com "finalized": false:
      [[PEDIDO_IA: {"status": "CRIANDO_IA", "items": [...], "customerName": "...", "address": "...", "paymentMethod": "...", "deliveryFee": 5.00, "totalAmount": 30.00, "finalized": false}]]
    - FINALIZAÇÃO: mandou o resumo (itens, ${soReferencia ? "" : "taxa, "}total, ${soReferencia ? "ponto de referência" : "endereço"} e pagamento), perguntou "Confirma pra mim?" e o cliente confirmou ("Certo", "Sim", "Pode mandar", "OK")? Na mesma resposta vão (a) a marca
