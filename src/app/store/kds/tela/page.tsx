@@ -2988,8 +2988,32 @@ function OrderCard({
                   e a da esfiha nunca chegava à cozinha — foi a queixa da NIK
                   em 16/09/2026 ("não apareceu a observação no KDS"). Fica
                   colada no item, em destaque: quem monta precisa ler antes de
-                  montar, não depois. */}
-              {item.notes && String(item.notes).trim() && (
+                  montar, não depois.
+                  A observação que a loja mudou DEPOIS do pedido feito
+                  (lib/observacao-na-edicao.ts, Garagem Burger 19/11/2026) sai
+                  em vermelho com o selo — inclusive quando ela foi retirada —,
+                  porque o papel pendurado ainda diz a antiga. */}
+              {item.obsAlterada === true && (
+                <div
+                  style={{
+                    marginTop: 4,
+                    marginLeft: isHugeOrder ? 16 : isVeryLargeOrder ? 22 : 36,
+                    padding: "4px 10px",
+                    borderRadius: 8,
+                    background: "rgba(220,38,38,0.22)",
+                    border: "2px solid #ef4444",
+                    color: "#fecaca",
+                    fontSize: subFontSize,
+                    fontWeight: 800,
+                    lineHeight: 1.25,
+                    whiteSpace: "normal",
+                    wordBreak: "break-word",
+                  }}
+                >
+                  ⚠ OBS. ALTERADA: {String(item.notes || "").trim() || "sem observação (a anterior foi retirada)"}
+                </div>
+              )}
+              {item.obsAlterada !== true && item.notes && String(item.notes).trim() && (
                 <div
                   style={{
                     marginTop: 3,

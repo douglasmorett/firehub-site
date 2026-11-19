@@ -28,6 +28,14 @@
  *            pizzas com bacon" —, igual ou maior troca o item inteiro. Só em
  *            pedido próprio (lib/escolhas-na-edicao.ts).
  *
+ *        { observacoes: [{ itemId, notes }] }
+ *          → SÓ a observação do item ("sem mostarda"), sozinha na chamada.
+ *            Preço, quantidade e total não mudam; vale em pedido próprio e de
+ *            marketplace (o parceiro não é avisado) e passa por cima da trava
+ *            da nota fiscal (lib/edicao-de-pedido.ts, avaliarEdicaoDaObservacao).
+ *            Item que a cozinha já deu por pronto volta para o KDS
+ *            (lib/observacao-na-edicao.ts).
+ *
  *        { acrescentar: [{ menuProductId, quantity, notes, comboSelections }], pagamento }
  *          → acrescenta item. Em pedido próprio o item entra no MESMO pedido e
  *            o total sobe. Em pedido de marketplace nasce um pedido COLADO
@@ -74,6 +82,7 @@ import { precoUnitarioDoItem, pisoDoPreco } from "@/lib/preco-combo";
 import {
   avaliarEdicao,
   avaliarEdicaoDaMesa,
+  avaliarEdicaoDaObservacao,
   recalcularTotal,
   empilharEdicao,
   descontoNaEdicao,
@@ -86,6 +95,7 @@ import { descontoDoCorpo, descreverDesconto, notaDoDesconto, type DescontoManual
 import { motivoDoCorpo, MENSAGEM_SEM_MOTIVO_DO_SERVIDOR, type ItemRetirado } from "@/lib/motivo-do-cancelamento";
 import { carregarRodadaDaMesa, editarRodadaDaMesa, cancelarRodadaDaMesa } from "@/lib/edicao-na-mesa";
 import { planoDaTroca, descricaoDaTroca, type PlanoDaTroca } from "@/lib/escolhas-na-edicao";
+import { gravacaoDasObservacoes } from "@/lib/observacao-na-edicao";
 import { recusaDoPratoPesado } from "@/lib/balanca/protocolo-toledo";
 import { exigirSenhaDoGerente } from "@/lib/senha-do-gerente";
 
@@ -126,10 +136,12 @@ const CAMPOS_DO_PEDIDO = {
   fiscalInfo: true,
   // `comboSelections`: a troca de escolhas escreve no histórico como estava
   // antes ("antes: Grande; agora: Grande / Bacon extra").
-  items: { select: { id: true, quantity: true, price: true, productName: true, menuProductId: true, comboSelections: true, pesoKg: true } },
+  // `notes` e `prontoEm`: a troca de observação compara com a de hoje e
+  // devolve à cozinha o item que ela já tinha dado por pronto.
+  items: { select: { id: true, quantity: true, price: true, productName: true, menuProductId: true, comboSelections: true, pesoKg: true, notes: true, prontoEm: true } },
 } as const;
 
-async function contexto(params: Promise<{ id: string }>) {
+async function contexto(params: Promise<{ id: string }>, soObservacao = false) {
   const session = await getServerSession(authOptions).catch(() => null);
   if (!session?.user?.email) {
     return { erro: NextResponse.json({ error: "Não autorizado" }, { status: 401 }) };
@@ -164,7 +176,9 @@ async function contexto(params: Promise<{ id: string }>) {
   // de tipo, a taxa e o desconto, que leem aquela função.
   const avaliacao = order.tableSessionId
     ? avaliarEdicaoDaMesa(order as any, operador)
-    : avaliarEdicao(order as any, operador);
+    : soObservacao
+      ? avaliarEdicaoDaObservacao(order as any, operador)
+      : avaliarEdicao(order as any, operador);
   if (avaliacao.modo === "BLOQUEADO") {
     // 403 e não 400: o pedido existe, a escrita é que não é permitida. A tela
     // mostra `error` direto para o lojista, então ele já vem escrito para ele.
@@ -208,11 +222,27 @@ const semMotivo = () => NextResponse.json({ error: MENSAGEM_SEM_MOTIVO_DO_SERVID
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const body = await req.json().catch(() => ({}) as any);
+    // Só a observação: sozinha na chamada, porque é a única escrita que passa
+    // pela nota fiscal (avaliarEdicaoDaObservacao). A tela manda separado.
+    const observacoes = Array.isArray(body?.observacoes) ? body.observacoes : [];
+    if (observacoes.length > 0) {
+      const outras = ["acrescentar", "itens", "removerItemIds", "trocar", "desconto"].some(
+        (k) => Array.isArray(body?.[k]) ? body[k].length > 0 : body?.[k] != null
+      );
+      if (outras) return NextResponse.json({ error: "Salve a observação numa chamada separada." }, { status: 400 });
+      const ctx = await contexto(params, true);
+      if ("erro" in ctx) return ctx.erro;
+      if (ctx.avaliacao.modo === "MESA") {
+        return NextResponse.json({ error: "A observação de item da mesa se muda pela tela de Mesas." }, { status: 400 });
+      }
+      return await gravarObservacoes(ctx.order, ctx.operador, observacoes);
+    }
+
     const ctx = await contexto(params);
     if ("erro" in ctx) return ctx.erro;
     const { order, operador, avaliacao, lojaId } = ctx;
 
-    const body = await req.json().catch(() => ({}) as any);
     const acrescentar: Acrescimo[] = Array.isArray(body?.acrescentar) ? body.acrescentar : [];
     const itens: { itemId: string; quantity: number }[] = Array.isArray(body?.itens) ? body.itens : [];
     const removerItemIds: string[] = Array.isArray(body?.removerItemIds)
@@ -373,6 +403,35 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     console.error("[Editar Pedido DELETE]", error);
     return NextResponse.json({ error: "Erro ao cancelar o pedido" }, { status: 500 });
   }
+}
+
+// ── Só a observação do item ─────────────────────────────────────────────────
+
+/**
+ * Grava a observação nova (lib/observacao-na-edicao.ts). O total fica igual —
+ * `totalAntes` e `totalDepois` do rastro são o mesmo número — e o estoque não
+ * se refaz, porque o produto é o mesmo.
+ */
+async function gravarObservacoes(order: any, operador: any, pedidas: unknown) {
+  const gravacao = gravacaoDasObservacoes(order, { nome: nomeDoOperador(operador), id: operador.id }, pedidas);
+  if (!gravacao) return NextResponse.json({ error: "A observação é a mesma de antes." }, { status: 400 });
+  const { registro, itens, mudancas } = gravacao;
+  await prisma.$transaction(async (tx) => {
+    // Já pronto e a comida não saiu: `prontoEm` zerado, a cozinha refaz (como no remontado).
+    for (const i of itens) await tx.customerOrderItem.update({ where: { id: i.id }, data: i.data });
+    await tx.customerOrder.update({
+      where: { id: order.id },
+      data: { editHistory: empilharEdicao(order.editHistory, registro) as any },
+    });
+  });
+  console.log(`[Editar Pedido] ${order.id}: ${registro.descricao}, por ${registro.quem}`);
+  return NextResponse.json({
+    success: true,
+    totalAmount: registro.totalDepois,
+    registro,
+    soObservacao: true,
+    voltouParaACozinha: mudancas.filter((m) => m.voltaParaACozinha).length,
+  });
 }
 
 // ── Pedido próprio: tirar, mudar quantidade e acrescentar, tudo junto ───────

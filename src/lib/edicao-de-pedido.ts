@@ -641,6 +641,28 @@ export function avaliarEdicao(
 }
 
 /**
+ * Só a OBSERVAÇÃO do item ("sem mostarda"), sem mexer em sabor, quantidade ou
+ * preço — Garagem Burger, 19/11/2026: o cliente avisou depois de fechar o
+ * pedido e a loja não tinha onde escrever; a cozinha passava reto.
+ *
+ * As travas de `avaliarEdicao` valem todas (permissão, mesa → painel de Mesas,
+ * cancelado, status), MENOS a da nota fiscal: a NFC-e declara produto,
+ * quantidade e valor, e a observação não muda nenhum dos três — trocar
+ * "com mostarda" por "sem mostarda" não é vender outra coisa por baixo da
+ * nota. Sem esta exceção a loja que emite a nota na hora do pedido (a
+ * Garagem) nunca conseguiria escrever a observação. Marketplace passa no modo
+ * MARKETPLACE: só o FireHub muda, o total e o parceiro ficam como estão.
+ */
+export function avaliarEdicaoDaObservacao(
+  pedido: PedidoParaEdicao | null | undefined,
+  operador: OperadorDaEdicao
+): Avaliacao {
+  const geral = avaliarEdicao(pedido, operador);
+  if (geral.modo !== "BLOQUEADO" || !pedido || !travaDaNotaFiscal(pedido, "editar os itens")) return geral;
+  return avaliarEdicao({ ...pedido, fiscalStatus: null, fiscalInfo: null }, operador);
+}
+
+/**
  * O lápis do quadro de Pedidos num pedido de MESA (Victor, 09/10/2026: "editar
  * o pedido só clicando no lápis, igual ao do pedido do cliente").
  *
@@ -789,8 +811,11 @@ export type RegistroDeEdicao = {
    * CORTESIA: a loja deu item(ns) de graça (api/store/orders/[id]/cortesia,
    * lib/cortesia.ts): o item fica a R$ 0,00 e o total cai; `itensCortesia` diz
    * o que foi e quanto teria custado.
+   * OBSERVACAO: a loja incluiu/trocou a observação de item(ns) ("sem mostarda")
+   * depois do pedido feito (lib/observacao-na-edicao.ts); total e itens não mudam.
+   * `itensComObservacao` diz quais — é por ele que o KDS destaca o item.
    */
-  acao: "REMOVEU" | "MUDOU_QTD" | "ACRESCENTOU" | "ESCOLHAS" | "CANCELOU" | "PAGAMENTO" | "TAXA_DE_ENTREGA" | "DEVOLUCAO_FISCAL" | "TIPO" | "DESCONTO" | "REPOSICAO" | "CANCELAMENTO_PARCIAL" | "MOTOBOY" | "TRANSFERIU" | "ENTREGUE_DEPOIS_DE_CANCELADO" | "ENDERECO" | "CLIENTE" | "CORTESIA";
+  acao: "REMOVEU" | "MUDOU_QTD" | "ACRESCENTOU" | "ESCOLHAS" | "CANCELOU" | "PAGAMENTO" | "TAXA_DE_ENTREGA" | "DEVOLUCAO_FISCAL" | "TIPO" | "DESCONTO" | "REPOSICAO" | "CANCELAMENTO_PARCIAL" | "MOTOBOY" | "TRANSFERIU" | "ENTREGUE_DEPOIS_DE_CANCELADO" | "ENDERECO" | "CLIENTE" | "CORTESIA" | "OBSERVACAO";
   /** O que mudou, em texto pronto: "Coca 2L (2x → 1x)". */
   descricao: string;
   totalAntes: number;
@@ -808,6 +833,8 @@ export type RegistroDeEdicao = {
   itensRetirados?: { nome: string; quantidade: number; valor: number }[];
   /** O que foi dado de cortesia (só na ação CORTESIA), com o valor que teria custado. */
   itensCortesia?: { nome: string; quantidade: number; valor: number }[];
+  /** Os ids dos itens cuja observação mudou (só na ação OBSERVACAO). */
+  itensComObservacao?: string[];
 };
 
 /**

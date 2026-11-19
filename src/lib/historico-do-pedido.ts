@@ -119,4 +119,5 @@ export const ROTULO_DA_EDICAO: Record<string, string> = {
   ENDERECO: "Endereço",
   CLIENTE: "Cliente",
   CORTESIA: "Cortesia",
+  OBSERVACAO: "Observação do item",
 };

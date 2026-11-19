@@ -27,7 +27,7 @@ import { tempoNaEtapa, textoDoTempo, mesmosCarimbos } from "@/lib/tempo-na-etapa
 import ModalTempoDeEntrega from "./ModalTempoDeEntrega";
 import { corDoAlerta, lerConfigDoAlerta, faixasDoModo, avisoDasFaixas, type ConfigDoAlerta, type FaixasDoAlerta } from "@/lib/alerta-de-producao";
 import { carimboDeStatus } from "@/lib/order-stages";
-import { avaliarEdicaoNoPainel, podeEditarPedidos } from "@/lib/edicao-de-pedido";
+import { avaliarEdicaoNoPainel, avaliarEdicaoDaObservacao, podeEditarPedidos } from "@/lib/edicao-de-pedido";
 import { edicoesDosItens, lerHistorico, quandoFoi, ROTULO_DA_EDICAO } from "@/lib/historico-do-pedido";
 import { podeTerReposicao } from "@/lib/reposicao";
 import { navegadorSeguraAComanda, AVISO_DE_CONFIG_SALVA, RELEITURA_DA_CONFIG_MS } from "@/lib/momento-da-impressao";
@@ -1651,7 +1651,10 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 muda quantidade, e a conta da mesa acompanha. */}
             {onOpenEditModal && (() => {
               const avaliacao = avaliarEdicaoNoPainel(order, operador || {});
-              if (avaliacao.modo === "BLOQUEADO") return null;
+              // Nota emitida trava os itens, mas não a observação do item
+              // (avaliarEdicaoDaObservacao): o lápis abre só com ela.
+              const soObservacao = avaliacao.modo === "BLOQUEADO" && avaliarEdicaoDaObservacao(order, operador || {}).modo !== "BLOQUEADO";
+              if (avaliacao.modo === "BLOQUEADO" && !soObservacao) return null;
               const ehMarketplace = avaliacao.modo === "MARKETPLACE";
               const ehMesa = avaliacao.modo === "MESA";
               return (
@@ -1660,7 +1663,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                     e.stopPropagation();
                     onOpenEditModal(order.id);
                   }}
-                  title={ehMarketplace ? `Editar itens (o ${avaliacao.canal || "parceiro"} não muda)` : ehMesa ? "Editar itens da rodada (a conta da mesa acompanha)" : "Editar itens do pedido"}
+                  title={soObservacao ? "Editar a observação dos itens (a nota fiscal trava o resto)" : ehMarketplace ? `Editar itens (o ${avaliacao.canal || "parceiro"} não muda)` : ehMesa ? "Editar itens da rodada (a conta da mesa acompanha)" : "Editar itens do pedido"}
                   // Proposta B: branco com borda como os outros ícones; no
                   // marketplace o lápis fica âmbar (aviso), sem virar botão cheio.
                   style={{ ...BOTAO_ICONE, color: ehMarketplace ? "var(--fh-atencao-tinta, #B45309)" : BOTAO_ICONE.color }}
@@ -5146,7 +5149,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 // nem no dinheiro dele, é um pedido novo de R$ 0,00.
                 const podeFaltou = podeTerReposicao(order) && !(order as any).reposicao && podeEditarPedidos(operadorDaAba);
                 const abas: [typeof abaDoRecibo, string][] = [["comanda", "🧾 Comanda"]];
-                if (avaliacao.modo !== "BLOQUEADO") abas.push(["editar", "✏️ Editar itens"]);
+                // Com a nota emitida, a aba abre só com a observação do item.
+                if (avaliacao.modo !== "BLOQUEADO" || avaliarEdicaoDaObservacao(order, operadorDaAba).modo !== "BLOQUEADO") abas.push(["editar", "✏️ Editar itens"]);
                 if (podeFaltou) abas.push(["faltou", "📦 Faltou item"]);
                 if (abas.length === 1) return null;
                 return (

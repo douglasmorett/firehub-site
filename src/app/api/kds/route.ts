@@ -30,6 +30,7 @@ import { lerConfigDeAgendamento } from "@/lib/agendamento";
 import { lembrarPor } from "@/lib/cache-curto";
 import { lerEnquantoNadaMuda } from "@/lib/novidade-da-loja";
 import { COOKIE_DA_LOJA_ATIVA, lojasDaVisao } from "@/lib/loja-ativa";
+import { itensComObservacaoAlterada, obsAlteradaEsperandoACozinha } from "@/lib/observacao-na-edicao";
 
 /**
  * Quem é o e-mail e a config da loja (agendamento, telas, regras do KDS) ficam
@@ -288,6 +289,11 @@ async function kdsDeVerdade(req: NextRequest) {
           // O pronto das escolhas de combo que outra tela faz mora aqui
           // (lib/kds-telas.ts, linhasDeOpcaoDaTela).
           kdsBaixas: true,
+          // A observação trocada depois do pedido feito (lib/observacao-na-edicao.ts):
+          // o rastro diz QUAIS itens ganham o selo, e a hora do fim diz se o
+          // pedido já encerrado volta para a produção. Não vai para a TV.
+          editHistory: true,
+          kdsFinishedAt: true,
           createdAt: true,
           updatedAt: true,
           items: {
@@ -413,6 +419,35 @@ async function kdsDeVerdade(req: NextRequest) {
       paraATela = juntarPedidosDaProducao(orders, adiantados);
     }
 
+    // ── A OBSERVAÇÃO QUE MUDOU DEPOIS DA BAIXA ───────────────────────────
+    //
+    // "Sem mostarda" avisado depois de a cozinha dar o item por pronto: a
+    // edição zera o `prontoEm` do item (lib/observacao-na-edicao.ts) e não mexe
+    // no `kdsStage` — o pronto do pedido já foi para o parceiro e é o que a
+    // roteirização lê. Então o pedido já encerrado na cozinha (e, na produção
+    // sem `tela`, também o que está na finalização) é buscado à parte, só
+    // quando tem item com observação nova esperando. Falhou: fica como era.
+    if (stage === "production") {
+      const comObservacaoNova = await withRetry(
+        () =>
+          buscarPedidos(
+            {
+              franchiseeId: { in: userStoreIds },
+              status: where.status,
+              createdAt: { gte: new Date(Date.now() - ADIANTADO_AINDA_NA_PRODUCAO_MS) },
+              kdsStage: { in: minha ? ["FINISHED"] : ["FINISHING", "FINISHED"] },
+              editHistory: { array_contains: [{ acao: "OBSERVACAO" }] },
+              items: { some: { prontoEm: null } },
+            },
+            [{ createdAt: "desc" }],
+          ),
+        1,
+        300,
+      ).catch(() => [] as typeof orders);
+      const voltam = comObservacaoNova.filter((o) => obsAlteradaEsperandoACozinha(o));
+      if (voltam.length > 0) paraATela = juntarPedidosDaProducao(paraATela, voltam);
+    }
+
     // ── A CATEGORIA REAL DO ITEM DE PLATAFORMA ───────────────────────────
     //
     // O item do iFood aponta para o espelho `ifood-*`, cuja categoria é
@@ -476,8 +511,15 @@ async function kdsDeVerdade(req: NextRequest) {
     // ordem em que chegou nela (a última baixa).
     visiveis = ordenarPelaPrioridade(visiveis, regrasDaLoja, stage, telasDaLoja);
     visiveis = visiveis.map((o) => {
-      const nomeDaLoja = lojaNoCartao(nomesDasLojas, o);
-      return nomeDaLoja ? { ...o, nomeDaLoja } : o;
+      // O selo "⚠ OBS. ALTERADA" vai no item; o rastro inteiro fica no servidor.
+      const { editHistory, ...pedido } = o;
+      const alteradas = itensComObservacaoAlterada(editHistory);
+      const comSelo =
+        alteradas.size > 0
+          ? { ...pedido, items: (pedido.items || []).map((i: any) => (alteradas.has(i.id) ? { ...i, obsAlterada: true } : i)) }
+          : pedido;
+      const nomeDaLoja = lojaNoCartao(nomesDasLojas, comSelo);
+      return nomeDaLoja ? { ...comSelo, nomeDaLoja } : comSelo;
     });
 
     return NextResponse.json(visiveis, {

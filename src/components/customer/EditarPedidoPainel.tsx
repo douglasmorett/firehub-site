@@ -33,6 +33,11 @@
  *     acha pelo nome do adicional. Lapastine, 17/10/2026: o adicional não
  *     aparecia na busca, e o desvio (pizza nova + baixar a antiga) travava
  *     no motivo com o botão cinza; o lojista refez o pedido e duplicou.
+ *   • Todo item ganha "Incluir/Alterar observação" ("sem mostarda"): só o
+ *     texto do item, sem preço nem motivo, e o KDS mostra o item com o selo
+ *     "⚠ OBS. ALTERADA" (lib/observacao-na-edicao.ts). Vale no marketplace e no
+ *     pedido com NFC-e emitida — aí a aba abre SÓ com a observação, porque a
+ *     nota trava o resto (avaliarEdicaoDaObservacao). Garagem Burger, 19/11/2026.
  *   • Rodada de MESA aberta (lápis do card de mesa, 09/10/2026): tira item e
  *     muda quantidade, pela regra da tela de Mesas (lib/edicao-na-mesa.ts) —
  *     a conta da mesa soma as rodadas e acompanha. Sem "Acrescentar" (item
@@ -45,7 +50,8 @@
  */
 
 import { useState, useMemo, useEffect, useRef } from "react";
-import { avaliarEdicaoNoPainel, contaDoDescontoDaEdicao, descontoNaEdicao, type ModoDeEdicao } from "@/lib/edicao-de-pedido";
+import { avaliarEdicaoNoPainel, avaliarEdicaoDaObservacao, contaDoDescontoDaEdicao, descontoNaEdicao, type ModoDeEdicao } from "@/lib/edicao-de-pedido";
+import { limparObservacao, LIMITE_DA_OBSERVACAO } from "@/lib/observacao-na-edicao";
 import { valorDoAcrescimoGravado } from "@/lib/acrescimo-no-credito";
 import { MOTIVOS_COMUNS, type DescontoManual, type TipoDeDesconto } from "@/lib/desconto-manual";
 import { precoMinimoDoProduto, precoVariaPorEscolha, precoUnitarioDoItem, pisoDoPreco } from "@/lib/preco-combo";
@@ -216,6 +222,14 @@ export default function EditarPedidoPainel({
 }) {
   const avaliacao = useMemo(() => avaliarEdicaoNoPainel(pedido, operador), [pedido, operador]);
   const modo: ModoDeEdicao = avaliacao.modo;
+  // A observação do item tem régua própria: passa pela nota fiscal (não muda
+  // produto, quantidade nem valor). Mesa fica com a tela de Mesas.
+  const podeObservacao = useMemo(() => {
+    const m = avaliarEdicaoDaObservacao(pedido, operador).modo;
+    return m === "COMPLETO" || m === "MARKETPLACE";
+  }, [pedido, operador]);
+  /** A nota trava a edição, mas a observação ainda passa: a aba abre só com ela. */
+  const soObservacao = modo === "BLOQUEADO" && podeObservacao;
   // Desconto e cortesia podem pedir a senha do gerente ("Dar desconto",
   // Minha Loja → Senha do gerente): quem decide é o servidor.
   const { pedirSenha, modalDaSenha } = useSenhaDoGerente();
@@ -281,6 +295,8 @@ export default function EditarPedidoPainel({
   // Tirar item ou diminuir quantidade pede o motivo (lib/motivo-do-cancelamento.ts):
   // é o que o dono lê no fechamento do caixa.
   const [motivo, setMotivo] = useState("");
+  // Observação nova por item, no rascunho. Sem a chave = o campo nem abriu.
+  const [observacoes, setObservacoes] = useState<Record<string, string>>({});
 
   // ── CORTESIA (lib/cortesia.ts) ─────────────────────────────────────────
   // Um item (ou parte das unidades) de graça, com motivo: fica a R$ 0,00 na
@@ -440,9 +456,85 @@ export default function EditarPedidoPainel({
   const faltaMotivo = tiraAlgo && !motivoValido(motivo);
   const temTroca = Object.keys(trocas).length > 0;
   const mudouOsItens = acrescimos.length > 0 || mexeuNosOriginais || temTroca;
-  const mudouAlgo = mudouOsItens || descontoValido;
+  // Item tirado ou remontado leva a observação dele junto; não conta aqui.
+  const obsMudadas = itensOriginais.filter(
+    (i) => observacoes[i.id] !== undefined && !removidos.has(i.id) && !trocas[i.id] && limparObservacao(observacoes[i.id]) !== limparObservacao(i.notes)
+  );
+  const mudouAlgo = mudouOsItens || descontoValido || obsMudadas.length > 0;
   /** Só o desconto: a cozinha não tem o que refazer, a comanda não sai de novo. */
-  const soDesconto = descontoValido && !mudouOsItens;
+  const soDesconto = descontoValido && !mudouOsItens && obsMudadas.length === 0;
+
+  /**
+   * A observação vai numa chamada própria, ANTES do resto: é a única escrita
+   * que passa pela nota fiscal, e o servidor a recebe sozinha.
+   */
+  async function gravarObservacoes(): Promise<any | null> {
+    const res = await fetch(`/api/store/orders/${pedido.id}/itens`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ observacoes: obsMudadas.map((i) => ({ itemId: i.id, notes: limparObservacao(observacoes[i.id]) })) }),
+    });
+    const data = await res.json().catch(() => ({}) as any);
+    if (!res.ok) {
+      setErro(data?.error || "Não consegui salvar a observação.");
+      return null;
+    }
+    return data;
+  }
+
+  if (soObservacao) {
+    return (
+      <div style={{ padding: "4px 2px" }}>
+        <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "10px", padding: "10px 12px", fontSize: "0.8rem", color: "#78350F", lineHeight: 1.5, marginBottom: "12px" }}>
+          <div style={{ fontWeight: 800, marginBottom: "4px" }}>🔒 Itens e valores travados pela nota fiscal — a observação dá para mudar.</div>
+          <div>{avaliacao.motivo}</div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "12px" }}>
+          {itensOriginais.map((item) => (
+            <div key={item.id} style={{ padding: "8px 10px", borderRadius: "8px", border: "1px solid #E2E8F0", background: "#FFF" }}>
+              <div style={{ fontWeight: 600, fontSize: "0.86rem", color: "#1E293B" }}>{item.quantity}x {item.productName || "Item"}</div>
+              {escolhasEmTexto(item.comboSelections as any) && (
+                <div style={{ fontSize: "0.75rem", color: "#475569" }}>↳ {escolhasEmTexto(item.comboSelections as any)}</div>
+              )}
+              {item.notes && <div style={{ fontSize: "0.74rem", color: "#B45309", fontWeight: 600 }}>📝 {item.notes}</div>}
+              <CampoDaObservacao item={item} valor={observacoes[item.id]} aoMudar={(v) => setObservacoes((o) => mudarObservacao(o, item.id, v))} />
+            </div>
+          ))}
+        </div>
+        {erro && (
+          <div style={{ marginBottom: "10px", background: "#FEF2F2", border: "1px solid #FECACA", color: "#B71C1C", borderRadius: "8px", padding: "8px 10px", fontSize: "0.82rem" }}>{erro}</div>
+        )}
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button type="button" onClick={aoFechar} disabled={salvando} style={{ ...botaoSecundario, flex: 1, marginBottom: 0 }}>Cancelar</button>
+          <button
+            type="button"
+            disabled={salvando || obsMudadas.length === 0}
+            onClick={async () => {
+              setSalvando(true);
+              setErro("");
+              try {
+                const data = await gravarObservacoes();
+                if (data) aoSalvar({ ...data, reimprimir });
+              } catch {
+                setErro("Sem conexão — nada foi alterado.");
+              } finally {
+                setSalvando(false);
+              }
+            }}
+            style={{ flex: 2, padding: "10px", borderRadius: "10px", border: "none", background: obsMudadas.length === 0 ? "#CBD5E1" : "#C92E09", color: "#FFF", fontWeight: 800, fontSize: "0.88rem", cursor: obsMudadas.length === 0 || salvando ? "default" : "pointer", fontFamily: "inherit" }}
+          >
+            {salvando ? "Salvando..." : reimprimir ? "Salvar e reimprimir comanda" : "Salvar sem imprimir"}
+          </button>
+        </div>
+        <div style={{ marginTop: "8px", fontSize: "0.73rem", textAlign: "center" }}>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: "6px", cursor: "pointer", fontWeight: 700, color: "#334155" }}>
+            <input type="checkbox" checked={reimprimir} onChange={(e) => setReimprimir(e.target.checked)} />
+            Reimprimir a comanda
+          </label>
+        </div>
+      </div>
+    );
+  }
 
   if (modo === "BLOQUEADO") {
     return (
@@ -514,7 +606,18 @@ export default function EditarPedidoPainel({
 
     setSalvando(true);
     setErro("");
+    // A observação já gravada, se o resto falhar: o erro diz que ela ficou.
+    let daObservacao: any = null;
     try {
+      if (obsMudadas.length > 0) {
+        daObservacao = await gravarObservacoes();
+        if (!daObservacao) return;
+        setObservacoes({});
+        if (!mudouOsItens && !descontoValido) {
+          aoSalvar({ ...daObservacao, reimprimir });
+          return;
+        }
+      }
       // Tudo numa chamada só. Antes isto era um if/else e a remoção ia junto
       // com um acréscimo era descartada: quem tirasse a Coca e pedisse um
       // pastel via a tela prever um total e o pedido fechar noutro.
@@ -553,15 +656,16 @@ export default function EditarPedidoPainel({
         headers: { "Content-Type": "application/json", ...cab },
         body: JSON.stringify(corpo),
       }), pedirSenha);
-      if (!res) { setErro("Nada foi alterado — sem a senha do gerente o desconto não passa."); return; }
+      const jaFoi = daObservacao ? "A observação foi salva; o resto não. " : "";
+      if (!res) { setErro(`${jaFoi}Nada mais foi alterado — sem a senha do gerente o desconto não passa.`); return; }
       const data = await res.json().catch(() => ({}) as any);
       if (!res.ok) {
-        setErro(data?.error || "Não consegui salvar a alteração.");
+        setErro(jaFoi + (data?.error || "Não consegui salvar a alteração."));
         return;
       }
       aoSalvar({ ...data, reimprimir });
     } catch {
-      setErro("Sem conexão — nada foi alterado.");
+      setErro(daObservacao ? "A observação foi salva; o resto não (sem conexão)." : "Sem conexão — nada foi alterado.");
     } finally {
       setSalvando(false);
     }
@@ -771,6 +875,9 @@ export default function EditarPedidoPainel({
                   >
                     ✏️ Editar escolhas / adicionais
                   </button>
+                )}
+                {podeObservacao && !fora && !troca && (
+                  <CampoDaObservacao item={item} valor={observacoes[item.id]} aoMudar={(v) => setObservacoes((o) => mudarObservacao(o, item.id, v))} />
                 )}
               </div>
 
@@ -1407,6 +1514,52 @@ export default function EditarPedidoPainel({
         );
       })()}
       {modalDaSenha}
+    </div>
+  );
+}
+
+/** Abre (texto de hoje), muda ou fecha (undefined = desfaz) o rascunho de um item. */
+function mudarObservacao(o: Record<string, string>, itemId: string, v: string | undefined): Record<string, string> {
+  const { [itemId]: _antes, ...resto } = o;
+  return v === undefined ? resto : { ...resto, [itemId]: v };
+}
+
+/** "Incluir/Alterar observação" do item: só o texto, sem preço nem motivo. */
+function CampoDaObservacao({ item, valor, aoMudar }: { item: ItemDoPedido; valor: string | undefined; aoMudar: (v: string | undefined) => void }) {
+  if (valor === undefined) {
+    return (
+      <button
+        type="button"
+        onClick={() => aoMudar(item.notes || "")}
+        title="Escrever a observação do item (ex.: sem mostarda). Sai na comanda e aparece destacada no KDS."
+        style={{ marginTop: "4px", padding: "4px 10px", borderRadius: "6px", border: "1px solid #FDE68A", background: "#FFFBEB", color: "#B45309", fontWeight: 700, fontSize: "0.76rem", cursor: "pointer", fontFamily: "inherit" }}
+      >
+        📝 {item.notes ? "Alterar observação" : "Incluir observação"}
+      </button>
+    );
+  }
+  const mudou = limparObservacao(valor) !== limparObservacao(item.notes);
+  return (
+    <div style={{ marginTop: "6px" }}>
+      <textarea
+        autoFocus
+        rows={2}
+        value={valor}
+        maxLength={LIMITE_DA_OBSERVACAO}
+        onChange={(e) => aoMudar(e.target.value)}
+        placeholder="Ex.: sem mostarda"
+        style={{ width: "100%", padding: "7px 9px", borderRadius: "6px", border: `1.5px solid ${mudou ? "#B45309" : "#FDE68A"}`, fontSize: "0.82rem", fontFamily: "inherit", boxSizing: "border-box", resize: "vertical" }}
+      />
+      <div style={{ fontSize: "0.72rem", color: "#64748B", lineHeight: 1.4 }}>
+        {mudou ? "Sai na comanda e aparece destacada no KDS. O preço não muda." : "Escreva a observação nova."}{" "}
+        <button
+          type="button"
+          onClick={() => aoMudar(undefined)}
+          style={{ border: "none", background: "none", padding: 0, color: "#0F766E", fontWeight: 700, fontSize: "0.72rem", cursor: "pointer", textDecoration: "underline", fontFamily: "inherit" }}
+        >
+          Desfazer
+        </button>
+      </div>
     </div>
   );
 }
