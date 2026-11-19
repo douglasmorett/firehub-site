@@ -1920,7 +1920,8 @@ export default function ChatbotHubClient() {
                 </div>
 
                 {/* 2b. LOJA SEM CONEXÃO (lib/loja-sem-conexao.ts): a proteção
-                    nasce ligada; `protecaoSemConexao` ausente conta como sim. */}
+                    nasce ligada; `protecaoSemConexao` ausente conta como sim,
+                    "so_avisar" avisa sem pausar, false desliga. */}
                 <div style={{ background: "#fff", borderRadius: "16px", padding: "1.5rem", border: "1px solid #E2E8F0" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "0.75rem" }}>
                     <div style={{ width: 36, height: 36, borderRadius: "10px", background: "#E0F2FE", color: "#0369A1", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -1931,29 +1932,51 @@ export default function ChatbotHubClient() {
                       <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B" }}>Caiu a internet da loja no horário? Ninguém pede sem ninguém ver o pedido</p>
                     </div>
                   </div>
-                  <label
-                    style={{
-                      display: "flex", alignItems: "flex-start", gap: "10px", padding: "10px 12px",
-                      borderRadius: "10px", border: "1px solid #E2E8F0",
-                      background: config.protecaoSemConexao !== false ? "#FAF6F2" : "#F8FAFC", cursor: "pointer",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={config.protecaoSemConexao !== false}
-                      onChange={(e) => handleSaveConfig({ protecaoSemConexao: e.target.checked })}
-                      style={{ marginTop: 3, width: 16, height: 16, cursor: "pointer" }}
-                    />
-                    <div>
-                      <div style={{ fontWeight: 800, fontSize: "0.84rem", color: "#0F172A" }}>Pausar iFood, site e robô sozinho quando a loja ficar sem conexão</div>
-                      <div style={{ fontSize: "0.75rem", color: "#64748B", lineHeight: 1.45 }}>
-                        Se o computador da loja (Assistente de Impressão) parar de falar com o FireHub por 2 minutos no horário de
-                        funcionamento, sem nenhum painel aberto, o FireHub pausa o iFood e o site, e o robô passa a dizer
-                        &quot;estamos com instabilidade, volte em alguns minutos&quot;. Quando a conexão volta, tudo é reaberto sozinho.
-                        99Food e Keeta não têm pausa automática. Loja sem o Assistente instalado não é afetada.
-                      </div>
-                    </div>
-                  </label>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    {([
+                      {
+                        valor: true,
+                        titulo: "Avisar e pausar iFood, site e robô sozinho",
+                        detalhe: <>Se o computador da loja (Assistente de Impressão) parar de falar com o FireHub por 2 minutos no horário de
+                          funcionamento, sem nenhum painel aberto, o FireHub te avisa, pausa o iFood e o site, e o robô passa a dizer
+                          &quot;estamos com instabilidade, volte em alguns minutos&quot;. Quando a conexão volta, tudo é reaberto sozinho.
+                          99Food e Keeta não têm pausa automática. Loja sem o Assistente instalado não é afetada.</>,
+                      },
+                      {
+                        valor: "so_avisar",
+                        titulo: "Só avisar, sem pausar nada",
+                        detalhe: <>Você recebe o aviso no WhatsApp quando a loja fica sem conexão e quando volta, mas iFood, site e robô
+                          continuam recebendo pedidos normalmente.</>,
+                      },
+                      { valor: false, titulo: "Desligada", detalhe: <>Nem avisa nem pausa.</> },
+                    ] as const).map((op) => {
+                      // Ausente (ou qualquer valor antigo que não seja "so_avisar"/false) = avisa e pausa.
+                      const atual = config.protecaoSemConexao === false ? false : config.protecaoSemConexao === "so_avisar" ? "so_avisar" : true;
+                      const marcado = atual === op.valor;
+                      return (
+                        <label
+                          key={String(op.valor)}
+                          style={{
+                            display: "flex", alignItems: "flex-start", gap: "10px", padding: "10px 12px",
+                            borderRadius: "10px", border: "1px solid #E2E8F0",
+                            background: marcado ? "#FAF6F2" : "#F8FAFC", cursor: "pointer",
+                          }}
+                        >
+                          <input
+                            type="radio"
+                            name="protecaoSemConexao"
+                            checked={marcado}
+                            onChange={() => handleSaveConfig({ protecaoSemConexao: op.valor })}
+                            style={{ marginTop: 3, width: 16, height: 16, cursor: "pointer" }}
+                          />
+                          <div>
+                            <div style={{ fontWeight: 800, fontSize: "0.84rem", color: "#0F172A" }}>{op.titulo}</div>
+                            <div style={{ fontSize: "0.75rem", color: "#64748B", lineHeight: 1.45 }}>{op.detalhe}</div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* 3. NÚMEROS QUE O ROBÔ NÃO ATENDE */}

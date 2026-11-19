@@ -220,7 +220,8 @@ export async function POST(req: NextRequest) {
       delete permitido.menuFileQuando;
       recusados.push("menuFileQuando");
     }
-    if ("protecaoSemConexao" in permitido && typeof permitido.protecaoSemConexao !== "boolean") {
+    // true (ou ausente) = avisa e pausa; "so_avisar" = só avisa; false = desligada (lib/loja-sem-conexao.ts).
+    if ("protecaoSemConexao" in permitido && typeof permitido.protecaoSemConexao !== "boolean" && permitido.protecaoSemConexao !== "so_avisar") {
       delete permitido.protecaoSemConexao;
       recusados.push("protecaoSemConexao");
     }

@@ -36,7 +36,10 @@
  *   3. Dentro do horário cadastrado (turnoAgora), sem pausa programada, e com
  *      o "Site aberto" ligado: se o dono já fechou, não há o que proteger.
  *   4. A proteção da loja está ligada (chatbotConfig.protecaoSemConexao;
- *      ausente = ligada), em Chatbot IA → Notificações.
+ *      ausente = ligada), em Chatbot IA → Notificações. No modo "so_avisar"
+ *      (Lucas, Frangoso, 19/11/2026: a pausa faz o iFood parar de mandar
+ *      pedido) a queda é constatada e o dono avisado, mas nada é pausado nem
+ *      fechado, e o aceite automático segue — ver `modoDaProtecao`.
  *
  * VOLTOU (`motivoDaVolta`) quando qualquer sinal reaparece: painel nos últimos
  * 30 s, ou Assistente nos últimos 30 s (memória) ou carimbado no banco no
@@ -127,8 +130,10 @@ export type SituacaoDaLoja = {
   emPausa: boolean;
   /** "Site aberto" (User.storeOpen). */
   storeOpen: boolean;
-  /** chatbotConfig.protecaoSemConexao (ausente = ligada). */
+  /** chatbotConfig.protecaoSemConexao (ausente = ligada; "so_avisar" também conta como ligada). */
   protecaoLigada: boolean;
+  /** Modo "so_avisar": avisa o dono e não pausa nada. Ausente = avisa e pausa. */
+  soAvisar?: boolean;
 };
 
 /** Uma loja do iFood desta loja do FireHub. */
@@ -169,6 +174,8 @@ export type EpisodioSemConexao = {
   ifood: PausaNoIfood[];
   /** O aviso de queda: saiu, ficou de fora (sem número / desligado), quando pode sair, última tentativa. */
   aviso: { saiu?: boolean; pulado?: boolean; naoAntesDe: number; tentouEm?: number };
+  /** Queda no modo "so_avisar": nada pausado nem fechado (o site fica "dono_mexeu"), aceite automático segue. */
+  soAviso?: boolean;
 };
 
 /** Pausas NOSSAS no iFood que ainda precisam sair (a volta não conseguiu falar com o iFood). */
@@ -190,7 +197,8 @@ export type EstadoSemConexao = {
   ultimoAvisoEm?: number;
 };
 
-export type MotivoDaVolta = "assistente" | "painel" | "fora_do_horario" | "protecao_desligada";
+/** "modo_mudou": o dono trocou entre "avisar e pausar" e "só avisar" no meio da queda — desfaz e recomeça no modo novo. */
+export type MotivoDaVolta = "assistente" | "painel" | "fora_do_horario" | "protecao_desligada" | "modo_mudou";
 
 export type AvisoSemConexao = "queda" | "volta" | "fim_do_horario";
 
@@ -227,9 +235,28 @@ export type ResultadoDaPausa =
 
 // ── Leitura ─────────────────────────────────────────────────────────────────
 
-/** A proteção está ligada? Ausente = ligada (é o padrão de toda loja). */
+/**
+ * O modo da proteção em chatbotConfig.protecaoSemConexao:
+ *   ausente / true → "ligada"     (avisa e pausa, o padrão de toda loja)
+ *   "so_avisar"    → "so_avisar"  (avisa, não pausa)
+ *   false          → "desligada"  (nem avisa nem pausa)
+ */
+export type ModoDaProtecao = "ligada" | "so_avisar" | "desligada";
+
+export function modoDaProtecao(chatbotConfig: unknown): ModoDaProtecao {
+  const v = (chatbotConfig as { protecaoSemConexao?: unknown } | null)?.protecaoSemConexao;
+  if (v === false) return "desligada";
+  return v === "so_avisar" ? "so_avisar" : "ligada";
+}
+
+/** O que cada modo faz na queda. */
+export function oQueAProtecaoFaz(modo: ModoDaProtecao): { avisa: boolean; pausa: boolean } {
+  return { avisa: modo !== "desligada", pausa: modo === "ligada" };
+}
+
+/** A proteção está ligada (avisa e pausa, ou só avisa)? Ausente = ligada (é o padrão de toda loja). */
 export function protecaoLigada(chatbotConfig: unknown): boolean {
-  return (chatbotConfig as { protecaoSemConexao?: unknown } | null)?.protecaoSemConexao !== false;
+  return modoDaProtecao(chatbotConfig) !== "desligada";
 }
 
 const numero = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
@@ -269,6 +296,7 @@ export function lerEstadoSemConexao(bruto: unknown): { estado: EstadoSemConexao;
         naoAntesDe: numero(ep.aviso?.naoAntesDe) ?? ep.desde,
         tentouEm: numero(ep.aviso?.tentouEm),
       },
+      ...(ep.soAviso === true ? { soAviso: true } : {}),
     };
   }
 
@@ -427,11 +455,13 @@ export function decidirSemConexao(o: {
       desde: agora,
       ultimoSinal: ultimoSinalDoAssistente(s) as number,
       turno: loja.turno as string,
-      site: "fechado_por_nos",
+      // Só avisar: o site não é nosso para fechar nem para reabrir.
+      site: loja.soAvisar ? "dono_mexeu" : "fechado_por_nos",
       ifood: [],
       aviso: o.podeAvisar ? { naoAntesDe } : { pulado: true, naoAntesDe },
+      ...(loja.soAvisar ? { soAviso: true } : {}),
     };
-    for (const m of o.ifood) {
+    for (const m of loja.soAvisar ? [] : o.ifood) {
       novo.ifood.push({ merchantId: m.merchantId, nome: m.nome ?? null, situacao: "pendente", tentativas: 1, tentouEm: agora });
       const velha = tirar.find((t) => t.merchantId === m.merchantId);
       if (velha) {
@@ -444,7 +474,7 @@ export function decidirSemConexao(o: {
         acoes.pausarNoIfood.push(m.merchantId);
       }
     }
-    acoes.fecharSite = true;
+    if (!loja.soAvisar) acoes.fecharSite = true;
     if (o.podeAvisar && agora >= naoAntesDe) {
       acoes.aviso = "queda";
       novo.aviso.tentouEm = agora;
@@ -454,7 +484,10 @@ export function decidirSemConexao(o: {
   }
 
   // ── Em queda: voltou? ──────────────────────────────────────────────────────
-  const motivo = motivoDaVolta(s, loja);
+  // O dono trocou o modo no meio: desfaz o desta queda; seguindo apagada, a
+  // próxima rodada abre outra no modo novo.
+  const mudouOModo = loja.protecaoLigada && (ep.soAviso === true) !== (loja.soAvisar === true);
+  const motivo: MotivoDaVolta | null = mudouOModo ? "modo_mudou" : motivoDaVolta(s, loja);
   if (motivo) {
     // Só o que é NOSSO volta: o site, se ninguém religou no meio.
     acoes.reabrirSite = ep.site === "fechado_por_nos";
@@ -470,7 +503,7 @@ export function decidirSemConexao(o: {
       });
     }
     tirar = agendarTiradas(tirar, agora, acoes);
-    if (ep.aviso.saiu && motivo !== "protecao_desligada") {
+    if (ep.aviso.saiu && motivo !== "protecao_desligada" && motivo !== "modo_mudou") {
       acoes.aviso = motivo === "fora_do_horario" ? "fim_do_horario" : "volta";
     }
     return { evento: "voltou", motivo, encerrado: ep, estado: limpo({ ...antes, episodio: undefined, tirarDoIfood: tirar }), acoes };
@@ -650,17 +683,21 @@ export function mensagemDeQueda(o: {
     o.contingencia
       ? `🛡️ *Modo Contingência:* se o computador do caixa está ligado, ele já assumiu — pedidos, balcão, mesas, cozinha e impressão seguem funcionando nele, e tudo sobe sozinho quando a internet voltar.`
       : null,
+    // Só avisar: nada foi pausado, os pedidos seguem entrando como sempre.
+    ep.soAviso ? `Sua proteção está em *só avisar*: não pausamos nada — iFood, site e robô continuam recebendo pedidos. Se a queda demorar, pause pelos apps.` : null,
     pausado.length > 0 ? `Para nenhum cliente pedir sem ninguém ver o pedido, pausamos:` : null,
     ...pausado,
     jaFechadas.length > 0 ? `iFood${nomes(jaFechadas)} já estava fechado: não mexemos.` : null,
     falharam.length > 0 ? `iFood${nomes(falharam)}: não consegui pausar agora, tento de novo a cada 2 minutos.` : null,
     semAcesso.length > 0 ? `iFood${nomes(semAcesso)}: o FireHub não tem permissão para pausar. Se a queda demorar, pause pelo Gestor de Pedidos.` : null,
-    o.semPausaAutomatica && o.semPausaAutomatica.length > 0
+    !ep.soAviso && o.semPausaAutomatica && o.semPausaAutomatica.length > 0
       ? `⚠️ ${listaEmTexto(o.semPausaAutomatica)} não ${o.semPausaAutomatica.length > 1 ? "têm" : "tem"} pausa automática: os pedidos de lá continuam entrando, mas *sem aceite automático* — ficam como Novo esperando vocês. Se a queda demorar, pause pelo app.`
       : null,
     ``,
-    `Quando o Assistente ou um painel voltar a falar com o FireHub, *tudo é reaberto sozinho* e você recebe outro aviso.`,
-    `Para desligar esta proteção: painel → Chatbot IA → Notificações.`,
+    ep.soAviso
+      ? `Quando o Assistente ou um painel voltar a falar com o FireHub, você recebe outro aviso.`
+      : `Quando o Assistente ou um painel voltar a falar com o FireHub, *tudo é reaberto sozinho* e você recebe outro aviso.`,
+    `Para mudar esta proteção: painel → Chatbot IA → Notificações.`,
   ];
   return linhas.filter((l) => l !== null).join("\n");
 }
@@ -695,7 +732,7 @@ export function mensagemDeVolta(o: {
     ...linhasDaContingencia(o.contingencia),
     reaberto.length > 0 ? `Já reabrimos:` : null,
     ...reaberto,
-    ep.site === "dono_mexeu" ? `O site ficou do jeito que você deixou.` : null,
+    ep.site === "dono_mexeu" && !ep.soAviso ? `O site ficou do jeito que você deixou.` : null,
     presas.length > 0
       ? `⚠️ iFood${nomes(presas)}: não consegui tirar a pausa agora, tento de novo a cada 2 minutos${fim.length > 0 ? ` (ela acaba sozinha às ${hhmm(Math.max(...fim), o.tz)})` : ""}.`
       : null,
