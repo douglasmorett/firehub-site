@@ -36,6 +36,7 @@ import { buscarNoCardapio, pausarOuReativar, listarPausados, abrirOuFecharSite, 
 import { pausarNosApps } from "./pausa-nos-apps";
 import { consultarTaxasDeEntrega, alterarTaxaDeBairro, cadastrarBairro, removerBairro, desfazerNaEntrega } from "./entrega";
 import { consultarRelatorio, RELATORIOS_DO_BILL } from "./relatorios";
+import { MODULOS_DO_BILL } from "./modulos";
 
 export type ContextoDoAssessor = {
   franchiseeId: string;
@@ -294,6 +295,8 @@ export const DECLARACOES_DO_ASSESSOR = [
       required: ["relatorio"],
     },
   },
+  // As outras áreas do sistema (contrato em modulo.ts).
+  ...MODULOS_DO_BILL.flatMap((m) => m.declaracoes),
 ];
 
 /** Ferramentas que gravam: a resposta da IA sem nenhuma delas não pode dizer "lancei". */
@@ -301,6 +304,7 @@ export const FERRAMENTAS_QUE_GRAVAM = new Set([
   "registrar_compra", "registrar_saida", "registrar_despesa", "registrar_conta_a_pagar", "marcar_conta_paga", "desfazer_ultimo_registro",
   "pausar_ou_reativar_itens", "pausar_nos_apps", "abrir_ou_fechar_site",
   "alterar_taxa_de_bairro", "cadastrar_bairro", "remover_bairro",
+  ...MODULOS_DO_BILL.flatMap((m) => m.gravam),
 ]);
 
 // ── Execução ──────────────────────────────────────────────────────────────
@@ -326,7 +330,12 @@ export async function executarFerramentaDoAssessor(nome: string, args: any, ctx:
       case "cadastrar_bairro": return await cadastrarBairro(args, ctx);
       case "remover_bairro": return await removerBairro(args, ctx);
       case "consultar_relatorio": return await consultarRelatorio(args, ctx);
-      default: return { ok: false, erro: `Ferramenta desconhecida: ${nome}` };
+      default:
+        for (const m of MODULOS_DO_BILL) {
+          const r = await m.executar(nome, args, ctx);
+          if (r) return r;
+        }
+        return { ok: false, erro: `Ferramenta desconhecida: ${nome}` };
     }
   } catch (err: any) {
     if (err instanceof CompraRecusadaError) return { ok: false, erro: err.message };
@@ -633,7 +642,10 @@ async function desfazerOLancamento(ultimo: { tipo: string; resumo: string; refs:
     const r = await desfazerNaEntrega(refs, ctx);
     if (!r.ok) return r;
   } else {
-    return { ok: false, erro: "Esse lançamento não se desfaz por aqui." };
+    const modulo = MODULOS_DO_BILL.find((m) => m.desfazer && m.tipos?.includes(ultimo.tipo));
+    const r = modulo ? await modulo.desfazer!(ultimo.tipo, refs, ctx) : null;
+    if (!r) return { ok: false, erro: "Esse lançamento não se desfaz por aqui." };
+    if (!r.ok) return r;
   }
   return { ok: true, desfeito: ultimo.resumo };
 }

@@ -28,6 +28,7 @@ import { oQueMudouNaLoja } from "./o-que-mudou";
 import { DECLARACOES_DO_ASSESSOR, FERRAMENTAS_QUE_GRAVAM, executarFerramentaDoAssessor, type ContextoDoAssessor } from "./ferramentas";
 import { chaveDoClaude, lojaNoClaude, marcadaNoClaude, MODELO_CLAUDE } from "@/lib/robo-no-claude";
 import { rodarAssessorNoClaude } from "./assessor-no-claude";
+import { MODULOS_DO_BILL } from "./modulos";
 
 export const MODELOS_DO_ASSESSOR = ["gemini-3.6-flash", "gemini-2.5-flash"];
 
@@ -101,7 +102,8 @@ COMO TRABALHAR:
    - Na resposta, diga os itens exatos. Se a ferramenta devolver perguntarNosApps, termine com essa pergunta, igual; sem ela, não fale de iFood/99 (só o aviso da observação, se houver).
    - SIM a essa pergunta = pausar_nos_apps (sem produtoIds: vale a pausa/reativação que você acabou de fazer; se os itens "já estavam assim" no FireHub, busque de novo e mande produtoIds e ativo). "Só no iFood"/"só na 99" = apps. NÃO = nada. Na resposta, diga por app o que foi feito e o que não achou (esse ele faz pelo app).
 10. "Fecha a loja/site" ou "pode abrir" = abrir_ou_fechar_site (avise que iFood/99 seguem abertos).
-11. Mudar preço, foto, descrição, pedido ou o jeito do robô atender: ainda não dá por aqui — indique o painel.
+11. O resto do sistema (pedidos, clientes, caixa, cardápio, horário, cupons, equipe, motoboys, fiscal, iFood…): use as ferramentas das OUTRAS ÁREAS abaixo. Só o que nenhuma ferramenta faz: diga que por aqui ainda não dá e indique a tela exata do painel (guia_do_sistema, se houver).
+15. CONFIRMAÇÃO: ferramenta que devolver precisaConfirmar = NADA foi feito. Faça a pergunta dela ao dono, igual, e só chame de novo com confirmado=true depois do "sim" dele (na MESMA mensagem não vale: tem que ser a resposta dele).
 14. TAXA DE ENTREGA (só loja que cobra POR BAIRRO): "muda a taxa do bairro X para 13" = alterar_taxa_de_bairro direto, com o nome como ele disse (vários bairros numa chamada só; "entrega grátis" = taxa 0). "Quanto está a entrega?", "quais bairros eu atendo?" = consultar_taxas_de_entrega. "Começa a entregar no bairro Y por 8" = cadastrar_bairro. "Não entrego mais no Z" = remover_bairro.
    - Não achou o bairro: NADA mudou. Pergunte qual dos parecidos ele quis dizer, ou se é bairro novo — só cadastre se ele disser que é novo.
    - Loja por raio/km ou área desenhada: diga como ela cobra e que por enquanto você só muda taxa de bairro; o resto é no painel, em Minha Loja › Entrega.
@@ -118,6 +120,7 @@ RESPOSTA (WhatsApp ou painel): curta, direta, sem enrolação. Depois de lançar
 Errou? Manda *desfaz*."
 Use *negrito* do WhatsApp, nunca markdown com ** ou #.
 
+${regrasDosModulos()}
 CATEGORIAS DE DESPESA JÁ USADAS: ${categorias.map((c) => c.categoria).join(", ") || "(nenhuma ainda)"}
 
 ESTOQUE DA LOJA (id | nome | unidade | quantidade atual):
@@ -126,6 +129,12 @@ ${listaDeInsumos}
 ${resumo}
 
 ${mudou}`;
+}
+
+/** As regras de cada módulo (modulos/), numa seção só do prompt. */
+function regrasDosModulos(): string {
+  const regras = MODULOS_DO_BILL.map((m) => m.regras.trim()).filter(Boolean);
+  return regras.length ? `OUTRAS ÁREAS DO SISTEMA:\n${regras.map((r) => `- ${r}`).join("\n")}\n` : "";
 }
 
 /** A IA disse que gravou sem ter gravado? */
@@ -163,7 +172,7 @@ export function respostaDeReserva(acoes: AcaoDoAssessor[]): string {
     }
     if (a.nome === "cadastrar_bairro") return `🛵 Bairro novo na entrega: ${r.bairro} — ${r.taxa}, ${r.tempo}`;
     if (a.nome === "remover_bairro") return `🛵 Bairro removido da entrega: ${r.bairro}`;
-    return `💰 ${r.lancado}`;
+    return r.resumo ? `✅ ${r.resumo}` : `💰 ${r.lancado}`;
   });
   return `✅ *Lançado*\n${linhas.join("\n")}\nErrou? Manda *desfaz*.`;
 }
