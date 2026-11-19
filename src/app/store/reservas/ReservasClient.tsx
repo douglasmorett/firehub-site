@@ -17,19 +17,22 @@ import InterruptorDoModulo from "@/components/modulos/InterruptorDoModulo";
 import { VERSAO_DO_TERMO_DAS_RESERVAS } from "@/lib/reservas/termo";
 import { dataPorExtenso, somarDias, type ConfigDasReservas } from "@/lib/reservas/regras";
 import {
-  BORDA, Botao, COR, COR_CLARA, CSS_DAS_RESERVAS, Numero, TINTA, TINTA_2, TINTA_3, cartao, diaMes, h2, nomeDoMes, reais, texto,
+  Calendar, CalendarClock, CalendarDays, CalendarRange, ChartColumn, ChevronLeft, ChevronRight, CircleAlert, CircleCheck, Flame, Plus, Settings, UserCheck, Users, type LucideIcon,
+} from "lucide-react";
+import {
+  Botao, COR, CSS_DAS_RESERVAS, Numero, TINTA_3, cartao, corDaOcupacao, diaMes, h2, nomeDoMes, reais, texto,
   type Aviso, type Dados, type Estado, type ReservaDaTela,
 } from "./comum";
 import { Oferta, Termo } from "./Oferta";
 import { IlustracaoDasReservas } from "./IlustracaoDasReservas";
-import { ListaDoDia, OcupacaoDoDia, SalaoAoLongoDaNoite, type AcaoDaLista } from "./VisaoDoDia";
+import { ListaDoDia, OcupacaoDoDia, ProximasChegadas, RoboNoDia, SalaoAoLongoDaNoite, SituacaoDoDia, type AcaoDaLista } from "./VisaoDoDia";
 import { VisaoDaSemana, VisaoDoMes } from "./VisaoSemanaMes";
 import { Resultados } from "./Resultados";
 import { Configuracao } from "./Configuracao";
 import { FormularioDaReserva, type ModoDoFormulario } from "./FormularioDaReserva";
 
 type Aba = "dia" | "semana" | "mes" | "resultados" | "configurar";
-const ABAS: [Aba, string][] = [["dia", "📅 Dia"], ["semana", "🗓️ Semana"], ["mes", "📆 Mês"], ["resultados", "💰 Resultados"], ["configurar", "⚙️ Configurar"]];
+const ABAS: [Aba, string, LucideIcon][] = [["dia", "Dia", CalendarDays], ["semana", "Semana", CalendarRange], ["mes", "Mês", Calendar], ["resultados", "Resultados", ChartColumn], ["configurar", "Configurar", Settings]];
 
 const FRASE_DA_ACAO: Record<AcaoDaLista, string> = { chegou: "chegou", nao_veio: "não veio", cancelar: "foi cancelada", confirmar: "voltou para confirmada" };
 
@@ -43,6 +46,18 @@ export default function ReservasClient() {
   const [formulario, setFormulario] = useState<ModoDoFormulario | null>(null);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [filtroHora, setFiltroHora] = useState<string | null>(null);
+  const [foco, setFoco] = useState<string | null>(null);
+  useEffect(() => {
+    if (!foco) return;
+    const t = setTimeout(() => setFoco(null), 2500);
+    return () => clearTimeout(t);
+  }, [foco]);
+  /** Leva até o cartão da reserva (vinda da agenda ou das próximas chegadas) e o destaca. */
+  const abrirReserva = (r: ReservaDaTela) => {
+    if (filtroHora && filtroHora !== r.hora) setFiltroHora(null);
+    setFoco(r.id);
+    setTimeout(() => document.getElementById(`reserva-${r.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
+  };
 
   const carregar = useCallback(async (data?: string) => {
     try {
@@ -136,136 +151,167 @@ export default function ReservasClient() {
     return { reservas: ativas.length, pessoas: ativas.reduce((t, r) => t + r.pessoas, 0), chegaram: ativas.filter((r) => r.status === "CHEGOU").length, pico, comVaga, futuros };
   }, [dados]);
 
-  if (erro) return <div style={{ padding: 24, color: "#B71C1C", fontWeight: 700 }}>{erro}</div>;
-  if (!dados) return <div style={{ padding: 24, color: "#64748B" }}>Carregando…</div>;
+  if (erro) return <div className="fh-tela"><div className="fh-aviso fh-aviso--erro" role="alert"><CircleAlert size={18} aria-hidden /> {erro}</div></div>;
+  if (!dados) return <div className="fh-tela" style={{ background: "transparent", color: TINTA_3, font: "500 14px/1.5 Inter, system-ui, sans-serif" }}>Carregando as reservas…</div>;
   const e = dados.estado;
   const ativo = e.ativo && !!dados.config;
   const ehHoje = dados.data === dados.hoje;
   const ehPassado = !!dados.data && !!dados.hoje && (dados.data < dados.hoje || ehHoje);
+  const cap = dados.config?.maxReservasSimultaneas || 1;
+  const reservasDoDia = dados.dia?.reservas || [];
+  const naoVieram = reservasDoDia.filter((r) => r.status === "NAO_VEIO").length;
+  const canceladas = reservasDoDia.filter((r) => r.status === "CANCELADA").length;
+  const seloDoEstado = e.isento ? "Liberado" : e.emTeste && e.testeAte ? `Ativo · grátis até ${diaMes(e.testeAte)}` : e.desligaEm ? `Ativo até ${diaMes(e.desligaEm)}` : "Ativo";
+  const passo = aba === "dia" ? 1 : aba === "semana" ? 7 : 31;
+  const deTotal = (n: number, total: number) => <>{n}<span style={{ fontSize: "0.55em", color: TINTA_3, fontWeight: 800 }}> de {total}</span></>;
 
   return (
-    <div style={{ maxWidth: 1120, margin: "0 auto", padding: "20px 16px 70px", color: TINTA }}>
+    <div className="fh-tela rsv-tela">
       <style>{CSS_DAS_RESERVAS}</style>
 
       {aviso && (
-        <div role="status" onClick={() => setAviso(null)} className="rsv-entra" style={{
-          position: "sticky", top: 8, zIndex: 50, marginBottom: 12, padding: "12px 16px", borderRadius: 14,
-          background: aviso.tipo === "ok" ? "#ECFDF5" : "#FEF2F2", border: `1px solid ${aviso.tipo === "ok" ? "#A7F3D0" : "#FECACA"}`,
-          color: aviso.tipo === "ok" ? "#065F46" : "#991B1B", display: "flex", flexDirection: "column", gap: 2, cursor: "pointer", boxShadow: "0 10px 24px rgba(15,23,42,.10)",
-        }}>
-          <strong>{aviso.titulo}</strong>
-          {aviso.detalhe && <span style={{ fontSize: 14 }}>{aviso.detalhe}</span>}
+        <div role="status" onClick={() => setAviso(null)} className={`fh-aviso ${aviso.tipo === "ok" ? "fh-aviso--ok" : "fh-aviso--erro"}`}
+          style={{ position: "sticky", top: 8, zIndex: 50, cursor: "pointer", boxShadow: "0 4px 8px -2px rgba(15,23,42,.08), 0 16px 32px -12px rgba(15,23,42,.16)", borderLeftWidth: 1 }}>
+          {aviso.tipo === "ok" ? <CircleCheck size={20} aria-hidden style={{ flex: "none" }} /> : <CircleAlert size={20} aria-hidden style={{ flex: "none" }} />}
+          <div style={{ display: "grid", gap: 2 }}>
+            <strong style={{ fontWeight: 800 }}>{aviso.titulo}</strong>
+            {aviso.detalhe && <span style={{ fontWeight: 500 }}>{aviso.detalhe}</span>}
+          </div>
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 6 }}>
-        <span aria-hidden style={{ width: 46, height: 46, borderRadius: 14, background: `linear-gradient(135deg, ${COR}, #8B5CF6)`, display: "grid", placeItems: "center", fontSize: 24, boxShadow: "0 8px 18px rgba(91,33,182,.3)" }}>📅</span>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 26, fontWeight: 900, letterSpacing: "-0.02em" }}>Reservas de mesa</h1>
-          <div style={{ fontSize: 13.5, color: TINTA_2, fontWeight: 600 }}>
-            {ativo ? "O robô reserva sozinho, dentro da capacidade que você definir." : "Capacidade por horário, robô que reserva sozinho e o salão claro no painel."}
+      <header className="rsv-cabecalho">
+        <span className="rsv-cabecalho__icone" aria-hidden><CalendarClock size={26} strokeWidth={2} /></span>
+        <div style={{ minWidth: 0, flex: "1 1 280px", display: "grid", gap: 4 }}>
+          {/* As reservas moram dentro de Mesas (botão "Controle de reservas" lá). */}
+          <nav aria-label="Caminho" style={{ font: "800 13px/1.2 Inter, system-ui, sans-serif", color: TINTA_3, display: "flex", alignItems: "center", gap: 4 }}>
+            <a href="/store/mesas" style={{ color: TINTA_3, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 2 }}><ChevronLeft size={15} aria-hidden />Mesas</a>
+          </nav>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <h1>Reservas de mesa</h1>
+            {e.ativo && <span className="fh-estado fh-estado-ok" style={{ fontSize: 12 }}><i aria-hidden style={{ width: 7, height: 7, borderRadius: 99, background: "currentColor" }} />{seloDoEstado}</span>}
           </div>
+          <p className="rsv-cabecalho__sub" style={{ ...texto, fontSize: 14.5 }}>
+            {ativo ? "O robô reserva sozinho, dentro da capacidade que você definir." : "Capacidade por horário, robô que reserva sozinho e o salão claro no painel."}
+          </p>
         </div>
-        {e.ativo && (
-          <span style={{ fontSize: 12, fontWeight: 800, padding: "4px 10px", borderRadius: 999, background: "#DCFCE7", color: "#166534" }}>
-            {e.isento ? "LIBERADO" : e.emTeste && e.testeAte ? `ATIVO · grátis até ${diaMes(e.testeAte)}` : e.desligaEm ? `ATIVO até ${diaMes(e.desligaEm)}` : "ATIVO"}
-          </span>
+        {ativo && (
+          <div className="rsv-cabecalho__acoes">
+            <Botao onClick={() => setFormulario({ tipo: "nova", data: dados.data || dados.hoje! })}><Plus size={18} aria-hidden /> Nova reserva</Botao>
+          </div>
         )}
-        <span style={{ flex: 1 }} />
-        {ativo && <Botao onClick={() => setFormulario({ tipo: "nova", data: dados.data || dados.hoje! })} style={{ padding: "12px 18px", fontSize: 15, boxShadow: "0 8px 18px rgba(91,33,182,.3)" }}>+ Nova reserva</Botao>}
-      </div>
+      </header>
 
       {!ativo ? (
-        <div style={{ marginTop: 16 }}>
-          <Oferta dados={dados} salvando={salvando} onAtivar={() => setTermoAberto(true)} />
-        </div>
+        <Oferta dados={dados} salvando={salvando} onAtivar={() => setTermoAberto(true)} />
       ) : (
         <>
-          {/* As abas */}
-          <nav className="rsv-abas" style={{ margin: "16px 0", padding: 4, background: "#F1F5F9", borderRadius: 14, width: "fit-content", maxWidth: "100%" }} aria-label="Visões das reservas">
-            {ABAS.map(([id, nome]) => (
-              <button key={id} type="button" onClick={() => setAba(id)} aria-current={aba === id ? "page" : undefined}
-                style={{ padding: "9px 16px", borderRadius: 10, border: "none", fontWeight: 800, fontSize: 14, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
-                  background: aba === id ? "#fff" : "transparent", color: aba === id ? COR : TINTA_2, boxShadow: aba === id ? "0 2px 6px rgba(15,23,42,.10)" : "none" }}>
-                {nome}
-              </button>
-            ))}
-          </nav>
+          {/* As abas e, nas visões de calendário, o seletor de data. */}
+          <div className="rsv-barra">
+            <div role="tablist" aria-label="Visões das reservas" className="rsv-abas">
+              {ABAS.map(([id, nome, Icone]) => (
+                <button key={id} type="button" role="tab" data-aba={id} className="rsv-aba" onClick={() => setAba(id)} aria-selected={aba === id}>
+                  <Icone size={17} strokeWidth={2.2} aria-hidden /> {nome}
+                </button>
+              ))}
+            </div>
+            {(aba === "dia" || aba === "semana" || aba === "mes") && (
+              <div className="rsv-data">
+                <Botao tipo="secundario" onClick={() => irPara(somarDias(dados.data!, aba === "mes" ? -28 : -passo))} title="Anterior" style={{ width: 44, padding: 0 }}><ChevronLeft size={20} aria-label="Anterior" /></Botao>
+                <span className="rsv-data__nome">
+                  {aba === "dia" ? dataPorExtenso(dados.data!) : aba === "semana" ? `Semana de ${diaMes(`${dados.semana?.[0]?.data}T12:00:00`)}` : nomeDoMes(dados.data!.slice(0, 7)).replace(/^./, (c) => c.toUpperCase())}
+                  {ehHoje && aba === "dia" && <span style={{ color: COR }}> · hoje</span>}
+                </span>
+                <Botao tipo="secundario" onClick={() => irPara(somarDias(dados.data!, passo))} title="Próximo" style={{ width: 44, padding: 0 }}><ChevronRight size={20} aria-label="Próximo" /></Botao>
+                {!ehHoje && <Botao tipo="secundario" onClick={() => irPara(dados.hoje!)}>Hoje</Botao>}
+                <input type="date" value={dados.data} onChange={(ev) => ev.target.value && irPara(ev.target.value)} aria-label="Escolher o dia" />
+              </div>
+            )}
+          </div>
 
           {!dados.configurado && aba !== "configurar" && (
-            <button type="button" onClick={() => setAba("configurar")} style={{ ...cartao, width: "100%", textAlign: "left", marginBottom: 16, background: COR_CLARA, borderColor: "#C4B5FD", color: "#4C1D95", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", fontSize: 14 }}>
-              ⚙️ Primeiro passo: confira os dias, horários e quantas reservas cabem ao mesmo tempo. Toque aqui para configurar →
+            <button type="button" onClick={() => setAba("configurar")} className="fh-aviso fh-aviso--atencao" style={{ width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit", alignItems: "center" }}>
+              <Settings size={18} aria-hidden style={{ flex: "none" }} />
+              <span style={{ flex: 1 }}>Primeiro passo: confira os dias, os horários e quantas reservas cabem ao mesmo tempo.</span>
+              <b style={{ whiteSpace: "nowrap" }}>Configurar →</b>
             </button>
           )}
 
-          {(aba === "dia" || aba === "semana" || aba === "mes") && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-              <Botao tipo="secundario" onClick={() => irPara(somarDias(dados.data!, aba === "dia" ? -1 : aba === "semana" ? -7 : -28))} title="Anterior">‹</Botao>
-              <strong style={{ fontSize: 18, minWidth: 170, textAlign: "center" }}>
-                {aba === "dia" ? dataPorExtenso(dados.data!) : aba === "semana" ? `Semana de ${diaMes(`${dados.semana?.[0]?.data}T12:00:00`)}` : ""}
-                {aba === "mes" && nomeDoMes(dados.data!.slice(0, 7)).replace(/^./, (c) => c.toUpperCase())}
-                {ehHoje && aba === "dia" && <span style={{ color: COR }}> · hoje</span>}
-              </strong>
-              <Botao tipo="secundario" onClick={() => irPara(somarDias(dados.data!, aba === "dia" ? 1 : aba === "semana" ? 7 : 31))} title="Próximo">›</Botao>
-              {!ehHoje && <Botao tipo="fantasma" onClick={() => irPara(dados.hoje!)} style={{ color: COR }}>Hoje</Botao>}
-              <input type="date" value={dados.data} onChange={(ev) => ev.target.value && irPara(ev.target.value)} aria-label="Escolher o dia"
-                style={{ padding: "8px 10px", borderRadius: 10, border: `1px solid ${BORDA}`, fontFamily: "inherit", fontSize: 14, color: TINTA }} />
-            </div>
-          )}
-
           {aba === "dia" && dados.dia && resumoDoDia && (
-            <div style={{ display: "grid", gap: 16 }} className="rsv-entra">
-              <div className="rsv-grade">
-                <Numero icone="📅" rotulo="Reservas no dia" valor={resumoDoDia.reservas} sub={resumoDoDia.chegaram ? `${resumoDoDia.chegaram} já chegaram` : "confirmadas"} />
-                <Numero icone="👥" rotulo="Pessoas" valor={resumoDoDia.pessoas} sub="nas reservas do dia" />
-                <Numero icone="🔥" rotulo="Horário mais cheio" valor={resumoDoDia.pico && resumoDoDia.pico.n ? resumoDoDia.pico.hora : "—"}
-                  sub={resumoDoDia.pico && resumoDoDia.pico.n ? `${resumoDoDia.pico.n} de ${dados.config!.maxReservasSimultaneas} na mesa` : "nenhuma reserva ainda"} />
-                <Numero icone="🟢" rotulo="Horários com vaga" valor={`${resumoDoDia.comVaga} de ${dados.dia.horarios.length}`} sub={resumoDoDia.futuros < dados.dia.horarios.length ? "os que ainda dá para reservar" : "para reserva nova"} destaque={false} />
+            <>
+              <div className="rsv-kpis rsv-entra">
+                <Numero icone={CalendarDays} rotulo="Reservas no dia" valor={resumoDoDia.reservas}
+                  sub={canceladas ? `${canceladas} cancelada${canceladas > 1 ? "s" : ""} fora da conta` : "canceladas não contam"} />
+                <Numero icone={Users} rotulo="Pessoas" valor={resumoDoDia.pessoas}
+                  sub={resumoDoDia.reservas ? `média de ${(resumoDoDia.pessoas / resumoDoDia.reservas).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} por reserva` : "nas reservas do dia"} />
+                <Numero icone={UserCheck} rotulo="Chegaram" valor={deTotal(resumoDoDia.chegaram, resumoDoDia.reservas)}
+                  medidor={{ valor: resumoDoDia.reservas ? resumoDoDia.chegaram / resumoDoDia.reservas : 0 }}
+                  sub={naoVieram ? `${naoVieram} não ${naoVieram > 1 ? "vieram" : "veio"}` : resumoDoDia.chegaram ? "ninguém faltou" : "ninguém chegou ainda"} />
+                <Numero icone={Flame} rotulo="Horário mais cheio" valor={resumoDoDia.pico && resumoDoDia.pico.n ? resumoDoDia.pico.hora : "—"}
+                  medidor={resumoDoDia.pico && resumoDoDia.pico.n ? { valor: resumoDoDia.pico.n / cap, cor: corDaOcupacao(resumoDoDia.pico.n / cap, resumoDoDia.pico.n >= cap).barra } : undefined}
+                  sub={resumoDoDia.pico && resumoDoDia.pico.n ? `${resumoDoDia.pico.n} de ${cap} na mesa` : "nenhuma reserva ainda"} />
+                <Numero icone={CircleCheck} rotulo="Horários com vaga" valor={deTotal(resumoDoDia.comVaga, dados.dia.horarios.length)}
+                  sub={resumoDoDia.futuros < dados.dia.horarios.length ? "os que ainda dá para reservar" : "para reserva nova"} />
               </div>
 
-              <section style={cartao}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
-                  <h2 style={h2}>Ocupação por horário</h2>
-                  <span style={{ ...texto, fontSize: 13 }}>Reservas na mesa em cada horário × as {dados.config!.maxReservasSimultaneas} que cabem ao mesmo tempo. Toque num horário para ver quem chega.</span>
-                  <span style={{ flex: 1 }} />
-                  {filtroHora && <Botao onClick={() => setFormulario({ tipo: "nova", data: dados.data!, hora: filtroHora })}>+ Reservar às {filtroHora}</Botao>}
+              <div className="rsv-dia">
+                <div className="rsv-dia__principal">
+                  <section style={cartao} className="rsv-entra">
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+                      <div style={{ flex: "1 1 280px", minWidth: 0 }}>
+                        <h2 style={h2}>Ocupação por horário</h2>
+                        <p style={{ ...texto, fontSize: 13, marginTop: 3 }}>Reservas na mesa em cada horário, contra as {cap} que cabem ao mesmo tempo. Toque num horário para ver quem chega.</p>
+                      </div>
+                      {filtroHora && <Botao pequeno onClick={() => setFormulario({ tipo: "nova", data: dados.data!, hora: filtroHora })} style={{ height: 40 }}><Plus size={16} aria-hidden /> Reservar às {filtroHora}</Botao>}
+                    </div>
+                    <OcupacaoDoDia horarios={dados.dia.horarios} agoraMin={ehHoje ? dados.agoraMin : null} selecionada={filtroHora}
+                      onEscolher={(h) => setFiltroHora((x) => (x === h ? null : h))} />
+                  </section>
+
+                  <ListaDoDia reservas={dados.dia.reservas} mesas={dados.mesas || []} filtroHora={filtroHora} ocupado={ocupado} ehPassado={ehPassado} foco={foco}
+                    onLimparFiltro={() => setFiltroHora(null)}
+                    onNova={() => setFormulario({ tipo: "nova", data: dados.data!, hora: filtroHora })}
+                    onAcao={(r, a) => agir(r, { acao: a }, `A reserva de ${r.nome} ${FRASE_DA_ACAO[a]}.`)}
+                    onMesa={(r, mesaId) => agir(r, { acao: "mesa", mesaId }, mesaId ? `${dados.mesas?.find((m) => m.id === mesaId)?.nome} ligada à reserva de ${r.nome}.` : `Reserva de ${r.nome} sem mesa.`)}
+                    onMover={(r) => setFormulario({ tipo: "mover", reserva: r })} />
+
+                  {dados.dia.reservas.some((r) => r.status === "CONFIRMADA" || r.status === "CHEGOU") && (
+                    <section style={cartao}>
+                      <div style={{ marginBottom: 14 }}>
+                        <h2 style={h2}>O salão ao longo do dia</h2>
+                        <p style={{ ...texto, fontSize: 13, marginTop: 3 }}>Quanto tempo cada reserva segura a mesa. Toque num bloco para achar a reserva na lista.</p>
+                      </div>
+                      <SalaoAoLongoDaNoite reservas={dados.dia.reservas} horarios={dados.dia.horarios} config={dados.config!} agoraMin={ehHoje ? dados.agoraMin : null} mesas={dados.mesas}
+                        onAbrir={abrirReserva} />
+                    </section>
+                  )}
                 </div>
-                <OcupacaoDoDia horarios={dados.dia.horarios} agoraMin={ehHoje ? dados.agoraMin : null} selecionada={filtroHora}
-                  onEscolher={(h) => setFiltroHora((x) => (x === h ? null : h))} />
-              </section>
 
-              {dados.dia.reservas.some((r) => r.status === "CONFIRMADA" || r.status === "CHEGOU") && (
-                <section style={cartao}>
-                  <h2 style={{ ...h2, marginBottom: 10 }}>O salão ao longo do dia</h2>
-                  <SalaoAoLongoDaNoite reservas={dados.dia.reservas} horarios={dados.dia.horarios} config={dados.config!}
-                    onAbrir={(r) => { setFiltroHora(r.hora); setTimeout(() => document.getElementById(`reserva-${r.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }), 50); }} />
-                </section>
-              )}
-
-              <ListaDoDia reservas={dados.dia.reservas} mesas={dados.mesas || []} filtroHora={filtroHora} ocupado={ocupado} ehPassado={ehPassado}
-                onLimparFiltro={() => setFiltroHora(null)}
-                onAcao={(r, a) => agir(r, { acao: a }, `A reserva de ${r.nome} ${FRASE_DA_ACAO[a]}.`)}
-                onMesa={(r, mesaId) => agir(r, { acao: "mesa", mesaId }, mesaId ? `${dados.mesas?.find((m) => m.id === mesaId)?.nome} ligada à reserva de ${r.nome}.` : `Reserva de ${r.nome} sem mesa.`)}
-                onMover={(r) => setFormulario({ tipo: "mover", reserva: r })} />
-            </div>
+                <aside className="rsv-dia__lado" aria-label="Resumo do dia">
+                  <ProximasChegadas reservas={dados.dia.reservas} ehHoje={ehHoje} agoraMin={dados.agoraMin} onAbrir={abrirReserva} />
+                  <SituacaoDoDia reservas={dados.dia.reservas} config={dados.config!} onConfigurar={() => setAba("configurar")} />
+                  <RoboNoDia reservas={dados.dia.reservas} />
+                </aside>
+              </div>
+            </>
           )}
 
           {aba === "semana" && <VisaoDaSemana dados={dados} onDia={(d) => { setAba("dia"); irPara(d); }} />}
           {aba === "mes" && <VisaoDoMes dados={dados} onDia={(d) => { setAba("dia"); irPara(d); }} />}
           {aba === "resultados" && <Resultados dados={dados} />}
           {aba === "configurar" && (
-            <div style={{ display: "grid", gap: 16 }}>
-              <Configuracao key={JSON.stringify(dados.config)} inicial={dados.config!} configurado={!!dados.configurado} salvando={salvando} onSalvar={salvarConfig} />
-              {dados.podeContratar && !e.isento && (
-                <InterruptorDoModulo nome="o módulo Reservas de mesa" preco={dados.preco} estado={e} salvando={salvando}
-                  onLigar={() => setTermoAberto(true)} onDesligar={() => ligar(false)} onContinuar={() => ligar(true)} />
-              )}
-              {e.isento && <p style={{ ...texto, fontSize: 13 }}>Na sua conta as reservas estão liberadas sem custo. Para o lojista: {reais(dados.preco)}/mês à parte da mensalidade, {dados.diasDeTeste} dias grátis.</p>}
-              <IlustracaoDasReservas />
-            </div>
+            <Configuracao key={JSON.stringify(dados.config)} inicial={dados.config!} configurado={!!dados.configurado} salvando={salvando} onSalvar={salvarConfig}
+              lado={<>
+                {dados.podeContratar && !e.isento && (
+                  <InterruptorDoModulo nome="o módulo Reservas de mesa" preco={dados.preco} estado={e} salvando={salvando}
+                    onLigar={() => setTermoAberto(true)} onDesligar={() => ligar(false)} onContinuar={() => ligar(true)} />
+                )}
+                {e.isento && <p style={{ ...texto, fontSize: 13 }}>Na sua conta as reservas estão liberadas sem custo. Para o lojista: {reais(dados.preco)}/mês à parte da mensalidade, {dados.diasDeTeste} dias grátis.</p>}
+              </>}
+              rodape={<IlustracaoDasReservas />} />
           )}
 
-          <p style={{ ...texto, fontSize: 12, color: TINTA_3, marginTop: 24, textAlign: "center" }}>
+          <p style={{ ...texto, fontSize: 12.5, textAlign: "center" }}>
             O robô do WhatsApp usa esta configuração em toda conversa. Aviso de reserva nova chega no seu WhatsApp (Chatbot IA › Notificações).
           </p>
         </>

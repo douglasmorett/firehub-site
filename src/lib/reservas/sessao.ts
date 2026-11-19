@@ -3,7 +3,7 @@
  *
  * Ver, criar, marcar chegada e mudar a configuração é do dono e do funcionário
  * com acesso à tela (/store/reservas em lib/permissao-da-tela.ts: quem cuida
- * do salão). Ligar e desligar põe R$ 97 no boleto — só o dono (ou o ADMIN na
+ * do salão). Ligar e desligar põe R$ 49,90 no boleto — só o dono (ou o ADMIN na
  * loja), pela mesma porta do Bill e da Balança (lib/assessor/loja-da-sessao.ts).
  */
 import { getServerSession } from "next-auth/next";

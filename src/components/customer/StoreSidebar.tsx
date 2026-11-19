@@ -199,7 +199,7 @@ export default function StoreSidebar({
   const ehAtivo = (item: ItemDoMenu) => {
     const p = String(pathname || "");
     if (item.href === "/store") return p === "/store";
-    return p.startsWith(item.href);
+    return p.startsWith(item.href) || !!item.ativoTambemEm?.some((x) => p.startsWith(x));
   };
 
   return (

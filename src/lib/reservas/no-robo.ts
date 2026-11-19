@@ -16,8 +16,8 @@ import { agoraNaLoja, cancelarReservaDoCliente, criarReserva, reservasDoTelefone
 import { avaliarReserva, normalizarHora, somarDias, sugerirHorarios, type Agora, type ConfigDasReservas } from "./regras";
 import {
   REGRA_DA_RESERVA_COM_MODULO, avisoDeReservaAoDono, blocoDasReservasNaConversa, blocoDasReservasNoSistema,
-  cancelamentoParaOCliente, confirmacaoParaOCliente, perguntaDoQueFalta, respostaDeNaoCabe,
-  type MarcaDeCancelamento, type MarcaDeReserva,
+  RESERVA_SEM_MODULO_PARA_A_EQUIPE, cancelamentoParaOCliente, confirmacaoParaOCliente, pedidoDeReservaParaAEquipe, perguntaDoQueFalta, respostaDaConsulta, respostaDeNaoCabe,
+  type FichaDaReserva, type MarcaDeCancelamento, type MarcaDeConsulta, type MarcaDeReserva,
 } from "./robo";
 
 export type ReservasNoRobo =
@@ -43,6 +43,27 @@ export async function prepararReservasDoRobo(franchiseeId: string, timeZone: str
   }
 }
 
+/**
+ * Módulo DESLIGADO (Douglas, 19/11/2026): pedido de reserva vira ficha para a
+ * equipe; cancelar ou "tem mesa?" chamam a equipe. O robô nunca confirma nem
+ * fala de vaga. `null` = não havia marca de reserva.
+ */
+export function resolverReservaSemModulo(p: {
+  marcas: { reserva: MarcaDeReserva | null; anotar?: MarcaDeReserva | null; cancelar: MarcaDeCancelamento | null; consultar?: MarcaDeConsulta | null };
+  timeZone: string | null | undefined;
+  telefone: string;
+  agora?: Agora;
+}): { resposta: string; ficha?: FichaDaReserva; chamarEquipe: boolean } | null {
+  const m = p.marcas.anotar || p.marcas.reserva;
+  const agora = p.agora || agoraNaLoja(p.timeZone);
+  if (m) {
+    const r = pedidoDeReservaParaAEquipe(m, agora, p.telefone.length >= 10 ? p.telefone : null);
+    return { ...r, chamarEquipe: !!r.ficha };
+  }
+  if (p.marcas.cancelar || p.marcas.consultar) return { resposta: RESERVA_SEM_MODULO_PARA_A_EQUIPE, chamarEquipe: true };
+  return null;
+}
+
 export type ReservaFeitaPeloRobo = { acao: "nova" | "cancelada"; id: string; data: string; hora: string; pessoas: number; simulacao?: boolean };
 
 /**
@@ -55,14 +76,26 @@ export async function aplicarMarcasDeReserva(p: {
   /** O usuário da instância (o aviso vai para o dono dele). */
   userId: string;
   telefone: string;
-  marcas: { reserva: MarcaDeReserva | null; cancelar: MarcaDeCancelamento | null };
+  marcas: { reserva: MarcaDeReserva | null; anotar?: MarcaDeReserva | null; cancelar: MarcaDeCancelamento | null; consultar?: MarcaDeConsulta | null };
   simulacao: boolean;
 }): Promise<{ resposta: string; feita?: ReservaFeitaPeloRobo } | null> {
-  const { preparo, marcas } = p;
-  if (!preparo.ligado || (!marcas.reserva && !marcas.cancelar)) return null;
+  const { preparo } = p;
+  // Com o módulo ligado, o "anotar" (marca do modo sem módulo) vale como reserva de verdade.
+  const marcas = { ...p.marcas, reserva: p.marcas.reserva || p.marcas.anotar || null };
+  if (!preparo.ligado || (!marcas.reserva && !marcas.cancelar && !marcas.consultar)) return null;
   const { config, agora } = preparo;
   const telefone = p.telefone.length >= 10 ? p.telefone : (marcas.reserva?.telefone || "");
   const SIMULADOR = "\n\n(Simulador: nada foi gravado.)";
+
+  // Só a pergunta "tem mesa?": o sistema confere com as reservas reais e responde, sem gravar.
+  if (marcas.consultar && !marcas.reserva && !marcas.cancelar) {
+    const q = marcas.consultar;
+    const dentro = q.data >= agora.data && q.data <= somarDias(agora.data, 7);
+    const doDia = dentro ? preparo.semana.filter((r) => r.data === q.data) : await reservasEntre(p.franchiseeId, q.data, q.data);
+    const outros = dentro ? null : await reservasEntre(p.franchiseeId, q.data, somarDias(q.data, 7));
+    const reservasDe = (d: string) => (d === q.data ? doDia : (outros || preparo.semana).filter((r) => r.data === d));
+    return { resposta: respostaDaConsulta(config, reservasDe, q, agora).texto };
+  }
 
   if (marcas.reserva) {
     const m = marcas.reserva;
@@ -105,6 +138,9 @@ export async function aplicarMarcasDeReserva(p: {
   // Só cancelar.
   const c = marcas.cancelar!;
   if (p.simulacao) {
+    // Sem telefone no simulador: confere ao menos que existe reserva confirmada nesse dia/horário.
+    const existe = preparo.semana.some((r) => r.status === "CONFIRMADA" && (!c.data || r.data === c.data) && (!c.hora || r.hora === c.hora));
+    if (!existe) return { resposta: "Não encontrei reserva confirmada no seu número para esse dia. Pode me dizer o dia e o horário da reserva?" };
     return { resposta: `Pronto, cancelei sua reserva${c.data ? ` de ${c.data.slice(8, 10)}/${c.data.slice(5, 7)}` : ""}${c.hora ? ` às ${c.hora}` : ""}.${SIMULADOR}` };
   }
   if (!telefone) return { resposta: "Para cancelar, me confirma o número de WhatsApp em que a reserva foi feita?" };

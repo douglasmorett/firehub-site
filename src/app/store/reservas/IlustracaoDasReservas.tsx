@@ -27,11 +27,11 @@ export function IlustracaoDasReservas() {
   return (
     <Passos titulo="Como funciona" altura={330} passos={[
       {
-        legenda: "O cliente pede a reserva no WhatsApp da loja. O robô já sabe os horários livres de verdade e pergunta só o que falta.",
+        legenda: "O cliente pergunta no WhatsApp se tem mesa. O robô consulta a ocupação de verdade, responde e já reserva sozinho, pedindo só o que falta.",
         desenho: (
           <Celular titulo={LOJA} sub="online">
-            <Balao eu>Oi! Quero reservar mesa pra sábado às 20h, somos 4</Balao>
-            <Balao>Claro! 😊 Em nome de quem fica a reserva?</Balao>
+            <Balao eu>Oi! Tem mesa pra sábado às 20h? Somos 4</Balao>
+            <Balao>Tem sim! Sábado (21/11) às 20:00 tem mesa para 4 pessoas. Quer que eu reserve? Me diz o nome de quem reserva.</Balao>
             <Balao eu>João Silva</Balao>
             <Balao><b>Reserva confirmada! ✅</b><br />📅 Sábado, 21/11 às 20:00<br />👥 4 pessoas, no nome de João Silva</Balao>
           </Celular>
@@ -74,7 +74,7 @@ export function IlustracaoDasReservas() {
           </Painel>
           <Seta />
           <Painel titulo="Novembro" largura={190}>
-            <div style={{ fontSize: 22, fontWeight: 900, color: "#5B21B6" }}>R$ 18.430</div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: "#0F172A" }}>R$ 18.430</div>
             <div style={{ color: "#64748B" }}>consumidos nas mesas reservadas</div>
             <div style={{ display: "flex", justifyContent: "space-between" }}><span>Reservas</span><b>128</b></div>
             <div style={{ display: "flex", justifyContent: "space-between" }}><span>Vieram</span><b>91%</b></div>

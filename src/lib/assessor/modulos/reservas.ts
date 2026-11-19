@@ -5,7 +5,7 @@
  * Grava pelo mesmo caminho do painel /store/reservas (lib/reservas/no-banco.ts):
  * a reserva nova passa pela mesma conferência de vaga (lotado = volta com os
  * horários livres mais perto, nunca encaixa sozinho) e entra com origem BILL.
- * Só com o módulo Reservas ligado (R$ 97/mês, lib/reservas/assinatura.ts).
+ * Só com o módulo Reservas ligado (R$ 49,90/mês, lib/reservas/assinatura.ts).
  */
 import { Type } from "@google/genai";
 import { reservasDaLoja } from "@/lib/reservas/assinatura";
@@ -17,7 +17,7 @@ import { fusoDaLoja } from "./equipe";
 
 const DESLIGADO: Resultado = {
   ok: false,
-  erro: "O módulo Reservas de mesa está desligado nesta loja. O dono ativa em Reservas no painel (R$ 97/mês, 7 dias grátis): aí o Bill e o robô passam a reservar com controle de vagas.",
+  erro: "O módulo Reservas de mesa está desligado nesta loja. O dono ativa no painel em Mesas › Controle de reservas (R$ 49,90/mês, 7 dias grátis): aí o Bill e o robô passam a reservar com controle de vagas.",
 };
 
 async function reservas(args: any, ctx: ContextoDoAssessor): Promise<Resultado> {

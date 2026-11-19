@@ -165,8 +165,8 @@ confere("regras do robô com o módulo: 'você reserva de verdade', sem 'chamo a
 
 // ── Cobrança (a dos módulos pagos) ──
 const nov = [new Date("2026-11-01T03:00:00Z"), new Date("2026-12-01T03:00:00Z")] as const;
-const trecho = (de: string, ate: string | null) => ({ de, ate, valor: 97 });
-confere("ligou dia 10 com teste até 17: novembro cobra R$ 97", valorDasReservasNoMes([trecho("2026-11-10T12:00:00Z", null)], "2026-11-17T12:00:00Z", nov[0], nov[1], new Date("2026-11-25T12:00:00Z")) === 97);
+const trecho = (de: string, ate: string | null) => ({ de, ate, valor: 49.9 });
+confere("ligou dia 10 com teste até 17: novembro cobra R$ 49,90", valorDasReservasNoMes([trecho("2026-11-10T12:00:00Z", null)], "2026-11-17T12:00:00Z", nov[0], nov[1], new Date("2026-11-25T12:00:00Z")) === 49.9);
 confere("desligou dentro do teste: nada", valorDasReservasNoMes([trecho("2026-11-10T12:00:00Z", "2026-11-12T12:00:00Z")], "2026-11-17T12:00:00Z", nov[0], nov[1], new Date("2026-11-25T12:00:00Z")) === 0);
 confere("teste invade o mês seguinte inteiro: o mês do teste não cobra",
   valorDasReservasNoMes([trecho("2026-11-28T12:00:00Z", null)], "2026-12-05T12:00:00Z", nov[0], nov[1], new Date("2026-11-30T12:00:00Z")) === 0);

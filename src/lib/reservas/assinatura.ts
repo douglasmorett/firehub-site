@@ -1,5 +1,5 @@
 /**
- * A ASSINATURA DO MÓDULO RESERVAS DE MESA — R$ 97 por mês, numa linha própria
+ * A ASSINATURA DO MÓDULO RESERVAS DE MESA — R$ 49,90 por mês, numa linha própria
  * do boleto da mensalidade — e a configuração das reservas da loja.
  *
  * A regra é a dos módulos pagos (a da Balança, lib/balanca/assinatura.ts),

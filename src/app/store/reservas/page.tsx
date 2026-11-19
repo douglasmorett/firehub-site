@@ -8,7 +8,7 @@ export const metadata = { title: "FireHub — Reservas de mesa" };
 
 /**
  * /store/reservas — o módulo de reservas de mesa: apresentação, ativação com
- * termo e R$ 97/mês no boleto (lib/reservas); ligado, o painel do dia, da
+ * termo e R$ 49,90/mês no boleto (lib/reservas); ligado, o painel do dia, da
  * semana, do mês, os resultados e a configuração.
  */
 export default async function ReservasPage() {

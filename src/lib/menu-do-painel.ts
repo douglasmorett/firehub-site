@@ -37,6 +37,8 @@ export type ItemDoMenu = {
    * "Entrega" sem passar pela tela de cartões de Minha Loja.
    */
   filhos?: { href: string; label: string }[];
+  /** Outras rotas que acendem este item (a tela filha que não começa com o href dele). */
+  ativoTambemEm?: string[];
 };
 
 export type GrupoDoMenu = { titulo: string; itens: ItemDoMenu[] };
@@ -50,9 +52,15 @@ export const MENU_DO_PAINEL: GrupoDoMenu[] = [
       { href: "/store/kds", label: "KDS da cozinha", icone: "Monitor" },
       // A TV do salão que chama a senha (lib/painel-de-senhas.ts).
       { href: "/store/painel-de-senhas", label: "Painel de senhas", icone: "Tv", selo: "NOVO" },
-      { href: "/store/mesas", label: "Mesas", icone: "UtensilsCrossed" },
-      // O robô reserva sozinho e o dono vê a ocupação de cada horário (R$ 97/mês, lib/reservas — Douglas, 19/11/2026).
-      { href: "/store/reservas", label: "Reservas", icone: "CalendarCheck", selo: "NOVO" },
+      // As Reservas de mesa (R$ 49,90/mês, lib/reservas) moram DENTRO de Mesas:
+      // filha aqui e o botão "Controle de reservas" na tela (Douglas, 19/11/2026).
+      {
+        href: "/store/mesas", label: "Mesas", icone: "UtensilsCrossed", ativoTambemEm: ["/store/reservas"],
+        filhos: [
+          { href: "/store/mesas", label: "Mesas e comandas" },
+          { href: "/store/reservas", label: "Reservas de mesa" },
+        ],
+      },
       // O cliente pede pelo tablet preso à mesa (R$ 29,90 por tablet ativo — lib/tablet-da-mesa, Douglas, 22/10/2026).
       { href: "/store/tablet-na-mesa", label: "Tablet na mesa", icone: "TabletSmartphone", selo: "NOVO" },
       // Self-service por quilo: balança + comanda numerada (R$ 197/mês, lib/balanca — Douglas, 05/11/2026).
@@ -153,7 +161,7 @@ export function itemAtivo(pathname: string | null | undefined): ItemDoMenu | nul
   let achado: ItemDoMenu | null = null;
   for (const grupo of MENU_DO_PAINEL) {
     for (const item of grupo.itens) {
-      const casa = item.href === "/store" ? p === "/store" : p.startsWith(item.href);
+      const casa = item.href === "/store" ? p === "/store" : p.startsWith(item.href) || !!item.ativoTambemEm?.some((x) => p.startsWith(x));
       // O mais longo vence: /store/pedidos-clientes não pode perder para /store.
       if (casa && (!achado || item.href.length > achado.href.length)) achado = item;
     }

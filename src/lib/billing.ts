@@ -896,7 +896,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       taxasExtras += firecheck;
       linhasExtras.push(`FireCheck R$${firecheck.toFixed(2)}`);
     }
-    // Reservas de mesa: R$ 97 À PARTE da mensalidade; ativo em algum dia do
+    // Reservas de mesa: R$ 49,90 À PARTE da mensalidade; ativo em algum dia do
     // mês fora do teste = o mês inteiro (lib/reservas/assinatura.ts).
     const { cobrancaDasReservasNoMes } = await import("@/lib/reservas/assinatura");
     const reservas = await cobrancaDasReservasNoMes(franchiseeId, monthStart, monthEnd);

@@ -102,8 +102,8 @@ function linhaDasFormasProprias(textos: string[]): string {
 - Outras formas de pagamento aceitas NA ENTREGA/RETIRADA (próprias da loja, além de Pix, cartão e dinheiro): ${nomes}. Se o cliente escolher uma delas, grave o pagamento com o nome exato (${nomes}); não tem troco nem pagamento pelo site.`;
 }
 import { lerRespostasProntas, blocoDasRespostasProntas, textoDasRespostasProntas, extrairMarcasDeRespostaPronta, envioDasRespostasProntas, extrairFichaPreenchida, regraDaReservaPelaFicha } from "./respostas-prontas";
-import { prepararReservasDoRobo, aplicarMarcasDeReserva } from "./reservas/no-robo";
-import { extrairMarcasDeReserva, semFichaDeReserva } from "./reservas/robo";
+import { prepararReservasDoRobo, aplicarMarcasDeReserva, resolverReservaSemModulo } from "./reservas/no-robo";
+import { REGRA_DA_RESERVA_SEM_MODULO, extrairMarcasDeReserva, reservaInventada, semFichaDeReserva } from "./reservas/robo";
 import { feriadoLocal, linhaDoFeriadoParaORobo } from "./holidays";
 import { lerConfigDeAgendamento, textoDoAgendamento } from "./agendamento";
 import {
@@ -615,7 +615,7 @@ export async function processChatbotAI(
     : DOCUMENTO_NAO_PEDIDO;
   const personality = chatbotConfig.personality || "SIMPATICO";
   const customPrompt = (chatbotConfig.customPrompt || chatbotConfig.customInstructions || "").trim();
-  // Reservas de mesa (lib/reservas, R$ 97/mês): com o módulo ligado o robô vê
+  // Reservas de mesa (lib/reservas, R$ 49,90/mês): com o módulo ligado o robô vê
   // os horários livres de verdade e reserva sozinho; desligado, tudo como antes.
   const reservasNoRobo = await prepararReservasDoRobo(targetFranchiseeId, user.storeTimezone, clientPhoneDigits);
   // Texto e fotos oficiais da loja para assuntos certos (lib/respostas-prontas.ts).
@@ -1469,7 +1469,12 @@ ${regrasDoRobo({
   lojaFisica: chatbotConfig.storeType === "PHYSICAL" || reservasNoRobo.ligado,
   enderecoDaLoja: user.storeAddress || user.city || null,
   fazReservaDeMesa: typeof (chatbotConfig as any).fazReservaDeMesa === "boolean" ? (chatbotConfig as any).fazReservaDeMesa : null,
-  regraDaReserva: reservasNoRobo.ligado ? reservasNoRobo.regra : regraDaReservaPelaFicha(respostasProntas),
+  // Sem o módulo (Douglas, 19/11/2026): a ficha da loja, se houver; senão o
+  // robô anota o pedido e chama a equipe — a não ser que a loja tenha dito
+  // que não faz reserva (fazReservaDeMesa === false), que é dado dela.
+  regraDaReserva: reservasNoRobo.ligado
+    ? reservasNoRobo.regra
+    : regraDaReservaPelaFicha(respostasProntas) || ((chatbotConfig as any).fazReservaDeMesa === false ? "" : REGRA_DA_RESERVA_SEM_MODULO),
   modoDaArea: modoDaAreaDaLoja === "KM" || modoDaAreaDaLoja === "POLIGONO" || modoDaAreaDaLoja === "BAIRRO" ? modoDaAreaDaLoja : "SEM_AREA",
   ehRota,
   regraDoPix: regraDoPixNoPrompt(pixDaLoja, aiOrderingEnabled),
@@ -2056,16 +2061,27 @@ Lembre-se: conversa curta e contínua de WhatsApp, sem emoji automático nem rep
           // (Pizzaria 17, 08/10/2026): sem isto, "fazemos reserva sim" era
           // trocado por "não sei" — a rede só conhecia nome, endereço, cardápio
           // e instruções extras.
+          // Sem o módulo, o robô ANOTA o pedido para a equipe (Douglas,
+          // 19/11/2026): "reserva" na resposta tem fonte, desde que a loja não
+          // tenha dito que não faz.
           const fatoDaReserva =
             reservasNoRobo.ligado || (chatbotConfig as any).fazReservaDeMesa === true
               ? "A loja faz reserva de mesa."
               : (chatbotConfig as any).fazReservaDeMesa === false
                 ? "A loja não faz reserva de mesa."
-                : "";
-          const fonteDosFatos = [storeName, user.storeAddress, catalogSummary, customPrompt, fatoDaReserva, textoDasRespostasProntas(respostasProntas)].filter(Boolean).join("\n");
+                : "A loja recebe pedido de reserva de mesa; quem confirma é a equipe.";
+          // As regras da casa que o dono escreveu na confirmação das reservas (bolo, área kids…) também são fonte.
+          const regrasDaCasa = reservasNoRobo.ligado ? reservasNoRobo.config.mensagemDeConfirmacao : "";
+          const fonteDosFatos = [storeName, user.storeAddress, catalogSummary, customPrompt, fatoDaReserva, regrasDaCasa, textoDasRespostasProntas(respostasProntas)].filter(Boolean).join("\n");
           const semFonte = servicosSemFonte(semMarcas, fonteDosFatos, { soDelivery: chatbotConfig.storeType !== "PHYSICAL" && !reservasNoRobo.ligado });
-          if (semFonte.length > 0) {
-            console.warn(`[Chatbot AI] 🚫 Resposta afirmava sem fonte (${semFonte.join(", ")}) — troquei por "não sei" e chamei o atendente. Era: ${semMarcas.slice(0, 200)}`);
+          // A rede da reserva: o MODELO não confirma reserva nem diz se tem mesa
+          // sem o sistema (lib/reservas/robo.ts, reservaInventada).
+          const inventouReserva = reservaInventada(semMarcas, {
+            moduloLigado: reservasNoRobo.ligado,
+            comMarca: !!(marcasDeReserva.reserva || marcasDeReserva.anotar || marcasDeReserva.cancelar || marcasDeReserva.consultar),
+          });
+          if (semFonte.length > 0 || inventouReserva) {
+            console.warn(`[Chatbot AI] 🚫 Resposta afirmava sem fonte (${[...semFonte, inventouReserva].filter(Boolean).join(", ")}) — troquei por "não sei" e chamei o atendente. Era: ${semMarcas.slice(0, 200)}`);
             const transcricao = cleanText.match(/\[\[TRANSCRICAO[\s\S]*?\]\]/)?.[0];
             cleanText = [RESPOSTA_QUANDO_NAO_SABE, transcricao, "[[CHAMAR_ATENDENTE]]"].filter(Boolean).join("\n");
           }
@@ -2487,7 +2503,18 @@ Lembre-se: conversa curta e contínua de WhatsApp, sem emoji automático nem rep
         // ── RESERVA DE MESA: GRAVA, E SÓ ENTÃO CONFIRMA ─────────────────────
         // A resposta do modelo sai inteira: quem fala é o sistema, com o que
         // ficou gravado (ou com os horários livres, se não coube).
-        if (marcasDeReserva.reserva || marcasDeReserva.cancelar) {
+        // Módulo DESLIGADO: o sistema anota o pedido e a conversa vai para a
+        // equipe com a ficha (o caminho da ficha preenchida, no webhook).
+        let fichaDaReserva: { id: string; titulo: string; dados: string } | null = null;
+        const algumaMarcaDeReserva = marcasDeReserva.reserva || marcasDeReserva.anotar || marcasDeReserva.cancelar || marcasDeReserva.consultar;
+        if (algumaMarcaDeReserva && !reservasNoRobo.ligado) {
+          const transcricao = cleanText.match(/\[\[TRANSCRICAO[\s\S]*?\]\]/)?.[0];
+          const r = resolverReservaSemModulo({ marcas: marcasDeReserva, timeZone: user.storeTimezone, telefone: clientPhoneDigits });
+          if (r) {
+            fichaDaReserva = r.ficha || null;
+            cleanText = [r.resposta, transcricao, r.chamarEquipe && !r.ficha ? "[[CHAMAR_ATENDENTE]]" : ""].filter(Boolean).join("\n");
+          }
+        } else if (algumaMarcaDeReserva) {
           const transcricao = cleanText.match(/\[\[TRANSCRICAO[\s\S]*?\]\]/)?.[0];
           try {
             const r = await aplicarMarcasDeReserva({
@@ -2509,7 +2536,7 @@ Lembre-se: conversa curta e contínua de WhatsApp, sem emoji automático nem rep
           // A chave Pix da loja, para o webhook mandar sozinha depois da resposta.
           ...(enviarChavePix && pixDaLoja ? { chavePix: pixDaLoja.chave } : {}),
           ...(prontas.envios.length ? { respostasProntas: prontas.envios } : {}),
-          ...(fichaDoCliente.ficha ? { fichaPreenchida: fichaDoCliente.ficha } : {}),
+          ...(fichaDoCliente.ficha || fichaDaReserva ? { fichaPreenchida: fichaDoCliente.ficha || fichaDaReserva } : {}),
           pedido: resultadoDoSync
             ? (resultadoDoSync.gravado
                 ? { ok: true as const, id: resultadoDoSync.orderId, numero: resultadoDoSync.numero, finalizado: resultadoDoSync.finalizado, itens: resultadoDoSync.itens }

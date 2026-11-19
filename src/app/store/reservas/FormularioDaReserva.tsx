@@ -7,12 +7,13 @@
  */
 import { useMemo, useState } from "react";
 import { dataPorExtenso, horariosDoDia, type Sugestao } from "@/lib/reservas/regras";
-import { BORDA, Botao, COR, COR_CLARA, TINTA, TINTA_2, TINTA_3, corDaOcupacao, type Dados, type ReservaDaTela } from "./comum";
+import { CalendarPlus, Clock, Minus, Plus, X } from "lucide-react";
+import { BORDA, BORDA_FORTE, Botao, CALHA, COR, COR_BORDA, COR_CLARA, TINTA, TINTA_2, TINTA_3, corDaOcupacao, type Dados, type ReservaDaTela } from "./comum";
 
 export type ModoDoFormulario = { tipo: "nova"; data: string; hora?: string | null } | { tipo: "mover"; reserva: ReservaDaTela };
 
-const campo: React.CSSProperties = { width: "100%", boxSizing: "border-box", padding: "10px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: 15, fontFamily: "inherit", color: TINTA };
-const rotulo: React.CSSProperties = { display: "grid", gap: 5, fontSize: 13, fontWeight: 800, color: TINTA_2 };
+const campo: React.CSSProperties = { width: "100%", boxSizing: "border-box", height: 46, padding: "0 12px", borderRadius: 10, border: "1px solid #7C8DA5", font: "500 16px/1.2 Inter, system-ui, sans-serif", color: TINTA, background: "#fff" };
+const rotulo: React.CSSProperties = { display: "grid", gap: 6, font: "800 12px/1.2 Inter, system-ui, sans-serif", letterSpacing: ".04em", textTransform: "uppercase", color: "#475569" };
 
 export function FormularioDaReserva({ modo, dados, onFechar, onSalvou }: {
   modo: ModoDoFormulario; dados: Dados; onFechar: () => void; onSalvou: (r: ReservaDaTela, mensagem: string) => void;
@@ -63,91 +64,105 @@ export function FormularioDaReserva({ modo, dados, onFechar, onSalvou }: {
   }
 
   const pronto = modo.tipo === "mover" ? !!data && !!hora : !!nome.trim() && !!data && !!hora && pessoas >= 1;
+  const botaoPassador: React.CSSProperties = { width: 46, height: 46, display: "grid", placeItems: "center", border: "none", background: "transparent", color: TINTA, cursor: "pointer", flex: "none" };
 
+  // Folha lateral em tela larga (a agenda continua visível ao lado); no celular ocupa a tela.
   return (
     <div role="dialog" aria-modal="true" aria-label={modo.tipo === "mover" ? "Mover reserva" : "Nova reserva"}
       onClick={(ev) => { if (ev.target === ev.currentTarget && !salvando) onFechar(); }}
-      style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15,23,42,.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div className="rsv-entra" style={{ background: "#fff", borderRadius: 20, width: "100%", maxWidth: 560, maxHeight: "92vh", overflowY: "auto", padding: "20px 20px 18px", display: "grid", gap: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span aria-hidden style={{ width: 40, height: 40, borderRadius: 12, background: COR_CLARA, display: "grid", placeItems: "center", fontSize: 20 }}>{modo.tipo === "mover" ? "🕒" : "📅"}</span>
-          <div style={{ flex: 1 }}>
-            <strong style={{ fontSize: 18, color: TINTA }}>{modo.tipo === "mover" ? `Mover a reserva de ${modo.reserva.nome}` : "Nova reserva"}</strong>
-            <div style={{ fontSize: 13, color: TINTA_3 }}>{modo.tipo === "mover" ? `Hoje: ${dataPorExtenso(modo.reserva.data)} às ${modo.reserva.hora} · ${modo.reserva.pessoas} pessoas` : "O sistema confere se cabe no horário."}</div>
+      style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15,23,42,.45)", display: "flex", justifyContent: "flex-end" }}>
+      <style>{`.rsv-folha-reserva{width:min(560px,100%);height:100%;display:flex;flex-direction:column;background:#fff;box-shadow:0 24px 64px -16px rgba(15,23,42,.32)}@media (min-width:700px){.rsv-folha-reserva{border-radius:20px 0 0 20px}}`}</style>
+      <div className="rsv-folha rsv-folha-reserva">
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "18px 20px", borderBottom: `1px solid ${BORDA}` }}>
+          <span aria-hidden style={{ width: 44, height: 44, borderRadius: 12, background: COR_CLARA, border: `1px solid ${COR_BORDA}`, color: COR, display: "grid", placeItems: "center", flex: "none" }}>
+            {modo.tipo === "mover" ? <Clock size={22} /> : <CalendarPlus size={22} />}
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <strong style={{ font: "800 18px/1.25 Inter, system-ui, sans-serif", color: TINTA }}>{modo.tipo === "mover" ? `Mover a reserva de ${modo.reserva.nome}` : "Nova reserva"}</strong>
+            <div style={{ font: "500 13px/1.4 Inter, system-ui, sans-serif", color: TINTA_3 }}>{modo.tipo === "mover" ? `Hoje: ${dataPorExtenso(modo.reserva.data)} às ${modo.reserva.hora} · ${modo.reserva.pessoas} pessoas` : "O sistema confere se cabe no horário."}</div>
           </div>
-          <button type="button" onClick={onFechar} aria-label="Fechar" style={{ border: "none", background: "none", fontSize: 22, color: TINTA_3, cursor: "pointer" }}>×</button>
+          <button type="button" onClick={onFechar} aria-label="Fechar" className="fh-btn fh-btn--fantasma fh-btn--icone" style={{ width: 44 }}><X size={20} /></button>
         </div>
 
-        {modo.tipo === "nova" && (
-          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
-            <label style={{ ...rotulo, gridColumn: "1 / -1" }}>Nome<input autoFocus value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Quem reserva" style={campo} /></label>
-            <label style={rotulo}>WhatsApp<input value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="(22) 99999-0000" inputMode="tel" style={campo} /></label>
-            <label style={rotulo}>Pessoas
-              <div style={{ display: "flex", gap: 6 }}>
-                <button type="button" onClick={() => setPessoas((p) => Math.max(1, p - 1))} style={{ ...campo, width: 44, padding: 0, fontWeight: 900, color: COR, cursor: "pointer", background: "#fff" }}>−</button>
-                <input type="number" min={1} value={pessoas} onChange={(e) => setPessoas(Math.max(1, Number(e.target.value) || 1))} style={{ ...campo, textAlign: "center", fontWeight: 900 }} />
-                <button type="button" onClick={() => setPessoas((p) => p + 1)} style={{ ...campo, width: 44, padding: 0, fontWeight: 900, color: COR, cursor: "pointer", background: "#fff" }}>+</button>
+        <div style={{ flex: 1, overflowY: "auto", padding: "20px", display: "grid", gap: 18, alignContent: "start" }}>
+          {modo.tipo === "nova" && (
+            <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
+              <label style={{ ...rotulo, gridColumn: "1 / -1" }}>Nome<input autoFocus value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Quem reserva" style={campo} /></label>
+              <label style={rotulo}>WhatsApp<input value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="(22) 99999-0000" inputMode="tel" style={campo} /></label>
+              <div style={rotulo}>Pessoas
+                <div style={{ display: "flex", alignItems: "center", border: "1px solid #7C8DA5", borderRadius: 10, overflow: "hidden", background: "#fff" }}>
+                  <button type="button" aria-label="Menos uma pessoa" onClick={() => setPessoas((p) => Math.max(1, p - 1))} style={botaoPassador}><Minus size={18} /></button>
+                  <input type="number" min={1} value={pessoas} aria-label="Pessoas" onChange={(e) => setPessoas(Math.max(1, Number(e.target.value) || 1))}
+                    style={{ ...campo, border: "none", borderLeft: `1px solid ${BORDA}`, borderRight: `1px solid ${BORDA}`, borderRadius: 0, textAlign: "center", font: "900 18px/1 Inter, system-ui, sans-serif", fontVariantNumeric: "tabular-nums" }} />
+                  <button type="button" aria-label="Mais uma pessoa" onClick={() => setPessoas((p) => p + 1)} style={botaoPassador}><Plus size={18} /></button>
+                </div>
               </div>
-            </label>
-          </div>
-        )}
-
-        <label style={rotulo}>Dia<input type="date" value={data} min={dados.hoje} onChange={(e) => { setData(e.target.value); setRecusa(null); }} style={campo} /></label>
-
-        <div style={rotulo}>
-          Horário de chegada
-          {grade.length ? (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {grade.map((h) => {
-                const o = ocupacao.get(h);
-                const c = o ? corDaOcupacao(o.ocupadas / config.maxReservasSimultaneas, o.semVaga) : null;
-                const escolhido = hora === h;
-                return (
-                  <button key={h} type="button" onClick={() => { setHora(h); setRecusa(null); }} title={o ? `${o.ocupadas} de ${config.maxReservasSimultaneas} · ${c!.rotulo}` : undefined}
-                    style={{ padding: "7px 10px", borderRadius: 10, fontWeight: 800, fontSize: 13.5, cursor: "pointer", fontFamily: "inherit", fontVariantNumeric: "tabular-nums",
-                      border: escolhido ? `2px solid ${COR}` : `1px solid ${c && (o!.ocupadas || o!.semVaga) ? c.cor : BORDA}`, background: escolhido ? COR : c && (o!.ocupadas || o!.semVaga) ? c.fundo : "#fff", color: escolhido ? "#fff" : TINTA,
-                      textDecoration: o?.semVaga ? "line-through" : "none" }}>
-                    {h}{o && o.ocupadas ? <small style={{ fontWeight: 700, opacity: 0.8 }}> {o.ocupadas}/{config.maxReservasSimultaneas}</small> : null}
-                  </button>
-                );
-              })}
             </div>
-          ) : data ? <span style={{ fontWeight: 600, color: TINTA_3 }}>Este dia não aceita reserva (dá para encaixar mesmo assim digitando o horário).</span> : null}
-          <input type="time" value={hora} step={300} onChange={(e) => { setHora(e.target.value); setRecusa(null); }} style={{ ...campo, width: 140 }} aria-label="Outro horário" />
+          )}
+
+          <label style={rotulo}>Dia<input type="date" value={data} min={dados.hoje} onChange={(e) => { setData(e.target.value); setRecusa(null); }} style={campo} /></label>
+
+          <div style={rotulo}>
+            Horário de chegada
+            {grade.length ? (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(84px, 1fr))", gap: 6 }}>
+                {grade.map((h) => {
+                  const o = ocupacao.get(h);
+                  const c = o ? corDaOcupacao(o.ocupadas / config.maxReservasSimultaneas, o.semVaga) : null;
+                  const escolhido = hora === h;
+                  const marcado = !!c && (o!.ocupadas > 0 || o!.semVaga);
+                  return (
+                    <button key={h} type="button" onClick={() => { setHora(h); setRecusa(null); }} aria-pressed={escolhido} title={o ? `${o.ocupadas} de ${config.maxReservasSimultaneas} · ${c!.rotulo}` : undefined}
+                      style={{ height: 52, borderRadius: 10, cursor: "pointer", fontFamily: "inherit", display: "grid", placeItems: "center", alignContent: "center", gap: 3, textTransform: "none", letterSpacing: 0,
+                        border: escolhido ? `2px solid ${TINTA}` : `1px solid ${marcado ? c!.borda : BORDA_FORTE}`, background: escolhido ? TINTA : marcado ? c!.fundo : "#fff", color: escolhido ? "#fff" : TINTA }}>
+                      <span style={{ font: "800 15px/1 Inter, system-ui, sans-serif", fontVariantNumeric: "tabular-nums", textDecoration: o?.semVaga ? "line-through" : "none" }}>{h}</span>
+                      <span style={{ font: "500 11px/1 Inter, system-ui, sans-serif", color: escolhido ? "#E2E8F0" : marcado ? c!.cor : TINTA_3, fontVariantNumeric: "tabular-nums" }}>
+                        {o ? (o.semVaga ? "sem vaga" : `${o.ocupadas}/${config.maxReservasSimultaneas}`) : "livre"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : data ? <span style={{ font: "500 14px/1.45 Inter, system-ui, sans-serif", color: TINTA_3, textTransform: "none", letterSpacing: 0 }}>Este dia não aceita reserva (dá para encaixar mesmo assim digitando o horário).</span> : null}
+            <span style={{ display: "flex", alignItems: "center", gap: 10, font: "500 13px/1.3 Inter, system-ui, sans-serif", color: TINTA_3, textTransform: "none", letterSpacing: 0 }}>
+              ou outro horário
+              <input type="time" value={hora} step={300} onChange={(e) => { setHora(e.target.value); setRecusa(null); }} style={{ ...campo, width: 140 }} aria-label="Outro horário" />
+            </span>
+          </div>
+
+          {modo.tipo === "nova" && (<>
+            <label style={rotulo}>Observação<input value={observacao} onChange={(e) => setObservacao(e.target.value)} placeholder="Aniversário, cadeirinha, área externa…" style={campo} /></label>
+            {!!dados.mesas?.length && (
+              <label style={rotulo}>Mesa (opcional)
+                <select value={mesaId} onChange={(e) => setMesaId(e.target.value)} style={campo}>
+                  <option value="">Escolher na hora</option>
+                  {dados.mesas.map((m) => <option key={m.id} value={m.id}>{m.nome} ({m.capacidade} lugares)</option>)}
+                </select>
+              </label>
+            )}
+          </>)}
+
+          {recusa && (
+            <div role="status" className="fh-aviso fh-aviso--erro" style={{ borderLeftWidth: 1, flexDirection: "column", gap: 10 }}>
+              <b>{recusa.erro}</b>
+              {recusa.sugestoes.length > 0 && (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                  <span style={{ font: "800 13px/1 Inter, system-ui, sans-serif", color: TINTA_2 }}>Livres mais perto:</span>
+                  {recusa.sugestoes.map((s) => (
+                    <Botao key={`${s.data}${s.hora}`} pequeno tipo="secundario" disabled={salvando} onClick={() => salvar(false, s)}>
+                      {s.data === data ? s.hora : `${s.data.slice(8, 10)}/${s.data.slice(5, 7)} ${s.hora}`}
+                    </Botao>
+                  ))}
+                </div>
+              )}
+              {recusa.podeEncaixar && <div><Botao pequeno tipo="secundario" disabled={salvando} onClick={() => salvar(true)} style={{ color: "#B71C1C" }}>Encaixar mesmo assim</Botao></div>}
+            </div>
+          )}
         </div>
 
-        {modo.tipo === "nova" && (<>
-          <label style={rotulo}>Observação<input value={observacao} onChange={(e) => setObservacao(e.target.value)} placeholder="Aniversário, cadeirinha, área externa…" style={campo} /></label>
-          {!!dados.mesas?.length && (
-            <label style={rotulo}>Mesa (opcional)
-              <select value={mesaId} onChange={(e) => setMesaId(e.target.value)} style={campo}>
-                <option value="">Escolher na hora</option>
-                {dados.mesas.map((m) => <option key={m.id} value={m.id}>{m.nome} ({m.capacidade} lugares)</option>)}
-              </select>
-            </label>
-          )}
-        </>)}
-
-        {recusa && (
-          <div role="status" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 12, padding: 12, display: "grid", gap: 8 }}>
-            <b style={{ color: "#991B1B" }}>{recusa.erro}</b>
-            {recusa.sugestoes.length > 0 && (
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: TINTA_2 }}>Livres mais perto:</span>
-                {recusa.sugestoes.map((s) => (
-                  <Botao key={`${s.data}${s.hora}`} tipo="secundario" disabled={salvando} onClick={() => salvar(false, s)} style={{ padding: "6px 10px" }}>
-                    {s.data === data ? s.hora : `${s.data.slice(8, 10)}/${s.data.slice(5, 7)} ${s.hora}`}
-                  </Botao>
-                ))}
-              </div>
-            )}
-            {recusa.podeEncaixar && <div><Botao tipo="perigo" disabled={salvando} onClick={() => salvar(true)}>Encaixar mesmo assim</Botao></div>}
-          </div>
-        )}
-
-        <div style={{ display: "flex", gap: 10 }}>
-          <Botao tipo="secundario" onClick={onFechar} disabled={salvando} style={{ flex: 1, padding: 13 }}>Voltar</Botao>
-          <Botao onClick={() => salvar(false)} disabled={!pronto || salvando} style={{ flex: 2, padding: 13, fontSize: 15 }}>
+        <div style={{ display: "flex", gap: 10, padding: "14px 20px 18px", borderTop: `1px solid ${BORDA}`, background: CALHA }}>
+          <Botao tipo="secundario" onClick={onFechar} disabled={salvando} style={{ flex: 1, height: 52 }}>Voltar</Botao>
+          <Botao onClick={() => salvar(false)} disabled={!pronto || salvando} style={{ flex: 2 }}>
             {salvando ? "Conferindo a vaga…" : modo.tipo === "mover" ? "Mover reserva" : "Confirmar reserva"}
           </Botao>
         </div>

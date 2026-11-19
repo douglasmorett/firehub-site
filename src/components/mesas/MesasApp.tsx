@@ -2462,6 +2462,13 @@ export default function MesasApp({
           </div>
         ) : (
           <div style={{ display: "flex", gap: 6 }}>
+            {/* As Reservas de mesa moram dentro de Mesas (Douglas, 19/11/2026):
+                a porta é este botão destacado, e no menu ela é filha de Mesas. */}
+            <a href="/store/reservas" title="Reservas de mesa: o dia, a semana, o mês e a capacidade" style={{
+              background: "#C92E09", color: "#fff", border: "1px solid #C92E09", borderRadius: 10,
+              padding: "8px 14px", fontWeight: 800, fontSize: 13, textDecoration: "none", whiteSpace: "nowrap",
+              boxShadow: "0 6px 16px -4px rgba(201,46,9,.38)",
+            }}>📅 Controle de reservas</a>
             <a href={ehGarcom ? `/garcom/${encodeURIComponent(slug)}/celular` : "/store/mesas/celular"}
               title="Versão para celular: uma coisa por tela, botões grandes" style={{
               background: "#F1F5F9", color: "#475569", border: "1px solid #E2E8F0", borderRadius: 10,
