@@ -115,6 +115,8 @@ export type Pedido = {
   cancelado?: boolean;
   podeInformarEntregue?: boolean;
   cancelReason?: string | null;
+  /** O nome público da loja, para a mensagem do WhatsApp ao cliente. Servidor antigo não manda. */
+  loja?: string | null;
 };
 
 export type ListaDePedidos = {

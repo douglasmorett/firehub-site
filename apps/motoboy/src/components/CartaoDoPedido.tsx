@@ -9,6 +9,7 @@ import { ActionSheetIOS, Linking, Platform, Pressable, StyleSheet, Text, View } 
 import { WebView } from "react-native-webview";
 
 import type { Pedido } from "@/lib/api";
+import { mensagemAoCliente } from "@/lib/mensagem-ao-cliente";
 import { CORES_DA_URGENCIA, textoDaUrgencia, urgenciaDaEntrega, type LimitesDaUrgencia } from "@/lib/urgencia";
 import { Botao } from "./Botao";
 import { cor, raio, reais } from "./tema";
@@ -81,7 +82,7 @@ export function CartaoDoPedido({
   // o ID à parte e o WhatsApp só para celular.
   const tel = pedido.telefone;
   const whatsapp = tel?.whatsapp
-    ? `https://wa.me/${tel.whatsapp}?text=${encodeURIComponent("Olá! Sou o entregador da loja e estou a caminho do seu endereço!")}`
+    ? `https://wa.me/${tel.whatsapp}?text=${encodeURIComponent(mensagemAoCliente({ cliente: pedido.customerName, loja: pedido.loja, numero: pedido.numero }))}`
     : null;
   // Liga para o 0800 e, depois de uma pausa, digita o ID do pedido (como o
   // outro app que o Lucas usa).
