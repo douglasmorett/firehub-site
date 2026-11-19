@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { comSenhaDoGerente, useSenhaDoGerente } from "@/components/SenhaDoGerente";
 import { ModalDoComprovanteDoFiado, OpcoesDoComprovante, usePreferenciasDoComprovante } from "@/components/ComprovanteDoFiado";
+import { ModalDoFiadoDoPeriodo, diaPuro, periodoDoMes } from "@/components/FiadoDoPeriodo";
 
 /**
  * Como o fiado foi pago na baixa. Fica escrito na observação da baixa (o
@@ -58,7 +59,7 @@ export default function FuncionariosPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [dateRange, setDateRange] = useState<"today" | "yesterday" | "week" | "month" | "all" | "custom">("month");
+  const [dateRange, setDateRange] = useState<"today" | "yesterday" | "week" | "month" | "prevMonth" | "all" | "custom">("month");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
@@ -86,6 +87,9 @@ export default function FuncionariosPage() {
   const prefDoComprovante = usePreferenciasDoComprovante();
   const [comprovante, setComprovante] = useState<ComprovanteAberto | null>(null);
   const [recadoDoComprovante, setRecadoDoComprovante] = useState("");
+  // Imprimir o fiado do período para assinar (components/FiadoDoPeriodo.tsx).
+  const [fiadoDoPeriodo, setFiadoDoPeriodo] = useState<Employee | null>(null);
+  const [recadoDoPeriodo, setRecadoDoPeriodo] = useState("");
 
   const [statementEmp, setStatementEmp] = useState<Employee | null>(null);
   const [statementData, setStatementData] = useState<StatementItem[]>([]);
@@ -104,30 +108,31 @@ export default function FuncionariosPage() {
     }
   };
 
+  // O período da tela, em DIA PURO (YYYY-MM-DD): o servidor ancora no fuso da
+  // loja. Antes ia `new Date(fromDate).toISOString()`: o navegador lia
+  // "2026-08-29" como meia-noite em UTC, o fim do período virava 21:00 da
+  // véspera e o filtro personalizado não trazia nada. Vazio = todas as datas.
+  // O mesmo período abre no "Imprimir para assinar".
+  const periodoDaTela = (): { de: string; ate: string } => {
+    const now = new Date();
+    if (dateRange === "today") return { de: diaPuro(now), ate: diaPuro(now) };
+    if (dateRange === "yesterday") {
+      const ontem = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      return { de: diaPuro(ontem), ate: diaPuro(ontem) };
+    }
+    if (dateRange === "week") return { de: diaPuro(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)), ate: diaPuro(now) };
+    if (dateRange === "month") return periodoDoMes("atual", now);
+    if (dateRange === "prevMonth") return periodoDoMes("anterior", now);
+    if (dateRange === "custom" && fromDate && toDate) return { de: fromDate, ate: toDate };
+    return { de: "", ate: "" };
+  };
+
   // Carregar funcionários
   const fetchEmployees = async () => {
     setLoading(true);
     try {
-      // Manda DIA PURO (YYYY-MM-DD) e deixa o servidor ancorar no fuso da loja.
-      // Antes ia `new Date(fromDate).toISOString()`: o navegador lia "2026-08-29"
-      // como meia-noite em UTC, o fim do período virava 21:00 da véspera e o
-      // filtro personalizado não trazia nada — que é o que estava acontecendo.
-      const dia = (d: Date) =>
-        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-      let query = "";
-      const now = new Date();
-      if (dateRange === "today") {
-        query = `?fromDate=${dia(now)}&toDate=${dia(now)}`;
-      } else if (dateRange === "yesterday") {
-        const ontem = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-        query = `?fromDate=${dia(ontem)}&toDate=${dia(ontem)}`;
-      } else if (dateRange === "week") {
-        query = `?fromDate=${dia(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000))}&toDate=${dia(now)}`;
-      } else if (dateRange === "month") {
-        query = `?fromDate=${dia(new Date(now.getFullYear(), now.getMonth(), 1))}&toDate=${dia(now)}`;
-      } else if (dateRange === "custom" && fromDate && toDate) {
-        query = `?fromDate=${fromDate}&toDate=${toDate}`;
-      }
+      const { de, ate } = periodoDaTela();
+      const query = de && ate ? `?fromDate=${de}&toDate=${ate}` : "";
 
       const res = await fetch(`/api/store/employees${query}`);
       if (res.ok) {
@@ -480,7 +485,7 @@ export default function FuncionariosPage() {
         {/* Filtro de datas */}
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
           <Filter size={15} color="#64748B" />
-          {(["today", "yesterday", "week", "month", "all"] as const).map((mode) => (
+          {(["month", "prevMonth", "today", "yesterday", "week", "all"] as const).map((mode) => (
             <button
               key={mode}
               onClick={() => setDateRange(mode)}
@@ -495,7 +500,7 @@ export default function FuncionariosPage() {
                 color: dateRange === mode ? "#fff" : "#64748B",
               }}
             >
-              {mode === "today" ? "Hoje" : mode === "yesterday" ? "Ontem" : mode === "week" ? "7 Dias" : mode === "month" ? "Este Mês" : "Tudo"}
+              {mode === "today" ? "Hoje" : mode === "yesterday" ? "Ontem" : mode === "week" ? "7 Dias" : mode === "month" ? "Mês atual" : mode === "prevMonth" ? "Mês anterior" : "Tudo"}
             </button>
           ))}
 
@@ -503,7 +508,7 @@ export default function FuncionariosPage() {
               um botão "Personalizado", e quem não achava concluía que não dava
               para escolher a data. Mexer numa delas já vira período personalizado. */}
           <div style={{ display: "flex", alignItems: "center", gap: 6, background: dateRange === "custom" ? "#FEF2F2" : "#F8FAFC", padding: "4px 8px", borderRadius: 8, border: `1px solid ${dateRange === "custom" ? "#FECACA" : "#E2E8F0"}` }}>
-            <span style={{ fontSize: "0.72rem", fontWeight: 700, color: dateRange === "custom" ? "#B71C1C" : "#64748B" }}>De:</span>
+            <span style={{ fontSize: "0.72rem", fontWeight: 800, color: dateRange === "custom" ? "#B71C1C" : "#64748B" }}>Escolher datas · De:</span>
             <input
               type="date"
               value={fromDate}
@@ -543,6 +548,22 @@ export default function FuncionariosPage() {
           <UserPlus size={16} /> Cadastrar Cliente
         </button>
       </div>
+
+      {recadoDoPeriodo && (
+        <div role="status" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 14, padding: "10px 14px", borderRadius: 10, background: "#F0FDFA", border: "1px solid #99F6E4", color: "#0F766E", fontWeight: 700, fontSize: "0.85rem" }}>
+          <span>{recadoDoPeriodo}</span>
+          <button onClick={() => setRecadoDoPeriodo("")} aria-label="Fechar aviso" style={{ border: "none", background: "none", cursor: "pointer", color: "#0F766E" }}><X size={16} /></button>
+        </div>
+      )}
+
+      {fiadoDoPeriodo && (
+        <ModalDoFiadoDoPeriodo
+          employeeId={fiadoDoPeriodo.id}
+          nomeDoCliente={fiadoDoPeriodo.name}
+          {...periodoDaTela()}
+          onFechar={(recado) => { setFiadoDoPeriodo(null); if (recado) setRecadoDoPeriodo(recado); }}
+        />
+      )}
 
       {/* Lista de Clientes */}
       {loading ? (
@@ -707,6 +728,26 @@ export default function FuncionariosPage() {
                     <Edit size={14} />
                   </button>
                 </div>
+                {(hasDebt || emp.periodOrdersCount > 0) && (
+                  <button
+                    onClick={() => { setRecadoDoPeriodo(""); setFiadoDoPeriodo(emp); }}
+                    title="Escolhe a impressora e imprime o consumo do período com a aba para a pessoa assinar"
+                    style={{
+                      marginTop: 8,
+                      width: "100%",
+                      padding: "9px 10px",
+                      borderRadius: 8,
+                      border: "1.5px solid #99F6E4",
+                      background: "#F0FDFA",
+                      color: "#0F766E",
+                      fontWeight: 800,
+                      fontSize: "0.8rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    🖨️ Imprimir para assinar
+                  </button>
+                )}
               </div>
             );
           })}

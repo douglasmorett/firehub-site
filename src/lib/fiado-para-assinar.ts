@@ -25,9 +25,9 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { executarDDL } from "@/lib/ddl-do-boot";
 import { horaEmUtc } from "@/lib/cashback-no-banco";
-import { totalDasMesasNoFiado, garantirTabelaDoFiadoDaMesa } from "@/lib/fiado-da-mesa";
+import { totalDasMesasNoFiado, garantirTabelaDoFiadoDaMesa, mesasNoFiado } from "@/lib/fiado-da-mesa";
 import { saldoDoFiado } from "@/lib/fiado-da-mesa-regras";
-import { itensDoPedido, type LancamentoDoFiado } from "@/lib/comprovante-do-fiado";
+import { itensDoPedido, restanteDosLancamentos, type LancamentoDoFiado, type LancamentoDoPeriodo } from "@/lib/comprovante-do-fiado";
 import { funcionarioAbre } from "@/lib/permissao-da-tela";
 
 export type AlvoDoFiado = "PEDIDO" | "MESA";
@@ -141,6 +141,64 @@ export async function lancamentoDoFiado(employeeId: string, alvo: AlvoDoFiado, a
     itens: itensDoPedido(pedidos.flatMap((p) => p.items)),
     valorNoFiado: Number(m.valor) || 0,
   };
+}
+
+/**
+ * O fiado da pessoa num período, para o papel de assinar
+ * (comprovante-do-fiado.ts → cupomDoFechamentoDoFiado). Os lançamentos de
+ * todas as datas entram leves (id, valor, data) só para repartir as baixas do
+ * mais antigo para o mais novo; os itens saem só dos do período. Mesma régua
+ * do extrato e do saldo: pedido não cancelado + mesa no fiado − baixas.
+ */
+export async function fiadoDoPeriodo(employeeId: string, inicio?: Date, fim?: Date): Promise<{ lancamentos: LancamentoDoPeriodo[]; saldoTotal: number }> {
+  const [pedidos, mesas, baixas] = await Promise.all([
+    prisma.customerOrder.findMany({ where: { employeeId, status: { not: "CANCELADO" } }, select: { id: true, totalAmount: true, createdAt: true } }),
+    mesasNoFiado([employeeId]),
+    prisma.employeePayment.aggregate({ where: { employeeId }, _sum: { amount: true } }),
+  ]);
+  const todos = [
+    ...pedidos.map((o) => ({ id: o.id, quando: o.createdAt, valor: Number(o.totalAmount) || 0 })),
+    ...mesas.map((m) => ({ id: m.id, quando: m.createdAt, valor: m.valor })),
+  ];
+  const restante = restanteDosLancamentos(todos, baixas._sum.amount || 0);
+  const noPeriodo = (d: Date) => (!inicio || d >= inicio) && (!fim || d <= fim);
+
+  const idsDoPeriodo = pedidos.filter((o) => noPeriodo(o.createdAt)).map((o) => o.id);
+  const detalhes = idsDoPeriodo.length
+    ? await prisma.customerOrder.findMany({
+        where: { id: { in: idsDoPeriodo } },
+        select: {
+          id: true, dailyOrderNumber: true, ifoodReference: true, totalAmount: true, createdAt: true, notes: true,
+          items: { select: { quantity: true, productName: true, menuProduct: { select: { name: true } } } },
+        },
+      })
+    : [];
+
+  const lancamentos: LancamentoDoPeriodo[] = [
+    ...detalhes.map((o) => ({
+      id: o.id,
+      quando: o.createdAt,
+      // O número que a loja vê no painel; dívida à mão não tem número do dia.
+      rotulo: o.items.length === 0 ? "Divida lancada"
+        : o.dailyOrderNumber != null ? `Pedido #${o.dailyOrderNumber}` : `Pedido #${o.ifoodReference || o.id.slice(-4).toUpperCase()}`,
+      descricao: o.items.length === 0
+        ? o.notes
+        : o.items.map((i) => `${Number(i.quantity) || 1}x ${(i.productName || i.menuProduct?.name || "Item").trim()}`).join(", "),
+      valor: Number(o.totalAmount) || 0,
+      restante: restante.get(o.id) ?? 0,
+    })),
+    ...mesas.filter((m) => noPeriodo(m.createdAt)).map((m) => ({
+      id: m.id,
+      quando: m.createdAt,
+      rotulo: m.mesaNumero != null ? `Mesa ${m.mesaNumero}` : "Mesa",
+      // A descrição gravada já começa com "Mesa 9: ..." — o rótulo não repete.
+      descricao: (m.descricao || "").replace(/^Mesa[^:]*:\s*/i, "") || null,
+      valor: m.valor,
+      restante: restante.get(m.id) ?? 0,
+    })),
+  ];
+  const saldoTotal = saldoDoFiado({ pedidos: pedidos.reduce((s, o) => s + (Number(o.totalAmount) || 0), 0), mesas: mesas.reduce((s, m) => s + m.valor, 0), baixas: baixas._sum.amount || 0 });
+  return { lancamentos, saldoTotal };
 }
 
 /** O saldo devedor de hoje — a mesma conta do extrato (api/store/employees/[id]/statement). */
