@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { IMAGEM_OG_PADRAO } from "@/lib/seo";
 import Kit from "./Kit";
 import { LINK_FIREHUB, LINK_WHATS, PASSOS } from "./passos";
 
@@ -6,6 +7,7 @@ export const metadata: Metadata = {
   title: "Kit grátis: a IA indica o seu restaurante — Douglas Morett",
   description:
     "Teste em 1 toque se o ChatGPT, o Gemini e o Google indicam o seu restaurante, e saia com os textos prontos para o Google, o iFood e o Instagram. Grátis.",
+  alternates: { canonical: "/ia" },
   openGraph: {
     title: "Kit grátis: a IA indica o seu restaurante",
     description: "O passo a passo que colocou uma esfirraria em 1º no ChatGPT, com os textos prontos com o nome da sua loja.",
@@ -13,7 +15,9 @@ export const metadata: Metadata = {
     siteName: "FireHub",
     locale: "pt_BR",
     type: "article",
+    images: [IMAGEM_OG_PADRAO],
   },
+  twitter: { card: "summary_large_image", images: [IMAGEM_OG_PADRAO.url] },
 };
 
 /**

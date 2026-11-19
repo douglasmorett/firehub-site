@@ -98,6 +98,20 @@ function puxarDoBucket() {
   })().catch(() => {});
 }
 
+/**
+ * Quando o vídeo da versão atual chegou ao disco (o `uploadDate` do VideoObject
+ * na página pública). null = sem como saber (endereço externo, arquivo ausente).
+ */
+export function enviadoEm(t: { id: string; versao: string }): Date | null {
+  const pasta = pastaDosTutoriais();
+  if (!pasta) return null;
+  try {
+    return fs.statSync(/*turbopackIgnore: true*/ path.join(/*turbopackIgnore: true*/ pasta, t.id, t.versao, "video.mp4")).mtime;
+  } catch {
+    return null;
+  }
+}
+
 /** Depois de um envio, a lista é refeita na hora (sem esperar os 30 s). */
 export function esquecerTutoriaisEnviados() {
   lembrado = null;

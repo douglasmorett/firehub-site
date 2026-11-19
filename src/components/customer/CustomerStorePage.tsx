@@ -5201,11 +5201,11 @@ export default function CustomerStorePage({
       <div className="store-header">
         <div className="store-header-inner">
           {marcaAtiva ? (
-            marcaAtiva.logo ? <img src={marcaAtiva.logo} alt="Logo" className="store-logo" /> : (
+            marcaAtiva.logo ? <img src={marcaAtiva.logo} alt={`Logo de ${marcaAtiva.nome}`} className="store-logo" /> : (
               <div className="store-logo-placeholder" style={{ background: marcaAtiva.cor, color: textoSobreCor(marcaAtiva.cor), fontWeight: 800, fontSize: 22 }}>{siglaDaMarca(marcaAtiva.nome)}</div>
             )
           ) : franchisee.storeLogo ? (
-            <img src={franchisee.storeLogo} alt="Logo" className="store-logo" />
+            <img src={franchisee.storeLogo} alt={`Logo de ${nomeNoTopo}`} className="store-logo" />
           ) : (
             <div className="store-logo-placeholder"><Store size={28} color="white" /></div>
           )}
@@ -5551,7 +5551,7 @@ export default function CustomerStorePage({
                   const q = getQty(p.id);
                   return (
                     <div key={p.id} className={`product-card ${q > 0 ? "in-cart" : ""}`} onClick={() => setComboProduct(p)}>
-                      {p.imageUrl && <img src={p.imageUrl} alt="" className="product-img" loading="lazy" decoding="async" />}
+                      {p.imageUrl && <img src={p.imageUrl} alt={p.name} className="product-img" loading="lazy" decoding="async" />}
                       <div className="product-info">
                         <div className="product-name">
                           {p.name}

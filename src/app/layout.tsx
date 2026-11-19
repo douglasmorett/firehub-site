@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { IMAGEM_OG_PADRAO } from "@/lib/seo";
 // ANTES do globals.css de propósito: os tokens são a camada de base, e o
 // globals continua vencendo onde já decide alguma coisa. Nenhuma tela muda de
 // aparência só por este import — todo hex daqui já é um hex que o painel usa.
@@ -26,9 +27,16 @@ export const metadata: Metadata = {
   // um endereço de localhost e a prévia do WhatsApp fica sem imagem. Sem "www"
   // porque é assim que o link da loja é divulgado (lib/campanha-converter.ts).
   metadataBase: new URL("https://firehubfood.com.br"),
-  title: "FireHub — Simples, Rápido e Completo. Sistema para Restaurantes.",
-  description: "Tudo que o seu restaurante precisa em um só lugar. Cardápio digital, gestão de pedidos, chatbot WhatsApp, controle financeiro, tráfego pago e modo contingência. Teste grátis por 15 dias.",
+  // Título e descrição são os da home (app/page.tsx é "use client" e não
+  // exporta metadata); toda página pública declara os seus (lib/seo.ts).
+  title: "Sistema para restaurante, delivery e cardápio | FireHub",
+  description: "Cardápio digital, pedidos, robô de WhatsApp com IA, integração com iFood, PDV, NFC-e e financeiro para restaurante e delivery. Teste grátis por 15 dias.",
   keywords: "sistema restaurante, cardápio digital, delivery, gestão restaurante, FireHub, sistema para delivery, chatbot whatsapp restaurante",
+  // "./" = a própria página, sempre em https://firehubfood.com.br (sem www,
+  // sem ?ref=/?utm=): o www também responde 200 e, sem canônica, o Google via
+  // duas cópias de cada página. Página que precisa de outra (o cardápio no
+  // domínio próprio da loja) declara a sua.
+  alternates: { canonical: "./" },
   appleWebApp: { capable: true, statusBarStyle: "default", title: "FireHub" },
   icons: {
     icon: "/firehub-flame.png",
@@ -37,10 +45,17 @@ export const metadata: Metadata = {
   openGraph: {
     title: "FireHub — Tudo que o seu restaurante precisa em um só lugar",
     description: "Simples, rápido e completo. Cardápio digital, pedidos, WhatsApp, financeiro e IA. Teste grátis por 15 dias.",
-    url: "https://www.firehubfood.com.br",
+    url: "./",
     siteName: "FireHub",
     locale: "pt_BR",
     type: "website",
+    images: [IMAGEM_OG_PADRAO],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "FireHub — Tudo que o seu restaurante precisa em um só lugar",
+    description: "Simples, rápido e completo. Cardápio digital, pedidos, WhatsApp, financeiro e IA. Teste grátis por 15 dias.",
+    images: [IMAGEM_OG_PADRAO.url],
   },
 };
 

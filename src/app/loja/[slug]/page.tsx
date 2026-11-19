@@ -8,6 +8,9 @@ import { lerConfigDaPagina } from "@/lib/multimarcas/pagina";
 import { marcasNoCardapio } from "@/lib/multimarcas/no-cardapio";
 import { conviteDoApp } from "@/lib/app-da-loja/links";
 import { iconesDaLoja } from "@/lib/imagem-da-loja";
+import { cortar, jsonLd, metadataDaPagina } from "@/lib/seo";
+import { dadosEstruturadosDaLoja } from "@/lib/seo-da-loja";
+import { enderecoDoCardapio } from "@/lib/dominios-de-loja";
 
 export const revalidate = 60; // ⚡ Cache de Borda (Edge) de 60 segundos
 
@@ -21,10 +24,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   
   if (!franchisee) return { title: "Loja não encontrada" };
   
-  const name = franchisee.storeName || franchisee.name;
-  const descricao = franchisee.city
-    ? `Peça online em ${name} — ${franchisee.city}. Cardápio, promoções e entrega.`
-    : `Peça online em ${name}. Cardápio, promoções e entrega.`;
+  const name = franchisee.storeName || franchisee.name || "Loja";
+  const descricao = cortar(
+    franchisee.city
+      ? `Peça online em ${name} — ${franchisee.city}. Veja o cardápio completo com preços e promoções e faça seu pedido pelo site, com entrega.`
+      : `Peça online em ${name}. Veja o cardápio completo com preços e promoções e faça seu pedido pelo site, com entrega.`,
+    160,
+  );
 
   // ── QUEM APARECE NA PRÉVIA É A LOJA ───────────────────────────────────────
   //
@@ -33,22 +39,21 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   // propaganda do FireHub. O lojista mandava o link do cardápio dele e o
   // cliente via o nosso anúncio. A IMAGEM vem do opengraph-image.tsx desta
   // mesma pasta (a logo do lojista), que tem prioridade sobre este bloco.
+  //
+  // Canônica: o domínio da loja quando ela tem um (lib/dominios-de-loja.ts),
+  // senão firehubfood.com.br/loja/<slug> — sem ?marca=, ?cupom= e ?utm=.
+  // `imagem: null` deixa a prévia com a logo do opengraph-image.tsx.
+  const meta = metadataDaPagina({
+    titulo: cortar(`${name} | Cardápio Online`, 60),
+    descricao: descricao,
+    caminho: enderecoDoCardapio(slug),
+    imagem: null,
+    site: name,
+  });
   return {
-    title: `${name} | Cardápio Online`,
-    description: descricao,
-    openGraph: {
-      title: name,
-      description: descricao,
-      url: `/loja/${slug}`,
-      siteName: name,
-      locale: "pt_BR",
-      type: "website",
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: name,
-      description: descricao,
-    },
+    ...meta,
+    openGraph: { ...meta.openGraph, title: name },
+    twitter: { ...meta.twitter, title: name },
     // O ícone (Google, aba do navegador) também é o da loja, não a chama do FireHub.
     icons: iconesDaLoja(slug),
   };
@@ -86,5 +91,13 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
     // Plano do app ligado e com link nas lojas: o site convida a baixar (lib/app-da-loja/links.ts).
     conviteDoApp(franchisee.id),
   ]);
-  return <CustomerStorePage {...props} multimarcas={multimarcas} appDaLoja={appDaLoja} />;
+  // A loja e o cardápio para o Google (lib/seo-da-loja.ts). Depois da página,
+  // para não mexer em nada do que o cliente vê e toca.
+  const dados = dadosEstruturadosDaLoja(props.franchisee, props.menuProducts, enderecoDoCardapio(slug));
+  return (
+    <>
+      <CustomerStorePage {...props} multimarcas={multimarcas} appDaLoja={appDaLoja} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(dados) }} />
+    </>
+  );
 }

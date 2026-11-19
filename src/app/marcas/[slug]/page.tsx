@@ -7,6 +7,7 @@ import { multimarcasEstaLigado } from "@/lib/multimarcas/assinatura";
 import { lerConfigDaPagina } from "@/lib/multimarcas/pagina";
 import { vitrineDaLoja } from "@/lib/multimarcas/carga";
 import Vitrine from "@/components/multimarcas/Vitrine";
+import { cortar, metadataDaPagina } from "@/lib/seo";
 
 /**
  * /marcas/<slug> — a página do Multimarcas: as marcas da loja, os banners, a
@@ -42,11 +43,14 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   if (!c?.config) return { title: "FireHub" };
   const marcas = c.config.marcas.filter((m) => !m.oculta).map((m) => m.nome);
   const descricao = c.config.frase || `Peça de ${marcas.slice(0, 4).join(", ")} numa sacola só, com uma entrega.`;
-  return {
-    title: c.config.nome,
-    description: descricao,
-    openGraph: { title: c.config.nome, description: descricao, images: c.franchisee.storeLogo ? [c.franchisee.storeLogo] : undefined, type: "website" },
-  };
+  // Prévia com a logo pelo opengraph-image do cardápio (JPEG; a logo gravada é WebP, que o WhatsApp não desenha).
+  return metadataDaPagina({
+    titulo: cortar(c.config.nome, 60),
+    descricao: cortar(descricao, 160),
+    caminho: `/marcas/${slug}`,
+    imagem: { url: `/loja/${encodeURIComponent(slug)}/opengraph-image`, width: 1200, height: 630, alt: c.config.nome },
+    site: c.config.nome,
+  });
 }
 
 export default async function PaginaDasMarcas({ params }: { params: Promise<{ slug: string }> }) {

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PASSOS_PARA_CONECTAR, TEXTO_DA_FAIXA, partesDoPasso } from "@/lib/google-maps-da-loja";
+import { SITE, jsonLd, metadataDaPagina, trilha } from "@/lib/seo";
 import { Ajuda, Rodape, Topo } from "../partes";
 import css from "../tutoriais.module.css";
 
@@ -18,14 +19,35 @@ import css from "../tutoriais.module.css";
 
 const TITULO = "Conectar o mapa do Google";
 
-export const metadata: Metadata = {
-  title: `${TITULO} — Tutorial FireHub`,
-  description: "Passo a passo para a loja conectar a própria conta do Google e ter endereços, bairros e rotas pelo mapa do Google no FireHub.",
+export const metadata: Metadata = metadataDaPagina({
+  titulo: `${TITULO} — Tutorial FireHub`,
+  descricao: "Passo a passo para a loja conectar a própria conta do Google e ter endereços, bairros e rotas pelo mapa do Google no FireHub.",
+  caminho: "/tutoriais/google-maps",
+});
+
+/** O passo a passo da página como HowTo (sem os ** de negrito). */
+const COMO_FAZER = {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  name: TITULO,
+  description: TEXTO_DA_FAIXA,
+  inLanguage: "pt-BR",
+  step: PASSOS_PARA_CONECTAR.map((texto, n) => ({
+    "@type": "HowToStep",
+    position: n + 1,
+    text: texto.replace(/\*\*/g, ""),
+    url: `${SITE}/tutoriais/google-maps#passos`,
+  })),
 };
 
 export default function TutorialDoGoogleMaps() {
   return (
     <div className={css.fundo}>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(COMO_FAZER) }} />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: jsonLd(trilha([["Início", "/"], ["Tutoriais", "/tutoriais"], [TITULO, "/tutoriais/google-maps"]])) }}
+      />
       <Topo />
       <main className={css.pagina}>
         <Link href="/tutoriais" className={css.voltar}>

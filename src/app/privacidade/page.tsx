@@ -1,10 +1,11 @@
 import { Metadata } from "next";
+import { metadataDaPagina } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "Política de Privacidade — FireHub",
-  description:
-    "Quais dados o FireHub trata, para quê, com quem compartilha, quanto tempo guarda e como pedir exclusão.",
-};
+export const metadata: Metadata = metadataDaPagina({
+  titulo: "Política de Privacidade — FireHub",
+  descricao: "Política de Privacidade do FireHub (LGPD): quais dados tratamos, para quê, com quem compartilhamos, quanto tempo guardamos e como pedir a exclusão.",
+  caminho: "/privacidade",
+});
 
 /**
  * /privacidade — a política de privacidade do FireHub.

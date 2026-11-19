@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
+import { metadataDaPagina } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "Política de Privacidade — FireHub Prazos (extensão do Chrome)",
-  description:
-    "Quais dados a extensão FireHub Prazos usa, para quê, onde ficam guardados e como apagá-los.",
-};
+export const metadata: Metadata = metadataDaPagina({
+  titulo: "Política de Privacidade — FireHub Prazos (extensão)",
+  descricao: "Política de Privacidade da extensão FireHub Prazos para o Chrome: quais dados ela usa, para quê, onde ficam guardados e como apagá-los a qualquer hora.",
+  caminho: "/privacidade-prazos",
+});
 
 /**
  * Política de privacidade da extensão VENDIDA (FireHub Prazos).

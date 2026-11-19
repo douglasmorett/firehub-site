@@ -256,6 +256,8 @@
 .capa {
   display: block;
   width: 100%;
+  /* O next/image põe width/height no <img>: sem isto a altura viraria 360px. */
+  height: auto;
   aspect-ratio: 16 / 9;
   object-fit: cover;
   background: var(--fh-n2, #cbd5e1);

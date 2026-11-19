@@ -1,10 +1,11 @@
 import { Metadata } from "next";
+import { metadataDaPagina } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "Política de Privacidade — Extensão FireHub para Chrome",
-  description:
-    "Quais dados a extensão FireHub — Prazo Automático de Entrega usa, para quê, onde ficam guardados e como excluí-los.",
-};
+export const metadata: Metadata = metadataDaPagina({
+  titulo: "Política de Privacidade — Extensão FireHub para Chrome",
+  descricao: "Política de Privacidade da extensão FireHub — Prazo Automático de Entrega para o Chrome: quais dados ela usa, para quê, onde ficam e como excluí-los.",
+  caminho: "/privacidade-extensao",
+});
 
 const box = {
   background: "#F8FAFC",

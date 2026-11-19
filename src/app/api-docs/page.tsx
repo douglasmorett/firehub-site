@@ -270,7 +270,7 @@ export default function ApiDocsPage() {
               <div key={idx} style={{ background: "#1E293B", border: "1px solid #334155", borderRadius: 14, overflow: "hidden" }}>
                 {/* Endpoint Header */}
                 <div style={{ padding: "1rem 1.25rem", background: "#0F172A", borderBottom: "1px solid #334155", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                     <span
                       style={{
                         padding: "4px 10px", borderRadius: 6, fontWeight: 900, fontSize: "0.78rem",
@@ -280,7 +280,7 @@ export default function ApiDocsPage() {
                     >
                       {ep.method}
                     </span>
-                    <span style={{ fontFamily: "monospace", fontSize: "0.95rem", fontWeight: 700, color: "#F1F5F9" }}>
+                    <span style={{ fontFamily: "monospace", fontSize: "0.95rem", fontWeight: 700, color: "#F1F5F9", minWidth: 0, overflowWrap: "anywhere" }}>
                       {ep.path}
                     </span>
                   </div>

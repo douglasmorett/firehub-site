@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import { funcionarioAbre, primeiraTelaDoFuncionario } from "@/lib/permissao-da-tela";
 import { cookiesSemSessao, ehCookieDeSessao, sessaoDoParceiroVale } from "@/lib/sessao-do-parceiro";
+import { DOMINIOS_DE_LOJA } from "@/lib/dominios-de-loja";
 
 // ─── CORS: allowed origins (lista fixa aqui, sem import de config) ───
 const ALLOWED_ORIGINS = [
@@ -119,17 +120,7 @@ function ehDoCofreFiscal(pathname: string): boolean {
   return caminho.replace(/\/+/g, "/").toLowerCase().startsWith("/uploads/_fiscal");
 }
 
-/**
- * Domínio próprio de loja → slug do cardápio (sem o "www."). Loja nova entra
- * aqui e no Coolify (Domains do app), com o DNS dela apontando para o servidor.
- */
-const DOMINIOS_DE_LOJA: Record<string, string> = {
-  // Luiz Carlos, 09/10/2026: "redirecionar pro site" o domínio do Registro.br.
-  "divinosburger.com.br": "divinos-burger",
-  // Karen (PasteLê e Annalu), 26/10/2026: domínio direto no sistema, mantendo o TXT de verificação do Facebook no Registro.br.
-  "pasteledocarioca.com.br": "pastel-do-carioca-yg9c",
-  "annalupizzaria.com.br": "annalu-pizzas",
-};
+// Domínio próprio de loja → slug do cardápio: lib/dominios-de-loja.ts (o cardápio usa na canônica).
 
 // Next 16 renomeou a convenção `middleware` para `proxy` (roda no runtime
 // Node.js). Mesma lógica de sempre; só o nome do arquivo e da função mudaram.
