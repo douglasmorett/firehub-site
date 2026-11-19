@@ -46,7 +46,7 @@ import { camadaDoGoogle } from "@/lib/mapa-do-google-no-leaflet";
 import { camadaSemBairro } from "@/lib/mapa-sem-bairro";
 import { linkDaRotaNoMaps } from "@/lib/link-da-rota";
 import { bairroPeloEndereco, type ZonaComApelidos } from "@/lib/bairro-pelo-endereco";
-import RotaAutomatica, { type PreviaDaRotaAutomatica, type RotaAutomaticaConfig, type RotaAutomaticaEstado } from "@/components/customer/RotaAutomatica";
+import RotaAutomatica, { type ExtraDoSalvar, type PreviaDaRotaAutomatica, type RotaAutomaticaConfig, type RotaAutomaticaEstado } from "@/components/customer/RotaAutomatica";
 import { pontoParaRotaAutomatica } from "@/lib/roteirizacao-automatica/ponto";
 import { infoDaEntrega } from "@/lib/entrega-parceira";
 import { estaOnlineNoApp } from "@/lib/motoboy-online";
@@ -774,15 +774,16 @@ export default function RoteirizacaoModal({
     !order?.motoboyId &&
     !infoDaEntrega(order).parceira &&
     !pontoParaRotaAutomatica(order?.customerLatLng, canalDoPedido(order).ehMarketplace, areaDaTela);
-  const salvarRotaAuto = async (config: RotaAutomaticaConfig) => {
+  const salvarRotaAuto = async (config: RotaAutomaticaConfig, extra?: ExtraDoSalvar) => {
     const ligando = config.ativo && !rotaAuto?.config.ativo;
     const desligando = !config.ativo && !!rotaAuto?.config.ativo;
     setSalvandoRotaAuto(true);
     try {
+      // `extra`: o aceite do termo e o "Continuar ligada" do módulo pago (Fase 4).
       const r = await fetch("/api/store/roteirizacao-automatica", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roteirizacaoAutomatica: config }),
+        body: JSON.stringify({ roteirizacaoAutomatica: config, ...extra }),
       });
       const d = await r.json().catch(() => null);
       if (!r.ok) {
@@ -791,9 +792,15 @@ export default function RoteirizacaoModal({
       }
       if (d?.liberada) setRotaAuto(d);
       else await carregarRotaAuto();
+      // Desligou depois do teste: o mês já está pago, ela segue até a virada.
+      const desligaEm: string | null | undefined = d?.config?.ativo ? d?.cobranca?.desligaEm : null;
       setAviso({
         tipo: "ok",
-        titulo: ligando ? "Roteirização automática ligada" : desligando ? "Roteirização automática desligada" : "Regras da rota automática salvas",
+        titulo: ligando ? "Roteirização automática ligada"
+          : desligando && desligaEm ? `A rota automática desliga em ${new Date(desligaEm).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}`
+          : desligando ? "Roteirização automática desligada"
+          : extra?.continuar ? "A rota automática continua ligada"
+          : "Regras da rota automática salvas",
       });
     } catch (err: any) {
       setAviso({ tipo: "erro", titulo: "A rota automática não foi salva", detalhe: err?.message || String(err) });

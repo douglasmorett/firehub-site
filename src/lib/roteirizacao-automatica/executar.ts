@@ -67,6 +67,7 @@ import { pegarVez, soltarVez } from "@/lib/vez";
 import { idDaInstancia } from "@/lib/instancia";
 import { criarRotaDaLoja, pedePrioridadeNaRota } from "@/lib/rotas-da-loja";
 import { liberadaPara } from "./liberacao";
+import { rotaAutomaticaDaLoja } from "./assinatura";
 import { gravacoesDasAcoes, type Passo } from "./gravacoes";
 import { avisarMotoboy } from "@/lib/app-motoboy/aparelhos";
 import { avisoDaRotaAtualizada, avisoDaRotaFoiComOutro, avisoDaRotaJaSaiu, avisoDaRotaPronta, quemPerdeAChamada, quemRecebeAChamada, quemSabeQueARotaJaSaiu } from "./chamada";
@@ -456,10 +457,20 @@ async function medirOEncaixePelaRua(
  * grava o que o planejador decidiu, só com a regra ligada e a loja liberada
  * (liberacao.ts) — o cron já filtra, mas o "rodar agora" e um desligar no
  * meio do caminho passam por aqui também.
+ *
+ * Fase 4 (05/11/2026): gravar exige também o módulo ligado pela assinatura
+ * (assinatura.ts — trecho ligado agora, ou loja isenta). O cron e o empurrão
+ * já leram junto com a regra e passam `ligadaPelaAssinatura`; sem ela (o
+ * "rodar agora"), uma consulta aqui.
  */
-export async function rodarRoteirizacaoDaLoja(lojaId: string, opcoes: { gravar: boolean; agora?: Date }): Promise<ResumoDaRoteirizacao> {
+export async function rodarRoteirizacaoDaLoja(lojaId: string, opcoes: { gravar: boolean; agora?: Date; ligadaPelaAssinatura?: boolean }): Promise<ResumoDaRoteirizacao> {
   const agora = opcoes.agora ?? new Date();
   if (!opcoes.gravar) return (await lerEPlanejar(lojaId, agora)).resumo;
+  const ligada = opcoes.ligadaPelaAssinatura ?? (await rotaAutomaticaDaLoja(lojaId, agora)).ligada;
+  if (!ligada) {
+    const { resumo } = await lerEPlanejar(lojaId, agora);
+    return { ...resumo, pulada: "módulo desligado (sem teste grátis nem assinatura ligada)" };
+  }
 
   const chave = `roteirizacao:${lojaId}`;
   // Dono novo por chamada (lib/vez.ts): com o dono da instância, o "rodar
