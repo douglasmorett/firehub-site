@@ -18,7 +18,6 @@ import { fmtDia, fmtReais, naLoja, periodoAnterior } from "@/lib/relatorios/base
 import { montarRelatorioDosEntregadores } from "@/lib/relatorio-do-entregador";
 import { acertoDaEquipe, rotasAutomaticasDoPeriodo, type MotoboyDoAcerto, type PedidoDaRotaAutomatica } from "@/lib/relatorios/acerto-de-entregadores";
 import { prisma } from "@/lib/prisma";
-import { liberadaPara } from "@/lib/roteirizacao-automatica/liberacao";
 import { montarPlanilha, respostaDePlanilha, type Celula, type LinhaDaPlanilha } from "@/lib/planilha-xlsx";
 import { ROTULO_DA_ORIGEM, type OrigemDoGanho } from "@/lib/ganho-do-entregador";
 
@@ -69,10 +68,11 @@ export async function GET(req: NextRequest) {
   const resultado = acertoDaEquipe(atual, ctx.tz);
   const resultadoAnterior = doAnterior ? acertoDaEquipe(doAnterior, ctx.tz) : null;
   const cabecalho = cabecalhoDoRelatorio(ctx);
-  // O bloco só aparece na loja liberada (liberacao.ts) ou quando houve rota
-  // automática no período — para as outras lojas, o relatório fica igual.
+  // O bloco só aparece quando houve rota automática no período — desde que a
+  // rota automática vale para todas as lojas (módulo pago, 05/11), "liberada"
+  // não separa mais ninguém; quem não usa vê o relatório igual.
   const doPeriodo = rotasAutomaticasDoPeriodo(linhasDasRotasAuto);
-  const rotasAutomaticas = ctx.lojaIds.some((id) => liberadaPara(id)) || doPeriodo.rotas > 0 ? doPeriodo : null;
+  const rotasAutomaticas = doPeriodo.rotas > 0 ? doPeriodo : null;
 
   if (sp.get("formato") !== "xlsx") {
     return NextResponse.json({
