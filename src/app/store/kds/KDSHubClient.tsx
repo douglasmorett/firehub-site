@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { novoIdDaTela } from "@/lib/kds-telas";
 import { chaveDaTela } from "@/lib/kds-link-curto";
 import GuiaDoTeclado from "@/components/kds/GuiaDoTeclado";
+import { IlustracaoDoKds } from "./IlustracaoDoKds";
 import { AvisoNoTopo, type Aviso } from "@/components/mesas/SelecionarItensParaImpressao";
 
 interface KDSScreenConfig {
@@ -210,6 +211,9 @@ export default function KDSHubClient() {
       <p style={{ fontSize: "0.9rem", color: "#94a3b8", marginBottom: "2rem", maxWidth: "600px" }}>
         Adicione telas e abra cada uma em um monitor ou TV diferente. Dentro da tela, você pode mudar o filtro a qualquer momento.
       </p>
+
+      {/* Uma vez só: com a lista vazia, fica logo acima do "Nenhuma tela configurada". */}
+      <div style={{ maxWidth: 900, marginBottom: 28 }}><IlustracaoDoKds /></div>
 
       <GuiaDoTeclado />
 

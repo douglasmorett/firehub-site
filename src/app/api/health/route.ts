@@ -94,6 +94,8 @@ export async function GET(req: NextRequest) {
       // ausente não trava venda — `lerBalcaoConfig` cai no padrão — mas a loja
       // marcaria a caixinha e a marcação não gravaria, calada.
       ["User", "balcaoConfig"],
+      // O upsell da sacola (lib/upsell-config.ts): ausente, o site não oferece nada.
+      ["User", "upsellConfig"],
       ["CustomerOrder", "gaClientId"], ["CustomerOrder", "gaSessionId"],
       ["CustomerOrder", "acceptedAt"], ["CustomerOrder", "readyAt"],
       ["CustomerOrder", "dispatchedAt"], ["CustomerOrder", "deliveredAt"],

@@ -50,6 +50,7 @@ import RotaAutomatica, { type PreviaDaRotaAutomatica, type RotaAutomaticaConfig,
 import { pontoParaRotaAutomatica } from "@/lib/roteirizacao-automatica/ponto";
 import { infoDaEntrega } from "@/lib/entrega-parceira";
 import { estaOnlineNoApp } from "@/lib/motoboy-online";
+import { IlustracaoDaRoteirizacao } from "@/components/customer/IlustracaoDaRoteirizacao";
 
 // ── Aviso que desce do topo (no lugar do alert()) ─────────────────────────
 // Mesma interface do components/AvisoNoTopo.tsx de outra frente, que ainda não
@@ -169,6 +170,9 @@ export const pedidoJaEstaPronto = (order: any): boolean => {
  */
 const ESPERA_DA_CAIXA_DO_PINO_MS = 1000;
 
+/** "14,10" — o troco e os valores da rota saíam "14.10" (toFixed puro). */
+const reais = (v: number) => (Number(v) || 0).toFixed(2).replace(".", ",");
+
 /**
  * O que aparece ao passar o mouse no pino do mapa.
  *
@@ -219,8 +223,8 @@ export const popupDoPedido = (
     entregarAte
       ? `<b style="color:#B45309;">⏰ Entregar até ${entregarAte.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</b>${prazoEstimado ? ` <span style="color:#94A3B8;font-weight:400;">(estimado)</span>` : ""}`
       : "",
-    `💰 R$ ${Number(order.totalAmount || 0).toFixed(2)}${taxa > 0 ? ` · entrega R$ ${taxa.toFixed(2)}` : ""}${taxaMotoboy > 0 ? ` · entregador R$ ${taxaMotoboy.toFixed(2)}` : ""}`,
-    pag.methodRaw ? `💳 ${esc(pag.methodRaw)}${pag.changeNeeded > 0 ? ` — troco R$ ${pag.changeNeeded.toFixed(2)}` : ""}` : "",
+    `💰 R$ ${reais(order.totalAmount)}${taxa > 0 ? ` · entrega R$ ${reais(taxa)}` : ""}${taxaMotoboy > 0 ? ` · entregador R$ ${reais(taxaMotoboy)}` : ""}`,
+    pag.methodRaw ? `💳 ${esc(pag.methodRaw)}${pag.changeNeeded > 0 ? ` — troco R$ ${reais(pag.changeNeeded)}` : ""}` : "",
     // O que o entregador precisa na porta do cliente, sem sair do mapa.
     (order as any).openDeliveryReference && /99/i.test(String(order.source || order.openDeliveryChannel || ""))
       ? `🔑 Localizador ${esc((order as any).food99Locator || (order as any).openDeliveryReference)}`
@@ -3464,7 +3468,10 @@ ${mapsUrl}`;
                   <div style={{ textAlign: "center", padding: "3rem 1rem", color: "#94A3B8" }}>
                     <Navigation size={40} style={{ margin: "0 auto 0.5rem", opacity: 0.5 }} />
                     <p style={{ fontWeight: 700, fontSize: "0.9rem" }}>Nenhuma rota despachada ainda</p>
-                    <p style={{ fontSize: "0.78rem" }}>Selecione os pedidos pendentes no mapa e clique em Criar Rota!</p>
+                    {/* O "como funciona" desenhado no lugar da frase, até a primeira rota.
+                        A margem negativa devolve o 1rem do lado: o quadro do despacho
+                        (cartão de 146px + celular de 172px, com bordas) cabe lado a lado nos 390px. */}
+                    <div style={{ textAlign: "left", margin: "0.75rem -1rem 0" }}><IlustracaoDaRoteirizacao /></div>
                   </div>
                 ) : (
                   <>
@@ -4167,7 +4174,7 @@ ${mapsUrl}`;
                         <b>#{getOrderDisplayNumber(o)}</b> — {o.customerName} ({o.neighborhood || "Centro"})
                       </div>
                       <span style={{ fontSize: "0.72rem", fontWeight: 700, color: pInfo.isCash ? "#C92E09" : pInfo.isCardOnDelivery ? "#1C1917" : "#0F766E" }}>
-                        {pInfo.isCash ? `💵 Troco: R$ ${pInfo.changeNeeded.toFixed(2)}` : pInfo.isCardOnDelivery ? "💳 Cartão" : "✅ Pago Online"}
+                        {pInfo.isCash ? `💵 Troco: R$ ${reais(pInfo.changeNeeded)}` : pInfo.isCardOnDelivery ? "💳 Cartão" : "✅ Pago Online"}
                       </span>
                     </div>
                   );
@@ -4184,7 +4191,7 @@ ${mapsUrl}`;
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span>💵 Troco Total a Levar no Caixa:</span>
                   <b style={{ fontSize: "0.95rem", color: routePaymentSummary.totalChangeToCarry > 0 ? "#C92E09" : "#0F766E" }}>
-                    {routePaymentSummary.totalChangeToCarry > 0 ? `R$ ${routePaymentSummary.totalChangeToCarry.toFixed(2)}` : "Sem troco (R$ 0,00)"}
+                    {routePaymentSummary.totalChangeToCarry > 0 ? `R$ ${reais(routePaymentSummary.totalChangeToCarry)}` : "Sem troco (R$ 0,00)"}
                   </b>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>

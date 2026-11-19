@@ -15,6 +15,7 @@
  * muitos clientes denunciam — por isso todo envio leva o botão "Parar".
  */
 import { useEffect, useState } from "react";
+import { IlustracaoDoDisparo } from "@/components/IlustracaoDoDisparo";
 
 const WHATSAPP_DO_FIREHUB = "5522981118514";
 
@@ -102,6 +103,9 @@ export default function ApresentacaoDisparoOficial({ compacta = false, aoComecar
           )}
         </div>
       </section>
+
+      {/* O desenho do "como funciona" logo abaixo do herói, só na versão completa. */}
+      {!compacta && <IlustracaoDoDisparo preco={preco} />}
 
       {/* ── ANTES × AGORA ─────────────────────────────────────────────── */}
       {!compacta && (

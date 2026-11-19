@@ -1193,6 +1193,9 @@ const INSTRUCOES_MESA = [
   // obrigatório no balcão e na mesa (lib/balcao-config.ts). Nulo = nada
   // obrigatório, que é como toda loja nasce e continua até marcar a caixinha.
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "balcaoConfig" JSONB`,
+  // O upsell da sacola: os até 5 produtos que o site oferece ao "Continuar
+  // pedido", com o % de cada um (lib/upsell-config.ts). Nulo = desligado.
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "upsellConfig" JSONB`,
   // A página das suas lojas (/lojas/[slug]), na principal do grupo: título,
   // frase, cor, capa, ordem e lojas ocultas (lib/pagina-do-grupo-config.ts).
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "paginaDoGrupo" JSONB`,

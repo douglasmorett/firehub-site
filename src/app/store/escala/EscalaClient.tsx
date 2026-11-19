@@ -31,6 +31,7 @@ import LinkDeInscricao from "./LinkDeInscricao";
 import Impressao, { type O_QUE_IMPRIMIR } from "./Impressao";
 import Pagamentos from "./Pagamentos";
 import ValoresDaDiaria from "./ValoresDaDiaria";
+import { IlustracaoDaEscala } from "./IlustracaoDaEscala";
 
 type Aba = "escala" | "pessoas" | "link" | "pagamentos";
 const CHAVE_DA_VISAO = "escala:visao";
@@ -281,6 +282,9 @@ export default function EscalaClient() {
               </p>
             </div>
           )}
+          {/* O desenho do caminho todo enquanto o período está vazio (a API só traz
+              os turnos do período: não dá para saber se a loja nunca criou um). */}
+          {turnos.length === 0 && !carregando && <div style={{ marginBottom: 12 }}><IlustracaoDaEscala /></div>}
 
           <div className={`esc-com-lado${visao !== "mes" && lado ? " aberto" : ""}`}>
             <div style={{ minWidth: 0 }}>

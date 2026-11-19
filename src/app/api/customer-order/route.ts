@@ -74,6 +74,7 @@ import { lerSessaoDoCliente } from "@/lib/sessao-do-cliente";
 import { finalDoTelefone } from "@/lib/pedidos-do-telefone";
 import { descontoDoClube, ehDoAplicativo, etiquetaDoClube, instalacaoDoCorpo, veredictoDoClube } from "@/lib/clube/regras";
 import { clubeValendoNaLoja, instalacaoDaMarca, registrarDescontoDoClube, situacaoDoTelefone, socioEhDoCliente } from "@/lib/clube/no-banco";
+import { precoDaLinhaDoUpsell } from "@/lib/upsell-config";
 
 export async function POST(req: Request) {
   try {
@@ -454,6 +455,16 @@ export async function POST(req: Request) {
       },
     });
 
+    // O upsell da sacola (lib/upsell-config.ts): a config só é lida quando
+    // alguma linha veio da janela. À parte e com catch — coluna ausente deixa
+    // a oferta sem valer (a linha é recusada abaixo), nunca derruba o pedido.
+    const upsellDaLoja = items.some((i: any) => i?.upsellDesconto !== undefined && i?.upsellDesconto !== null)
+      ? await prisma.user
+          .findUnique({ where: { id: franchisee.id }, select: { upsellConfig: true } as any })
+          .then((u: any) => u?.upsellConfig ?? null)
+          .catch(() => null)
+      : null;
+
     // Calcular total dos produtos
     let totalAmount = 0;
     // A parte do total que vale cupom e desconto: os itens sem a marca "Não
@@ -555,6 +566,23 @@ export async function POST(req: Request) {
           `(loja ${franchisee.id}); aplicando o mínimo R$ ${minimoDoProduto}.`
         );
         precoUnitario = minimoDoProduto;
+      }
+
+      // ── UPSELL DA SACOLA ─────────────────────────────────────────────────
+      // A linha que entrou pela janela do "Continuar pedido" traz o % que ela
+      // mostrou. Só vale se o produto está na oferta da loja AGORA, ligada,
+      // com o mesmo % — senão recusa, em vez de cobrar calado outro valor. O
+      // desconto sai da base do produto no delivery, recalculada do banco;
+      // nome e opções ficam como sempre, como na promoção (`precoDe`).
+      if (item.upsellDesconto !== undefined && item.upsellDesconto !== null) {
+        const comOferta = precoDaLinhaDoUpsell(precoUnitario, Number(produtoNoCanal.price) || 0, upsellDaLoja, product.id, item.upsellDesconto);
+        if (comOferta === null) {
+          throw Object.assign(
+            new Error(`A oferta de "${product.name}" mudou. Tire o item da sacola e adicione de novo.`),
+            { statusCode: 409 }
+          );
+        }
+        precoUnitario = comOferta;
       }
 
       // ── QUANTIDADE É INTEIRO POSITIVO ────────────────────────────────────

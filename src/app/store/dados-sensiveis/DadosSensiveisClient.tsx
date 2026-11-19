@@ -40,6 +40,7 @@ import { inicioDaSemanaDoCmv, NOMES_DOS_DIAS_DA_SEMANA } from "@/lib/cmv/semana-
 import type { Painel } from "@/lib/cmv/painel";
 import AbaCustosFixos from "@/app/store/financeiro/AbaCustosFixos";
 import type { CustoFixo } from "@/lib/financeiro/dre";
+import { IlustracaoDoCmv } from "./IlustracaoDoCmv";
 
 type Aba = "painel" | "equipe" | "custofixo" | "metas";
 type Atalho = "semana" | "semanaPassada" | "hoje" | "ontem" | "mes" | "mesPassado" | "outro";
@@ -245,10 +246,18 @@ function PainelDoCmv({ dados, carregando }: { dados: Painel; carregando: boolean
         </div>
       </section>
 
-      {res && (
+      {res ? (
         <Bloco titulo="A conta do CMV" subtitulo="Sem estimativa: o que tinha, o que entrou e o que sobrou.">
           <ContaDoCmv res={res} />
+          {/* Ao lado dos números de verdade, o desenho fica fechado: só abre quem quiser. */}
+          <details style={{ marginTop: 12 }}>
+            <summary style={{ cursor: "pointer", fontWeight: 800, fontSize: "0.85rem", color: PALETA.areiaTinta }}>Como funciona a conta (com números de exemplo)</summary>
+            <div style={{ marginTop: 10 }}><IlustracaoDoCmv /></div>
+          </details>
         </Bloco>
+      ) : (
+        // Sem duas contagens fechadas ainda não há conta: o desenho mostra o que vai aparecer.
+        <div style={{ marginBottom: "1.25rem" }}><IlustracaoDoCmv /></div>
       )}
 
       <Bloco titulo="CMV dia a dia" subtitulo="Uma barra por contagem fechada. Com a contagem rápida no fim de cada dia, uma barra por dia.">

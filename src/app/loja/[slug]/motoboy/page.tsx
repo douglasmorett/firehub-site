@@ -25,6 +25,7 @@ import MeuRelatorio from "@/components/motoboy/MeuRelatorio";
 import TutorialDaTela from "@/components/TutorialDaTela";
 import { CORES_DA_URGENCIA, textoDaUrgencia, urgenciaDaEntrega, type LimitesDaUrgencia } from "@/lib/app-motoboy/urgencia";
 import { observacaoLimpa, telefoneDoCliente } from "@/lib/app-motoboy/pedido-no-app";
+import { mensagemAoCliente } from "@/lib/app-motoboy/mensagem-ao-cliente";
 
 export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: string }> }) {
   const resolvedParams = use(params);
@@ -1286,7 +1287,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
             // discar o 0800 e mostrar o ID. WhatsApp só para celular — o 0800
             // ia para o wa.me e não abria conversa nenhuma.
             const telefone = telefoneDoCliente(order.customerPhone);
-            const waLink = telefone?.whatsapp ? `https://wa.me/${telefone.whatsapp}?text=Olá!%20Sou%20o%20entregador%20da%20loja%20e%20estou%20a%20caminho%20do%20seu%20endereço!` : null;
+            const waLink = telefone?.whatsapp ? `https://wa.me/${telefone.whatsapp}?text=${encodeURIComponent(mensagemAoCliente({ cliente: order.customerName, loja: (order as any).loja, numero: num }))}` : null;
             // Cor da urgência, a mesma régua do KDS (lib/app-motoboy/urgencia.ts).
             const urgencia = urgenciaDaEntrega((order as any).previsaoEntrega?.em, agora, alertaDeTempo);
             const corUrg = urgencia ? CORES_DA_URGENCIA[urgencia.faixa] : null;

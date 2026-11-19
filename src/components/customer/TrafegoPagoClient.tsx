@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import QuemVaiVerOAnuncio, { type LocalDaLoja } from "@/components/customer/QuemVaiVerOAnuncio";
 import { descreverPublico, type PublicoDoAnuncio } from "@/lib/publico-do-anuncio";
+import { IlustracaoDoTrafego } from "@/components/customer/IlustracaoDoTrafego";
 
 /* ── Dados de social proof ── */
 const SOCIAL_PROOF = [
@@ -33,6 +34,11 @@ const SOCIAL_PROOF = [
 const reais = (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const vezes = (gasto: number, receita: number) =>
   gasto > 0 ? `${(receita / gasto).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}x` : "—";
+
+/* A gestão por semana que esta tela mostra no hero e no desenho do "como
+   funciona". É o padrão do servidor (`user.metaAdsWeeklyFee ?? 50`, em
+   api/meta-ads/campaign); os outros "R$ 50" da tela ainda estão escritos à mão. */
+const GESTAO_POR_SEMANA = 50;
 
 const AVISO_TEXTO_PADRAO = "Este é um texto padrão, não uma sugestão feita pela IA. Vale a pena editar antes de publicar.";
 
@@ -881,6 +887,10 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
         Você não precisa entender nada de marketing. <strong>Só receba os pedidos.</strong>
       </p>
 
+      <div style={{ marginBottom: "2rem" }}>
+        <IlustracaoDoTrafego investimento={investment} gestao={GESTAO_POR_SEMANA} />
+      </div>
+
       {/* ── 3 Passos visuais ── */}
       <div className="hero-steps-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "1rem", marginBottom: "2rem" }}>
         {[
@@ -907,7 +917,7 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
         {[
           { label: "Onde aparece", value: "Facebook e Instagram" },
           { label: "Quem vê", value: "Só quem você entrega" },
-          { label: "Gestão FireHub", value: "R$ 50/semana" },
+          { label: "Gestão FireHub", value: `R$ ${GESTAO_POR_SEMANA}/semana` },
           { label: "Fidelidade", value: "Sem contrato" },
         ].map(s => (
           <div key={s.label} style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 12, padding: "1rem", textAlign: "center" }}>

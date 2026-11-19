@@ -51,8 +51,13 @@ export async function GET(req: NextRequest) {
 
     const storeOwner = await prisma.user.findUnique({
       where: { id: storeId },
-      select: { storeTimezone: true, printerConfig: true, appMotoboyConfig: true, timeAlertConfig: true }
+      select: { storeTimezone: true, printerConfig: true, appMotoboyConfig: true, timeAlertConfig: true, storeName: true, name: true }
     });
+    // O nome que o cardápio público mostra (loja/[slug]/page.tsx): vai na
+    // mensagem do WhatsApp ao cliente, que respondia "Que loja?" (Vânia,
+    // Pizzaria Bom Cheff, 06/11/2026). Em cada pedido: o entregador pode
+    // atender mais de uma loja.
+    const nomeDaLoja = storeOwner?.storeName || storeOwner?.name || null;
     const tz = storeOwner?.storeTimezone || "America/Sao_Paulo";
     // O que o dono configurou para a hora da entrega (lembrar bebidas, pedir
     // o código do iFood). Vai junto com os pedidos, como as palavras de bebida.
@@ -234,6 +239,7 @@ export async function GET(req: NextRequest) {
         cobrarNaEntrega: cobranca && cobranca.cobrar ? cobranca : null,
         cancelado,
         podeInformarEntregue,
+        loja: nomeDaLoja,
       };
       if (!formatoDoApp) return pedido;
       return {

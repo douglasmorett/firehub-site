@@ -24,6 +24,7 @@ import Fornecedores from "./Fornecedores";
 import Produtos from "./Produtos";
 import Agenda from "./Agenda";
 import Pedidos from "./Pedidos";
+import { IlustracaoDaCotacao } from "./IlustracaoDaCotacao";
 
 type Estado = { ativo: boolean; cobradoEsteMes: boolean; testeAte: string | null; emTeste: boolean; jaTestou: boolean; isento: boolean; desligaEm: string | null; fimDoMes: string | null };
 export type DadosDaCotacao = {
@@ -278,8 +279,8 @@ function Oferta({ dados, salvando, onAtivar }: { dados: DadosDaCotacao; salvando
             Desligou no teste, não paga nada.
           </p>
         </div>
-        <ExemploDoComparativo />
       </div>
+      <div style={{ marginTop: 18 }}><IlustracaoDaCotacao /></div>
       <ul style={{ margin: "18px 0 0", paddingLeft: 20, color: "#334155", fontSize: 14.5, lineHeight: 1.9 }}>
         <li><b>Fornecedores ilimitados</b>, com pedido mínimo, dias de entrega, prazo e forma de pagamento.</li>
         <li>No dia e hora que você marcar, <b>a loja pede a tabela ou o encarte</b> a cada um pelo WhatsApp dela.</li>
@@ -292,27 +293,7 @@ function Oferta({ dados, salvando, onAtivar }: { dados: DadosDaCotacao; salvando
   );
 }
 
-/** A miniatura do comparativo na página de venda: mostra em 3 segundos o que o módulo faz. */
-function ExemploDoComparativo() {
-  const linhas: Array<[string, number[], number]> = [["Tomate (kg)", [7.9, 7.5, 8.4], 1], ["Mussarela (kg)", [38.9, 41.5, 36.9], 2], ["Coca lata (cx)", [42, 39.9, 44], 1]];
-  return (
-    <div aria-hidden style={{ background: "#fff", borderRadius: 14, border: "1px solid #E2E8F0", boxShadow: "0 12px 30px rgba(67,56,202,.12)", overflow: "hidden", fontSize: 13 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1.4fr repeat(3, 1fr)", background: "#F8FAFC", fontWeight: 800, color: "#475569" }}>
-        {["Produto", "Ceasa", "Hortifruti", "Atacado"].map((t) => <div key={t} style={{ padding: "8px 10px" }}>{t}</div>)}
-      </div>
-      {linhas.map(([nome, ps, melhor]) => (
-        <div key={nome} style={{ display: "grid", gridTemplateColumns: "1.4fr repeat(3, 1fr)", borderTop: "1px solid #F1F5F9" }}>
-          <div style={{ padding: "9px 10px", fontWeight: 700, color: "#0F172A" }}>{nome}</div>
-          {ps.map((p, i) => (
-            <div key={i} style={{ padding: "9px 10px", whiteSpace: "nowrap", fontWeight: i === melhor ? 900 : 600, color: i === melhor ? VERDE : "#334155", background: i === melhor ? "#ECFDF5" : undefined }}>
-              {reais(p)}{i === melhor ? " ✓" : ""}
-            </div>
-          ))}
-        </div>
-      ))}
-    </div>
-  );
-}
+// A miniatura do comparativo virou o 3º quadro de ./IlustracaoDaCotacao.
 
 function ComoFunciona() {
   const passos = [

@@ -132,6 +132,27 @@ export default async function StoreCardapioPage() {
             Gerencie seus produtos, preços e disponibilidade.
           </p>
         </div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        {/* Os produtos que o site oferece ao "Continuar pedido" (lib/upsell-config.ts). */}
+        <a
+          href="/store/cardapio/upsell"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "10px 20px",
+            borderRadius: 12,
+            background: "linear-gradient(135deg,#0F766E,#115E59)",
+            color: "#fff",
+            fontWeight: 700,
+            fontSize: "0.88rem",
+            textDecoration: "none",
+            whiteSpace: "nowrap",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
+          }}
+        >
+          🛒 Upsell
+        </a>
         <a
           href="/store/cardapio/custos"
           style={{
@@ -151,6 +172,7 @@ export default async function StoreCardapioPage() {
         >
           📊 Cadastrar CMV em Massa
         </a>
+        </div>
       </div>
 
       {mostrarMultimarcas && <ConviteDoMultimarcas ativo={multimarcasAtivo} slug={slugDaLoja} />}
