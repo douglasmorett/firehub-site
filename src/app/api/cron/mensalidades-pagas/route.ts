@@ -15,10 +15,14 @@ export async function GET(req: NextRequest) {
   if (!verifyCronAuth(req)) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   try {
     const r = await conferirMensalidadesNoAsaas();
+    // O anual da Black November também (lib/black-november-no-banco.ts).
+    const { conferirBlackNovemberNoAsaas } = await import("@/lib/black-november-no-banco");
+    const anuaisPagos = await conferirBlackNovemberNoAsaas().catch((e) => { console.error(`[Black November] Conferência falhou: ${e?.message}`); return 0; });
+    if (anuaisPagos > 0) console.log(`[Black November] Conferência: ${anuaisPagos} anuais pagos agora.`);
     if (r.pagos > 0 || r.erros.length > 0) {
       console.log(`[Mensalidade] Conferência: ${r.conferidos} boletos, ${r.pagos} pagos agora, ${r.erros.length} erros.`);
     }
-    return NextResponse.json({ ok: true, ...r });
+    return NextResponse.json({ ok: true, ...r, anuaisPagos });
   } catch (err: any) {
     console.error(`[Mensalidade] Conferência falhou: ${err?.message}`);
     return NextResponse.json({ ok: false, error: err?.message }, { status: 500 });
