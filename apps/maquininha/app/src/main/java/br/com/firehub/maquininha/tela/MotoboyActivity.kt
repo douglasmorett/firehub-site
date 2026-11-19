@@ -770,17 +770,17 @@ class MotoboyActivity : AppCompatActivity() {
             }
             // `pagamento` só viaja se mudou e se NADA passou na maquininha.
             val pagamento = if (naMaquininha == 0L && forma != doPedido) forma else null
+            // Cartão e Pix só fecham cobrando nesta maquininha: sem "já pagou de
+            // outro jeito" (Douglas, 19/11/2026: "a intenção é só aceitar o
+            // pagamento pela maquininha"). Dinheiro segue pelo campo abaixo.
             if (naMaquininha == 0L && forma != DINHEIRO) {
                 AlertDialog.Builder(this)
                     .setTitle("Nada passou nesta maquininha")
                     .setMessage(
-                        "Para cobrar no cartão aqui, toque em Voltar e depois em \"Cobrar na maquininha\". " +
-                            "Se o cliente já pagou " + Dinheiro.formatar(falta) + " em " + forma + " de outro jeito, confirme.",
+                        "Para receber em " + forma + ", toque em \"Cobrar na maquininha\". " +
+                            "Se o cliente vai pagar em dinheiro, toque em Dinheiro em \"O cliente pagou com\".",
                     )
-                    .setPositiveButton("Já pagou em $forma") { _, _ ->
-                        conferirBebidasEEntregar(pedido, 0L, 0L, null, pagamento, jaPerguntou = true)
-                    }
-                    .setNegativeButton("Voltar", null)
+                    .setPositiveButton("Entendi", null)
                     .show()
                 return@botao
             }
