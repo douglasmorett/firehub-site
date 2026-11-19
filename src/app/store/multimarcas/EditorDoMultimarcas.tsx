@@ -32,6 +32,8 @@ type Dados = {
   categorias: Categoria[];
   sugestoes: string[];
   vitrine: { config: ConfigDaVitrine; produtos: ProdutoDaVitrine[] };
+  /** As lojas da conta no iFood/99 (lib/lojas-de-origem-da-conta.ts). */
+  lojasDosApps: { chaves: string[]; nome: string; emoji: string }[];
 };
 
 const CORES = ["#E8590C", "#C92A2A", "#1F1F23", "#2B8A3E", "#1864AB", "#7048E8", "#F08C00", "#FAB005", "#C2255C"];
@@ -188,7 +190,7 @@ export default function EditorDoMultimarcas({ onAviso }: { onAviso: (tipo: "ok" 
 
   function novaMarca(nome = "") {
     if (config!.marcas.length >= dados!.limites.marcas) return;
-    const nova = { id: novoId("m"), nome: nome || `Marca ${config!.marcas.length + 1}`, tipo: "", cor: CORES[config!.marcas.length % CORES.length], logo: null, capa: null, fundo: null, categorias: [], oculta: false };
+    const nova = { id: novoId("m"), nome: nome || `Marca ${config!.marcas.length + 1}`, tipo: "", cor: CORES[config!.marcas.length % CORES.length], logo: null, capa: null, fundo: null, categorias: [], oculta: false, lojas: [] };
     mudar({ ...config!, marcas: [...config!.marcas, nova] });
     setAberta(nova.id);
   }
@@ -224,6 +226,16 @@ export default function EditorDoMultimarcas({ onAviso }: { onAviso: (tipo: "ok" 
       if (idx !== i) return m;
       const tem = m.categorias.some((c) => chave(c) === k);
       return { ...m, categorias: tem ? m.categorias.filter((c) => chave(c) !== k) : [...m.categorias, nome] };
+    });
+    mudar({ ...config!, marcas });
+  }
+
+  /** Liga ou desliga a loja do app desta marca. Uma loja é de UMA marca: sai das outras. */
+  function alternarLojaDoApp(i: number, chaves: string[]) {
+    const tem = config!.marcas[i].lojas.some((k) => chaves.includes(k));
+    const marcas = config!.marcas.map((m, idx) => {
+      const sem = m.lojas.filter((k) => !chaves.includes(k));
+      return idx === i && !tem ? { ...m, lojas: [...sem, ...chaves] } : { ...m, lojas: sem };
     });
     mudar({ ...config!, marcas });
   }
@@ -397,6 +409,24 @@ export default function EditorDoMultimarcas({ onAviso }: { onAviso: (tipo: "ok" 
                         );
                       })}
                     </div>
+                    {dados.lojasDosApps.length > 0 && (
+                      <>
+                        <span className={s.rotulo}>Lojas desta marca no iFood e no 99</span>
+                        <div className={s.categorias}>
+                          {dados.lojasDosApps.map((l) => {
+                            const minha = m.lojas.some((k) => l.chaves.includes(k));
+                            const outra = !minha ? config.marcas.find((x) => x.lojas.some((k) => l.chaves.includes(k)))?.nome : undefined;
+                            return (
+                              <button key={l.chaves[0]} className={minha ? s.chipMarcado : s.chip} onClick={() => alternarLojaDoApp(i, l.chaves)} aria-pressed={minha}>
+                                {minha && <Check size={13} />} {l.emoji} {l.nome}
+                                {outra && <em>{outra}</em>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <small className={s.dica}>O QR do fim da comanda e a mensagem de volta do pedido que entrou por estas lojas abrem o cardápio desta marca.</small>
+                      </>
+                    )}
                   </>
                 )}
               </div>

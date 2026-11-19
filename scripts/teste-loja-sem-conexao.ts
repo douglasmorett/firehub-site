@@ -17,9 +17,9 @@ import {
   CARENCIA_DO_BOOT_MS, DESCRICAO_DA_PAUSA, ENTRE_AVISOS_DE_QUEDA_MS, MAX_TENTATIVAS_DE_PAUSA, PAUSA_NO_IFOOD_MS,
   REPETIR_MS, RENOVAR_ANTES_MS,
   decidirSemConexao, duracaoEmTexto, horaLocalParaOIfood, idDaPausaCriada, idsDasNossasPausas, lerEstadoSemConexao,
-  mensagemDeFimDoHorario, mensagemDeQueda, mensagemDeVolta, mesmoEstado, protecaoLigada,
+  mensagemDeFimDoHorario, mensagemDeQueda, mensagemDeVolta, mesmoEstado, modoDaProtecao, oQueAProtecaoFaz, protecaoLigada,
   registrarAviso, registrarPausaNoIfood, registrarTiradaDoIfood,
-  type DecisaoSemConexao, type EstadoSemConexao, type ResultadoDaPausa, type SinaisDeVida, type SituacaoDaLoja,
+  type DecisaoSemConexao, type ModoDaProtecao, type EstadoSemConexao, type ResultadoDaPausa, type SinaisDeVida, type SituacaoDaLoja,
 } from "../src/lib/loja-sem-conexao";
 import { estadoDaLoja, instrucaoDeHorario, TEXTO_DA_INSTABILIDADE } from "../src/lib/loja-aberta";
 import {
@@ -432,6 +432,52 @@ confere("estado gravado ilegível vira estado vazio", lerEstadoSemConexao("lixo"
   const lido = lerEstadoSemConexao(JSON.parse(JSON.stringify({ ...d.estado, versao: 4 })));
   confere("o estado gravado volta igual (com a versão)", [mesmoEstado(lido.estado, d.estado), lido.versao], [true, 4]);
   confere("comparação ignora a ordem das chaves", mesmoEstado({ ultimoAvisoEm: 1, tirarDoIfood: [{ merchantId: "a", ids: [], ate: 2 }] }, { tirarDoIfood: [{ ate: 2, ids: [], merchantId: "a" }], ultimoAvisoEm: 1 }), true);
+}
+
+console.log("\n— Modo da proteção: ligada, só avisar, desligada (Lucas, 19/11/2026) —");
+{
+  confere("modo: ausente/true = ligada, \"so_avisar\", false = desligada",
+    [modoDaProtecao(undefined), modoDaProtecao({}), modoDaProtecao({ protecaoSemConexao: true }), modoDaProtecao({ protecaoSemConexao: "so_avisar" }), modoDaProtecao({ protecaoSemConexao: false }), modoDaProtecao({ protecaoSemConexao: "lixo" })],
+    ["ligada", "ligada", "ligada", "so_avisar", "desligada", "ligada"]);
+  confere("só avisar conta como proteção ligada (a queda é constatada)", protecaoLigada({ protecaoSemConexao: "so_avisar" }), true);
+  // A decisão de ponta a ponta, como o cron monta a situação a partir do modo.
+  const naQueda = (modo: ModoDaProtecao) => {
+    const faz = oQueAProtecaoFaz(modo);
+    const d = decide({ l: { protecaoLigada: faz.avisa, soAvisar: !faz.pausa } });
+    return { avisa: d.acoes.aviso === "queda", pausa: d.acoes.pausarNoIfood.length > 0 || d.acoes.fecharSite === true };
+  };
+  confere("ligada: avisa e pausa", [oQueAProtecaoFaz("ligada"), naQueda("ligada")], [{ avisa: true, pausa: true }, { avisa: true, pausa: true }]);
+  confere("só avisar: avisa e NÃO pausa", [oQueAProtecaoFaz("so_avisar"), naQueda("so_avisar")], [{ avisa: true, pausa: false }, { avisa: true, pausa: false }]);
+  confere("desligada: nem avisa nem pausa", [oQueAProtecaoFaz("desligada"), naQueda("desligada")], [{ avisa: false, pausa: false }, { avisa: false, pausa: false }]);
+
+  const SO = { soAvisar: true };
+  const apagou = decide({ l: SO });
+  confere("só avisar: a queda é gravada como só aviso, sem iFood e com o site do dono",
+    [apagou.evento, apagou.estado.episodio?.soAviso, apagou.estado.episodio?.site, apagou.estado.episodio?.ifood.length, apagou.acoes.renovarNoIfood.length],
+    ["apagou", true, "dono_mexeu", 0, 0]);
+  const comAviso = registrarAviso(apagou.estado, "queda", true, T0);
+  const depois = decide({ l: SO, estado: comAviso, s: { agora: T0 + REPETIR_MS + MIN } });
+  confere("só avisar, segue apagada: nada a pausar nem a repetir", [depois.evento, nenhumaAcao(depois)], ["segue_apagada", true]);
+  const volta = decide({ l: SO, estado: comAviso, s: { agora: T0 + 5 * MIN, painelNaMemoria: T0 + 5 * MIN } });
+  confere("só avisar, voltou: não reabre nem tira nada, e avisa a volta",
+    [volta.evento, volta.acoes.reabrirSite, volta.acoes.tirarDoIfood.length, volta.acoes.aviso], ["voltou", false, 0, "volta"]);
+  confere("o só aviso sobrevive à gravação", lerEstadoSemConexao(JSON.parse(JSON.stringify(apagou.estado))).estado.episodio?.soAviso, true);
+
+  const msg = mensagemDeQueda({ loja: "Frangoso", episodio: apagou.estado.episodio!, tz: SP, semPausaAutomatica: ["99Food"] });
+  contem("aviso do só avisar: diz que nada foi pausado", msg, "não pausamos nada");
+  naoContem("…e não lista pausas", msg, "pausamos:");
+  naoContem("…nem em aceite automático desligado", msg, "sem aceite automático");
+  naoContem("…nem em reabrir sozinho", msg, "tudo é reaberto sozinho");
+  naoContem("volta do só avisar: não fala do site", mensagemDeVolta({ loja: "Frangoso", episodio: apagou.estado.episodio!, agora: T0 + 5 * MIN, tz: SP }), "O site ficou");
+
+  // O dono troca o modo no meio da queda: desfaz o que esta queda fez, sem aviso.
+  const cheia = decide().estado;
+  const trocou = decide({ l: SO, estado: cheia });
+  confere("ligada → só avisar na queda: desfaz (tira o iFood, reabre o site), sem aviso",
+    [trocou.evento, trocou.motivo, trocou.acoes.reabrirSite, trocou.acoes.tirarDoIfood.map((t) => t.merchantId), trocou.acoes.aviso],
+    ["voltou", "modo_mudou", true, ["m1"], null]);
+  const voltouAPausar = decide({ estado: apagou.estado });
+  confere("só avisar → ligada na queda: encerra para a próxima rodada pausar", [voltouAPausar.evento, voltouAPausar.motivo], ["voltou", "modo_mudou"]);
 }
 
 console.log("\n— Sinais na memória do processo —");

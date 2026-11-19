@@ -5,6 +5,7 @@ import { multimarcasEstaLigado } from "@/lib/multimarcas/assinatura";
 import { gravarConfigDaPagina, lerConfigDaPagina, LIMITES, type ConfigDaPagina } from "@/lib/multimarcas/pagina";
 import { SELECT_DA_LOJA_NO_CARDAPIO } from "@/lib/cardapio-publico";
 import { vitrineDaLoja } from "@/lib/multimarcas/carga";
+import { lojasDeOrigemDaConta } from "@/lib/lojas-de-origem-da-conta";
 
 /**
  * O editor do Multimarcas (tela /store/multimarcas, ativado).
@@ -55,12 +56,17 @@ export async function GET() {
   const salva = await lerConfigDaPagina(s.franchiseeId, nomeDaLoja);
   const config: ConfigDaPagina = salva ?? { nome: nomeDaLoja, frase: "", cor: "#E8590C", marcas: [], banners: [], destaques: [], atalhos: [], tiposDeComida: null };
 
-  const [categorias, contagem, sugestoes, vitrine] = await Promise.all([
+  const [categorias, contagem, sugestoes, vitrine, lojasDeOrigem] = await Promise.all([
     prisma.menuCategory.findMany({ where: { franchiseeId: s.franchiseeId }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { name: true, emoji: true } }),
     prisma.menuProduct.groupBy({ by: ["category"], where: { franchiseeId: s.franchiseeId }, _count: { _all: true } }).catch(() => []),
     sugestoesDeMarcas(s.franchiseeId),
     vitrineDaLoja(franchisee, config),
+    lojasDeOrigemDaConta(s.franchiseeId, null).catch(() => []),
   ]);
+  // As lojas do iFood/99 da conta: o dono diz qual é de cada marca (o QR da comanda leva à marca).
+  const lojasDosApps = lojasDeOrigem
+    .filter((l) => l.origem === "iFood" || l.origem === "99Food")
+    .map((l) => ({ chaves: l.chaves?.length ? l.chaves : [l.chave], nome: l.nome, emoji: l.emoji }));
   const qtd = new Map((contagem as any[]).map((c) => [String(c.category).trim().toLowerCase(), c._count._all]));
   // Categoria que só existe no produto (sem cadastro em MenuCategory) também entra.
   const nomes = new Map(categorias.map((c) => [c.name.trim().toLowerCase(), { nome: c.name, emoji: c.emoji }]));
@@ -77,6 +83,7 @@ export async function GET() {
     categorias: [...nomes.entries()].map(([k, c]) => ({ ...c, produtos: qtd.get(k) ?? 0 })),
     sugestoes,
     vitrine,
+    lojasDosApps,
   });
 }
 

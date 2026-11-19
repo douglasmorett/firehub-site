@@ -106,12 +106,13 @@ export async function gravarEstadoSemConexao(o: {
   }
 }
 
-/** As lojas em queda agora (para o cron da abertura não reabrir nem avisar "loja fechada"). Nunca lança. */
+/** As lojas em queda agora (para o cron da abertura não reabrir nem avisar "loja fechada"). Queda no "só avisar" não conta: nada foi fechado. Nunca lança. */
 export async function lojasEmQueda(): Promise<Set<string>> {
   try {
     if (!(await garantirColunaDaLojaSemConexao())) return new Set();
     const linhas = await prisma.$queryRaw<{ id: string }[]>`
       SELECT "id" FROM "User" WHERE jsonb_typeof("semConexaoEstado"->'episodio') = 'object'
+        AND COALESCE("semConexaoEstado"->'episodio'->>'soAviso', 'false') <> 'true'
     `;
     return new Set(linhas.map((l) => l.id));
   } catch (err: any) {
@@ -144,14 +145,16 @@ export async function lojaFechadaPelaQueda(lojaId: string | null | undefined): P
 
 /**
  * A loja está EM QUEDA agora (lib/loja-sem-conexao.ts)? Nunca lança: na
- * dúvida, "não".
+ * dúvida, "não". Queda no "só avisar" não conta: o aceite automático segue.
  */
 export async function lojaEmQueda(lojaId: string | null | undefined): Promise<boolean> {
   if (!lojaId) return false;
   try {
     if (!(await garantirColunaDaLojaSemConexao())) return false;
     const linhas = await prisma.$queryRaw<{ emQueda: boolean | null }[]>`
-      SELECT jsonb_typeof("semConexaoEstado"->'episodio') = 'object' AS "emQueda" FROM "User" WHERE "id" = ${lojaId} LIMIT 1
+      SELECT jsonb_typeof("semConexaoEstado"->'episodio') = 'object'
+        AND COALESCE("semConexaoEstado"->'episodio'->>'soAviso', 'false') <> 'true' AS "emQueda"
+      FROM "User" WHERE "id" = ${lojaId} LIMIT 1
     `;
     return linhas[0]?.emQueda === true;
   } catch {

@@ -14,6 +14,8 @@ import { telefoneDaMeta } from "@/lib/disparo-oficial/regras";
 import { acharCupom, cupomVenceu } from "@/lib/cupons";
 import { ehConversaDeCliente } from "@/lib/jid-de-cliente";
 import { mesmoNumero, numeroDaEquipeDoFireHub, numeroEstaNaListaDeIgnorados } from "@/lib/numeros-ignorados";
+import { marcasDoQrDaLoja } from "@/lib/multimarcas/pagina";
+import { marcaDoPedido, textoComLinkDaMarca } from "@/lib/multimarcas/marca-do-pedido";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -268,6 +270,10 @@ export async function GET(req: NextRequest) {
         ...(cfg.recuperacaoQrEnvios && typeof cfg.recuperacaoQrEnvios === "object" ? cfg.recuperacaoQrEnvios : {}),
       };
 
+      // Multimarcas: o link leva à marca do último pedido do cliente (Lucas,
+      // 13/11/2026). Loja sem Multimarcas: lista vazia, o link de sempre.
+      const marcasDaLoja = await marcasDoQrDaLoja(loja.id);
+
       for (const marco of marcosLigados) {
         if (enviadosDaLoja >= TETO_POR_LOJA || aceiteDesfeito) break;
         const nomeDoMarco =
@@ -341,9 +347,17 @@ export async function GET(req: NextRequest) {
           }
 
           try {
+            const ultimo = marcasDaLoja.length
+              ? await prisma.customerOrder.findFirst({
+                  where: { franchiseeId: loja.id, customerPhone: telefone, status: { not: "CANCELADO" } },
+                  orderBy: { createdAt: "desc" },
+                  select: { franchiseeId: true, source: true, openDeliveryChannel: true, openDeliveryOrderId: true, ifoodStoreMerchant: true, food99AppShopId: true, food99ShopId: true, items: { select: { productName: true } } },
+                })
+              : null;
+            const textoDoCliente = textoComLinkDaMarca(texto, linkDaLoja, marcaDoPedido(marcasDaLoja, ultimo));
             const ok = imagem
-              ? await sendEvolutionMediaUrl(loja.id, digitos, imagem, texto)
-              : await sendEvolutionMessage(loja.id, digitos, texto);
+              ? await sendEvolutionMediaUrl(loja.id, digitos, imagem, textoDoCliente)
+              : await sendEvolutionMessage(loja.id, digitos, textoDoCliente);
             if (!ok) {
               falhasDaLoja++;
               console.warn(`[Recuperação] ${loja.storeName || loja.id}: o gateway não confirmou o envio para ${digitos.slice(-4)}`);

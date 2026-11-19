@@ -33,7 +33,7 @@ import { contingenciaAtivada, subidasDesde } from "@/lib/contingencia/aviso-ao-d
 import {
   ASSISTENTE_RECENTE_MS, DESCRICAO_DA_PAUSA, PAUSA_NO_IFOOD_MS,
   decidirSemConexao, horaLocalParaOIfood, idDaPausaCriada, idsDasNossasPausas, mesmoEstado,
-  mensagemDeFimDoHorario, mensagemDeQueda, mensagemDeVolta, protecaoLigada,
+  mensagemDeFimDoHorario, mensagemDeQueda, mensagemDeVolta, modoDaProtecao, oQueAProtecaoFaz,
   registrarAviso, registrarPausaNoIfood, registrarTiradaDoIfood,
   type ResultadoDaPausa,
 } from "@/lib/loja-sem-conexao";
@@ -165,6 +165,8 @@ export async function GET(req: NextRequest) {
         }).motivo === "pausa";
         const merchants = merchantsDaLoja(loja, integracoes);
         const gravado = estados.get(loja.id) ?? { estado: {}, versao: 0 };
+        // Ligada (avisa e pausa), só avisar ou desligada (lib/loja-sem-conexao.ts).
+        const faz = oQueAProtecaoFaz(modoDaProtecao(config));
 
         const d = decidirSemConexao({
           sinais: {
@@ -176,7 +178,7 @@ export async function GET(req: NextRequest) {
             ),
             painelNaMemoria: maisRecente(painelVistoEm(loja.id), sinalDeOutraInstancia(deFora.get(loja.id)?.painelHaMs, agora)),
           },
-          loja: { turno: turno?.chave ?? null, emPausa, storeOpen: loja.storeOpen, protecaoLigada: protecaoLigada(config) },
+          loja: { turno: turno?.chave ?? null, emPausa, storeOpen: loja.storeOpen, protecaoLigada: faz.avisa, soAvisar: !faz.pausa },
           ifood: merchants.map((m) => ({ merchantId: m.merchantId, nome: m.nome })),
           podeAvisar: alertaLigado(config, "loja_sem_conexao") && numerosDoDono(loja.notificationPhone, config).length > 0,
           estado: gravado.estado,
@@ -208,7 +210,7 @@ export async function GET(req: NextRequest) {
 
         if (d.evento === "apagou") {
           resumo.apagaram++;
-          console.warn(`[loja-sem-conexao] 📡 ${nome}: SEM CONEXÃO (Assistente mudo desde ${new Date(d.estado.episodio!.ultimoSinal).toISOString()}, nenhum painel). Site fechado; pausando ${merchants.length} loja(s) do iFood.`);
+          console.warn(`[loja-sem-conexao] 📡 ${nome}: SEM CONEXÃO (Assistente mudo desde ${new Date(d.estado.episodio!.ultimoSinal).toISOString()}, nenhum painel). ${d.estado.episodio!.soAviso ? "Só avisar: nada pausado." : `Site fechado; pausando ${merchants.length} loja(s) do iFood.`}`);
         } else if (d.evento === "voltou") {
           resumo.voltaram++;
           console.log(`[loja-sem-conexao] ✅ ${nome}: fim da queda (${d.motivo}). Desfazendo o que foi feito.`);

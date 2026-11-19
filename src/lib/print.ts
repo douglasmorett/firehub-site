@@ -5,6 +5,7 @@ import { pedidoParaOAssistente } from "./bairro-na-comanda";
 import { comboParaImpressao, itensUmaLinhaPorUnidade } from "./parse-combo";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "./qr-puxar";
 import { camposDaCampanha, type BlocoDaCampanha, type CampanhaConverterConfig } from "./campanha-converter";
+import type { MarcaDoQr } from "./multimarcas/marca-do-pedido";
 import { impressorasDaLoja } from "./loja-de-origem";
 import { bebidaQueOutraJaLeva, categoriasPedidas, impressoraDaViaDoEntregador, impressorasPeloPedidoSoDeBebida, impressorasPeloTipoDoPedido, itensQueContamParaAVia, itensDaImpressora, restoDoPedido, SUFIXO_DA_VIA_DO_ENTREGADOR, umaPorImpressora } from "./roteamento-de-impressao";
 import { contaSaiNestaImpressora } from "./impressao-da-conta";
@@ -242,6 +243,8 @@ type PrinterConfig = {
   /* Campanha "converter para site próprio" (lib/campanha-converter.ts): se a
      comanda do iFood/99Food leva o bloco "VOCÊ GANHOU" e em qual impressora. */
   campanhaConverter?: CampanhaConverterConfig;
+  /* Multimarcas: o QR da campanha abre a marca do pedido (lib/multimarcas/marca-do-pedido.ts). */
+  marcasDoQr?: MarcaDoQr[];
 };
 
 /**
@@ -819,7 +822,8 @@ export async function printOrder(
       { converter: printerConfig?.campanhaConverter },
       printerConfig?.storeSlug,
       printer.name,
-      semValores
+      semValores,
+      printerConfig?.marcasDoQr
     );
 
     // Cupom completo pedido no botão: o modelo sem valores da impressora não
