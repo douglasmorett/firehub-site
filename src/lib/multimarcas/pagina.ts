@@ -19,6 +19,7 @@
  * página não abre, o resto do sistema não sente.
  */
 import { prisma } from "@/lib/prisma";
+import type { MarcaDoQr } from "./marca-do-pedido";
 
 export type MarcaDaPagina = {
   id: string;
@@ -36,6 +37,12 @@ export type MarcaDaPagina = {
   /** Nomes das categorias do cardápio que são desta marca (a mesma pode estar em outras marcas). */
   categorias: string[];
   oculta: boolean;
+  /**
+   * As lojas do iFood/99 que SÃO esta marca (chaves de lib/loja-de-origem.ts,
+   * "ifood:<merchant>", "99food:<id>"): o QR da comanda e a mensagem de volta
+   * do pedido que entrou por elas levam ao cardápio desta marca (Lucas, 13/11/2026).
+   */
+  lojas: string[];
 };
 
 export type BannerDaPagina = {
@@ -77,7 +84,7 @@ export type ConfigDaPagina = {
   atalhos: AtalhoDaPagina[];
 };
 
-export const LIMITES = { marcas: 30, banners: 12, categoriasPorMarca: 60, destaques: 20, atalhos: 12 } as const;
+export const LIMITES = { marcas: 30, banners: 12, categoriasPorMarca: 60, destaques: 20, atalhos: 12, lojasPorMarca: 10 } as const;
 export const CORES_DAS_MARCAS = ["#1F1F23", "#E8590C", "#C92A2A", "#F08C00", "#2B8A3E", "#1864AB", "#7048E8", "#C2255C", "#0B7285", "#5C940D"];
 
 export const chaveDaCategoria = (nome: string) => String(nome || "").trim().toLowerCase();
@@ -110,6 +117,7 @@ const id = (v: unknown, prefixo: string, i: number) => {
 export function limparConfig(bruto: unknown, nomeDaLoja = "Minhas marcas"): ConfigDaPagina {
   const b = (bruto && typeof bruto === "object" ? bruto : {}) as any;
   const ids = new Set<string>();
+  const lojasUsadas = new Set<string>();
   const marcas: MarcaDaPagina[] = (Array.isArray(b.marcas) ? b.marcas : []).slice(0, LIMITES.marcas).map((m: any, i: number) => {
     let mid = id(m?.id, "m", i);
     while (ids.has(mid)) mid = `${mid}x`;
@@ -123,6 +131,14 @@ export function limparConfig(bruto: unknown, nomeDaLoja = "Minhas marcas"): Conf
       usadas.add(k);
       categorias.push(nome);
     }
+    // Uma loja do app é de UMA marca: a primeira que a tiver fica com ela.
+    const lojas: string[] = [];
+    for (const l of Array.isArray(m?.lojas) ? m.lojas : []) {
+      const k = typeof l === "string" ? l.trim().toLowerCase() : "";
+      if (!/^(ifood|99food):[a-z0-9_.-]{1,80}$/.test(k) || lojasUsadas.has(k) || lojas.length >= LIMITES.lojasPorMarca) continue;
+      lojasUsadas.add(k);
+      lojas.push(k);
+    }
     return {
       id: mid,
       nome: texto(m?.nome, 40) || `Marca ${i + 1}`,
@@ -133,6 +149,7 @@ export function limparConfig(bruto: unknown, nomeDaLoja = "Minhas marcas"): Conf
       fundo: imagem(m?.fundo),
       categorias,
       oculta: m?.oculta === true,
+      lojas,
     };
   });
   const idsDasMarcas = new Set(marcas.map((m) => m.id));
@@ -193,6 +210,11 @@ export function marcaDaCategoria(config: Pick<ConfigDaPagina, "marcas">, categor
   return ids?.length === 1 ? config.marcas.find((m) => m.id === ids[0]) ?? null : null;
 }
 
+/** As marcas que o QR e a mensagem de volta usam (lib/multimarcas/marca-do-pedido.ts): só as visíveis. */
+export function marcasDoQr(config: Pick<ConfigDaPagina, "marcas"> | null | undefined): MarcaDoQr[] {
+  return (config?.marcas ?? []).filter((m) => !m.oculta).map((m) => ({ id: m.id, nome: m.nome, lojas: m.lojas }));
+}
+
 // ─── Banco ───────────────────────────────────────────────────────────────
 
 const INSTRUCOES = [
@@ -229,6 +251,17 @@ export async function lerConfigDaPagina(franchiseeId: string, nomeDaLoja?: strin
   } catch (err: any) {
     console.error("[Multimarcas] Erro ao ler a página:", err?.message);
     return null;
+  }
+}
+
+/** As marcas do QR desta loja: vazio sem o Multimarcas ligado (link de sempre). Nunca lança. */
+export async function marcasDoQrDaLoja(franchiseeId: string): Promise<MarcaDoQr[]> {
+  try {
+    const { multimarcasEstaLigado } = await import("./assinatura");
+    if (!(await multimarcasEstaLigado(franchiseeId))) return [];
+    return marcasDoQr(await lerConfigDaPagina(franchiseeId));
+  } catch {
+    return [];
   }
 }
 

@@ -13,7 +13,8 @@ import { trabalhoParaOAssistente } from "@/lib/bairro-na-comanda";
 import { comboParaImpressao, itensUmaLinhaPorUnidade } from "@/lib/parse-combo";
 import { nomeDoItem, nomeDoItemParaComanda } from "@/lib/nome-do-item";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "@/lib/qr-puxar";
-import { camposDaCampanha, camposDaCampanhaSemDestino } from "@/lib/campanha-converter";
+import { camposDaCampanha, camposDaCampanhaSemDestino, campanhaPronta, lerCampanha } from "@/lib/campanha-converter";
+import { marcasDoQrDaLoja } from "@/lib/multimarcas/pagina";
 import { avisosDoPedido, blocosDaViaDoEntregador, blocosDoPedido, semValoresDaImpressora } from "@/lib/comanda-modelo";
 import { blocosComOutrosSetores, outrosSetoresDoPedido, papelSemAvisoDeSetores } from "@/lib/outros-setores-na-comanda";
 import { blocosComAvisoDoTroco } from "@/lib/troco-nao-informado";
@@ -612,6 +613,11 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
     // (lib/andares-da-mesa.ts). A comanda da cozinha não olha o andar.
     const andares = lerAndares(pc);
     const slugDaLoja = owner?.slug || "";
+    // Multimarcas: o QR da campanha abre a marca do pedido (lib/multimarcas/marca-do-pedido.ts).
+    // Só lê com a campanha pronta; 60 s em memória, que esta rota roda a cada 3 s.
+    const marcasDoQr = campanhaPronta(lerCampanha(owner?.storeLoyalty))
+      ? await lembrarPor(`fila:marcas:${franchiseeId}`, 60_000, () => marcasDoQrDaLoja(franchiseeId))
+      : [];
 
     // "Qtd Pedidos" de verdade (lib/qtd-pedidos-do-cliente.ts). Só quando há
     // pedido na fila — a maioria dos polls volta vazia e não consulta nada.
@@ -746,7 +752,7 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
       // impressora dentro, e o Assistente 1.2.10 confere antes de desenhar;
       // Assistente antigo ignora o campo e imprime como sempre.
       const campanhaSemDestino = destinos.length === 0
-        ? camposDaCampanhaSemDestino(order as any, owner?.storeLoyalty, slugDaLoja)
+        ? camposDaCampanhaSemDestino(order as any, owner?.storeLoyalty, slugDaLoja, marcasDoQr)
         : {};
       return {
       id: "job_" + order.id + sufixo,
@@ -839,7 +845,7 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
         // O QR desta impressora (vazio = esta não imprime QR).
         ...(qrLigadoNaImpressora(d.impressora, pc) ? qr : {}),
         // O bloco da campanha desta impressora (vazio = não é a escolhida).
-        ...camposDaCampanha(order as any, owner?.storeLoyalty, slugDaLoja, d.impressora.name),
+        ...camposDaCampanha(order as any, owner?.storeLoyalty, slugDaLoja, d.impressora.name, false, marcasDoQr),
         // ── O MODELO DESTA IMPRESSORA ─────────────────────────────────────
         //
         // Campo ADITIVO, como `destinos` inteiro: o Assistente que não souber
@@ -1095,7 +1101,7 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
             : {}),
           // Reimpressão sai igual à original: com o bloco da campanha onde ele
           // saiu da primeira vez.
-          ...camposDaCampanha(order, owner?.storeLoyalty, slugDaLoja, d.impressora.name),
+          ...camposDaCampanha(order, owner?.storeLoyalty, slugDaLoja, d.impressora.name, false, marcasDoQr),
           ...(daVia || qrLigadoNaImpressora(d.impressora, pc) ? qr : {}),
           ...(blocosDoDestino(d.impressora) ? { blocos: blocosDoDestino(d.impressora) } : {}),
           ...(avisosDaImpressora(d.impressora as any) ? { avisos: avisosDaImpressora(d.impressora as any) } : {}),

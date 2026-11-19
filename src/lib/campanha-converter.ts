@@ -23,6 +23,8 @@
  * venda que já era da loja.
  */
 
+import { linkComMarca, marcaDoPedido, type MarcaDoQr } from "./multimarcas/marca-do-pedido";
+
 export const VERSAO_ASSISTENTE_COM_CAMPANHA = "1.2.10";
 
 /** A configuração que a loja salva em `User.storeLoyalty.converter`. */
@@ -112,8 +114,9 @@ export function formatarPremio(c: Pick<CampanhaConverterConfig, "tipo" | "valor"
   return `R$ ${Number(c.valor).toFixed(2).replace(".", ",")}`;
 }
 
-export function urlDaCampanha(slug: string, codigo: string, base = "https://firehubfood.com.br"): string {
-  return `${String(base).replace(/\/+$/, "")}/loja/${slug}?cupom=${encodeURIComponent(codigo)}`;
+/** `marca` (Multimarcas): o QR abre o cardápio da marca em que o pedido entrou (lib/multimarcas/marca-do-pedido.ts). */
+export function urlDaCampanha(slug: string, codigo: string, base = "https://firehubfood.com.br", marca: string | null = null): string {
+  return linkComMarca(`${String(base).replace(/\/+$/, "")}/loja/${slug}?cupom=${encodeURIComponent(codigo)}`, marca);
 }
 
 /** O endereço curto que sai impresso abaixo do QR, para quem não escaneia. */
@@ -138,7 +141,7 @@ export type BlocoDaCampanha = {
   impressora: string;
 };
 
-export function blocoDaCampanha(c: CampanhaConverterConfig, slug: string): BlocoDaCampanha {
+export function blocoDaCampanha(c: CampanhaConverterConfig, slug: string, marca: string | null = null): BlocoDaCampanha {
   const regras: string[] = [];
   if (c.somentePrimeiroPedido) regras.push("Valido no seu PRIMEIRO pedido pelo site");
   else regras.push("Valido em todo pedido pelo site");
@@ -148,7 +151,7 @@ export function blocoDaCampanha(c: CampanhaConverterConfig, slug: string): Bloco
     premio: formatarPremio(c),
     texto: "para lanchar conosco pelo nosso site!",
     codigo: c.codigo,
-    url: urlDaCampanha(slug, c.codigo),
+    url: urlDaCampanha(slug, c.codigo, undefined, marca),
     endereco: enderecoCurto(slug),
     regras,
     impressora: c.impressora,
@@ -164,12 +167,13 @@ export function blocoDaCampanha(c: CampanhaConverterConfig, slug: string): Bloco
 export function camposDaCampanhaSemDestino(
   pedido: { source?: string | null; openDeliveryChannel?: string | null } | null | undefined,
   storeLoyalty: unknown,
-  slug: string | null | undefined
+  slug: string | null | undefined,
+  marcas: MarcaDoQr[] = []
 ): { campanha?: BlocoDaCampanha } {
   if (!slug || !pedidoDeMarketplace(pedido)) return {};
   const c = lerCampanha(storeLoyalty);
   if (!campanhaPronta(c)) return {};
-  return { campanha: blocoDaCampanha(c, slug) };
+  return { campanha: blocoDaCampanha(c, slug, marcaDoPedido(marcas, pedido as any)) };
 }
 
 /**
@@ -184,13 +188,15 @@ export function camposDaCampanha(
   storeLoyalty: unknown,
   slug: string | null | undefined,
   nomeDaImpressora: string | null | undefined,
-  semValores = false
+  semValores = false,
+  /** Multimarcas: as marcas da loja, para o QR abrir a do pedido. Vazio = a loja inteira. */
+  marcas: MarcaDoQr[] = []
 ): { campanha?: BlocoDaCampanha } {
   if (!slug || semValores || pedido?.semValores === true) return {};
   if (!pedidoDeMarketplace(pedido)) return {};
   const c = lerCampanha(storeLoyalty);
   if (!campanhaSaiNestaImpressora(c, nomeDaImpressora)) return {};
-  return { campanha: blocoDaCampanha(c, slug) };
+  return { campanha: blocoDaCampanha(c, slug, marcaDoPedido(marcas, pedido as any)) };
 }
 
 /** Marca que distingue o cupom da campanha dos cupons cadastrados à mão. */

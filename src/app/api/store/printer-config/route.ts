@@ -3,7 +3,8 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { lembrarPor } from "@/lib/cache-curto";
-import { lerCampanha } from "@/lib/campanha-converter";
+import { campanhaPronta, lerCampanha } from "@/lib/campanha-converter";
+import { marcasDoQrDaLoja } from "@/lib/multimarcas/pagina";
 import { lerAndares } from "@/lib/andares-da-mesa";
 
 export async function PUT(req: NextRequest) {
@@ -109,6 +110,13 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Multimarcas: o QR da campanha abre a marca em que o pedido entrou. Só com
+  // a campanha pronta (sem ela, nenhum QR sai e não há o que ler).
+  const campanhaConverter = lerCampanha(user?.storeLoyalty);
+  const marcasDoQr = campanhaPronta(campanhaConverter)
+    ? await lembrarPor(`printer-config:marcas:${targetId}`, 60_000, () => marcasDoQrDaLoja(targetId))
+    : [];
+
   return NextResponse.json({
     ...pConfig,
     storeName: user?.storeName || user?.name || "FIREHUB",
@@ -119,7 +127,8 @@ export async function GET(req: NextRequest) {
     // Campanha "converter para site próprio" (lib/campanha-converter.ts): o
     // navegador imprime a comanda do iFood/99Food e precisa saber se ela leva
     // o bloco do prêmio e em qual impressora. Mesma origem da fila da nuvem.
-    campanhaConverter: lerCampanha(user?.storeLoyalty),
+    campanhaConverter,
+    marcasDoQr,
     // A cidade da loja separa o bairro da cidade no endereço impresso
     // ("Rua Paranaíba, 470, Operário, Rio das Ostras" — lib/endereco-impresso.ts).
     // A fila da nuvem lê a mesma coluna (User.city).
