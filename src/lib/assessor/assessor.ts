@@ -29,6 +29,7 @@ import { DECLARACOES_DO_ASSESSOR, FERRAMENTAS_QUE_GRAVAM, executarFerramentaDoAs
 import { chaveDoClaude, lojaNoClaude, marcadaNoClaude, MODELO_CLAUDE } from "@/lib/robo-no-claude";
 import { rodarAssessorNoClaude } from "./assessor-no-claude";
 import { MODULOS_DO_BILL } from "./modulos";
+import { saveUploadedFile } from "@/lib/storage";
 
 export const MODELOS_DO_ASSESSOR = ["gemini-3.6-flash", "gemini-2.5-flash"];
 
@@ -131,6 +132,23 @@ ${resumo}
 ${mudou}`;
 }
 
+/**
+ * A foto que o dono mandou, no NOSSO /uploads (nunca URL de fora): vira a foto
+ * do produto que ele cadastra ou troca pelo Bill e a foto da nota da compra.
+ * Antes ela só ia para o modelo ler e se perdia (`imagemUrl` nunca era
+ * preenchido). Falhou ao salvar: segue sem URL, o modelo ainda lê a foto.
+ */
+async function salvarFotoDoDono(imagem: MidiaDoDono): Promise<string | null> {
+  try {
+    const tipo = imagem.mimeType?.startsWith("image/") ? imagem.mimeType : "image/jpeg";
+    const arquivo = new File([Buffer.from(imagem.base64, "base64")], `bill-${Date.now()}.${tipo.split("/")[1] || "jpg"}`, { type: tipo });
+    return (await saveUploadedFile(arquivo, "produtos")).url;
+  } catch (err: any) {
+    console.error("[Assessor] Não salvou a foto do dono:", err?.message || err);
+    return null;
+  }
+}
+
 /** As regras de cada módulo (modulos/), numa seção só do prompt. */
 function regrasDosModulos(): string {
   const regras = MODULOS_DO_BILL.map((m) => m.regras.trim()).filter(Boolean);
@@ -201,7 +219,7 @@ export async function conversarComOAssessor(
     { role: "user", parts: partes },
   ];
 
-  if (entrada.imagem?.base64) ctx = { ...ctx, comFoto: true };
+  if (entrada.imagem?.base64) ctx = { ...ctx, comFoto: true, imagemUrl: ctx.imagemUrl || (await salvarFotoDoDono(entrada.imagem)) };
   const sistema = await montarSistema(ctx);
   let resposta = "";
   let ouviDoClaude: string | null = null;
