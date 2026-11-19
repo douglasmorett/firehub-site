@@ -112,7 +112,9 @@ export function SalaoAoLongoDaNoite({ reservas, horarios, config, onAbrir }: {
     <div style={{ overflowX: "auto" }}>
       <div style={{ minWidth: 640, position: "relative" }}>
         <div style={{ position: "relative", height: 18 }}>
-          {marcas.map((t) => <span key={t} style={{ position: "absolute", left: `${x(t)}%`, transform: "translateX(-50%)", fontSize: 11, fontWeight: 700, color: TINTA_3 }}>{hh(t)}</span>)}
+          {marcas.map((t) => (
+            <span key={t} style={{ position: "absolute", left: `${x(t)}%`, transform: x(t) < 3 ? "none" : x(t) > 97 ? "translateX(-100%)" : "translateX(-50%)", fontSize: 11, fontWeight: 700, color: TINTA_3 }}>{hh(t)}</span>
+          ))}
         </div>
         <div style={{ position: "relative", height: linhas * ALT, background: "repeating-linear-gradient(180deg,#F8FAFC 0 29px,#EEF2F7 29px 30px)", borderRadius: 10, border: `1px solid ${BORDA}` }}>
           {marcas.map((t) => <i key={t} aria-hidden style={{ position: "absolute", top: 0, bottom: 0, left: `${x(t)}%`, borderLeft: "1px dashed #E2E8F0" }} />)}
@@ -203,37 +205,34 @@ function CartaoDaReserva({ r, mesas, ocupado, ehPassado, onAcao, onMesa, onMover
   const tel = String(r.telefone || "").replace(/\D/g, "");
   const aberta = r.status === "CONFIRMADA";
   return (
-    <div id={`reserva-${r.id}`} style={{ ...cartao, padding: "12px 14px", display: "grid", gap: 10, opacity: r.status === "CANCELADA" ? 0.6 : 1, borderLeft: `5px solid ${r.status === "CHEGOU" ? "#16A34A" : CORES_DA_ORIGEM[r.origem]}` }}>
-      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <b style={{ fontSize: 16, color: TINTA }}>{r.nome}</b>
-        <span style={{ fontSize: 13.5, fontWeight: 800, color: TINTA, background: "#F1F5F9", padding: "2px 9px", borderRadius: 999 }}>👥 {r.pessoas}</span>
-        <SeloDoStatus status={r.status} />
-        <span style={{ flex: 1 }} />
-        <SeloDaOrigem origem={r.origem} />
-      </div>
-      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 13, color: TINTA_2 }}>
-        {tel && <a href={`https://wa.me/${tel.length <= 11 ? `55${tel}` : tel}`} target="_blank" rel="noreferrer" style={{ color: "#15803D", fontWeight: 700, textDecoration: "none" }}>💬 {telefoneBonito(tel)}</a>}
-        {r.observacao && <span>📝 {r.observacao}</span>}
-        {r.consumo ? <span style={{ fontWeight: 800, color: "#166534" }}>💰 consumiu {reais(r.consumo)}</span> : null}
-      </div>
-      {r.status !== "CANCELADA" && (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          {aberta && <Botao tipo="verde" disabled={ocupado} onClick={() => onAcao("chegou")}>✅ Chegou</Botao>}
-          {aberta && ehPassado && <Botao tipo="secundario" disabled={ocupado} onClick={() => onAcao("nao_veio")}>⌛ Não veio</Botao>}
-          {aberta && <Botao tipo="secundario" disabled={ocupado} onClick={onMover}>🕒 Mover</Botao>}
-          {!aberta && <Botao tipo="fantasma" disabled={ocupado} onClick={() => onAcao("confirmar")}>↩ Desfazer</Botao>}
-          {mesas.length > 0 && (
-            <select value={r.mesaId || ""} disabled={ocupado} onChange={(e) => onMesa(e.target.value || null)} aria-label="Mesa da reserva"
-              style={{ padding: "8px 10px", borderRadius: 10, border: `1px solid ${BORDA}`, fontSize: 13, fontWeight: 700, color: r.mesaId ? TINTA : TINTA_3, background: "#fff", fontFamily: "inherit" }}>
-              <option value="">🍽️ Sem mesa</option>
-              {mesas.map((m) => <option key={m.id} value={m.id}>{m.nome} ({m.capacidade} lugares)</option>)}
-            </select>
-          )}
-          <span style={{ flex: 1 }} />
-          {aberta && <Botao tipo="perigo" disabled={ocupado} onClick={() => onAcao("cancelar")}>Cancelar</Botao>}
+    <div id={`reserva-${r.id}`} style={{ ...cartao, padding: "10px 14px", display: "flex", flexWrap: "wrap", gap: "8px 16px", alignItems: "center", opacity: r.status === "CANCELADA" ? 0.6 : 1, borderLeft: `5px solid ${r.status === "CHEGOU" ? "#16A34A" : CORES_DA_ORIGEM[r.origem]}` }}>
+      <div style={{ flex: "1 1 320px", minWidth: 0, display: "grid", gap: 4 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <b style={{ fontSize: 15.5, color: TINTA }}>{r.nome}</b>
+          <span style={{ fontSize: 13, fontWeight: 800, color: TINTA, background: "#F1F5F9", padding: "1px 8px", borderRadius: 999 }}>👥 {r.pessoas}</span>
+          <SeloDoStatus status={r.status} />
+          <SeloDaOrigem origem={r.origem} />
         </div>
-      )}
-      {r.status === "CANCELADA" && <div><Botao tipo="fantasma" disabled={ocupado} onClick={() => onAcao("confirmar")}>↩ Reativar</Botao></div>}
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 12.5, color: TINTA_2 }}>
+          {tel && <a href={`https://wa.me/${tel.length <= 11 ? `55${tel}` : tel}`} target="_blank" rel="noreferrer" style={{ color: "#15803D", fontWeight: 700, textDecoration: "none" }}>💬 {telefoneBonito(tel)}</a>}
+          {r.observacao && <span>📝 {r.observacao}</span>}
+          {r.consumo ? <span style={{ fontWeight: 800, color: "#166534" }}>💰 consumiu {reais(r.consumo)}</span> : null}
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", justifyContent: "flex-end" }}>
+        {aberta && ehPassado && <Botao tipo="verde" disabled={ocupado} onClick={() => onAcao("chegou")}>✅ Chegou</Botao>}
+        {aberta && ehPassado && <Botao tipo="secundario" disabled={ocupado} onClick={() => onAcao("nao_veio")}>⌛ Não veio</Botao>}
+        {aberta && <Botao tipo="secundario" disabled={ocupado} onClick={onMover}>🕒 Mover</Botao>}
+        {r.status !== "CANCELADA" && mesas.length > 0 && (
+          <select value={r.mesaId || ""} disabled={ocupado} onChange={(e) => onMesa(e.target.value || null)} aria-label="Mesa da reserva"
+            style={{ padding: "8px 8px", borderRadius: 10, border: `1px solid ${BORDA}`, fontSize: 13, fontWeight: 700, color: r.mesaId ? TINTA : TINTA_3, background: "#fff", fontFamily: "inherit" }}>
+            <option value="">🍽️ Mesa?</option>
+            {mesas.map((m) => <option key={m.id} value={m.id}>{m.nome} ({m.capacidade} lug.)</option>)}
+          </select>
+        )}
+        {!aberta && <Botao tipo="fantasma" disabled={ocupado} onClick={() => onAcao("confirmar")}>{r.status === "CANCELADA" ? "↩ Reativar" : "↩ Desfazer"}</Botao>}
+        {aberta && <Botao tipo="perigo" disabled={ocupado} onClick={() => onAcao("cancelar")} title="Cancelar a reserva (dá para reativar)">Cancelar</Botao>}
+      </div>
     </div>
   );
 }

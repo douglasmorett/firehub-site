@@ -12,6 +12,7 @@ import { MODULO_MARKETING } from "./marketing";
 import { MODULO_EQUIPE } from "./equipe";
 import { MODULO_ESTOQUE } from "./estoque";
 import { MODULO_FISCAL } from "./fiscal";
+import { MODULO_RESERVAS } from "./reservas";
 
 export const MODULOS_DO_BILL: ModuloDoBill[] = [
   MODULO_BUSCA,
@@ -23,4 +24,5 @@ export const MODULOS_DO_BILL: ModuloDoBill[] = [
   MODULO_EQUIPE,
   MODULO_ESTOQUE,
   MODULO_FISCAL,
+  MODULO_RESERVAS,
 ];

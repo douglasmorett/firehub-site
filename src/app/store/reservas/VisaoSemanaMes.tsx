@@ -52,7 +52,7 @@ export function VisaoDaSemana({ dados, onDia }: { dados: Dados; onDia: (d: strin
                     return (
                       <td key={d.data} style={{ padding: 0 }}>
                         <button type="button" className="rsv-celula" onClick={() => onDia(d.data)} title={`${DIAS_CURTOS[diaDaSemana(d.data)]} ${dm(d.data)} ${hora}: ${h.ocupadas} de ${cap} reservas · ${h.pessoas} pessoas · ${c.rotulo}`}
-                          style={{ width: "100%", height: 34, borderRadius: 8, border: `1px solid ${h.ocupadas || h.semVaga ? c.cor : BORDA}`, background: h.ocupadas || h.semVaga ? c.fundo : "#fff", color: TINTA, fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: "inherit", fontVariantNumeric: "tabular-nums" }}>
+                          style={{ width: "100%", height: 34, borderRadius: 8, border: `1px solid ${h.ocupadas || h.semVaga ? c.cor : BORDA}`, background: h.ocupadas || h.semVaga ? c.fundo : h.livre ? "#fff" : "#F8FAFC", color: h.livre || h.ocupadas ? TINTA : TINTA_3, fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: "inherit", fontVariantNumeric: "tabular-nums" }}>
                           {h.ocupadas ? `${h.ocupadas}/${cap}` : "·"}
                         </button>
                       </td>
@@ -77,7 +77,7 @@ export function VisaoDoMes({ dados, onDia }: { dados: Dados; onDia: (d: string) 
   return (
     <section style={cartao} className="rsv-entra">
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-        <h2 style={{ ...h2, textTransform: "capitalize" }}>{nomeDoMes(dias[0].data.slice(0, 7))}</h2>
+        <h2 style={h2}>{nomeDoMes(dias[0].data.slice(0, 7)).replace(/^./, (c) => c.toUpperCase())}</h2>
         <span style={{ ...texto, fontSize: 13 }}>A cor é o horário mais cheio do dia; a barrinha, quantas reservas.</span>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0,1fr))", gap: 6 }}>

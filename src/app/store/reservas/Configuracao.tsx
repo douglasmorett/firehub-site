@@ -7,7 +7,7 @@
  * confirma e quantos horários isso dá por dia.
  */
 import { useState } from "react";
-import { Balao, Celular } from "@/components/ilustracoes/aparelhos";
+import { Balao } from "@/components/ilustracoes/aparelhos";
 import { NOMES_DOS_DIAS, horariosDoDia, textoDeMinutos, type ConfigDasReservas } from "@/lib/reservas/regras";
 import { confirmacaoParaOCliente } from "@/lib/reservas/robo";
 import { BORDA, Botao, COR, COR_CLARA, TINTA, TINTA_2, TINTA_3, cartao, h2, texto } from "./comum";
@@ -145,18 +145,24 @@ export function Configuracao({ inicial, configurado, salvando, onSalvar }: {
         </div>
         <div style={{ display: "grid", justifyItems: "center", gap: 8 }}>
           <b style={{ fontSize: 13, color: TINTA_2 }}>Como o cliente recebe</b>
-          <Celular titulo="Sua loja" sub="online">
-            <Balao eu>Quero reservar sábado 20h, 4 pessoas, João</Balao>
-            <Balao><span style={{ whiteSpace: "pre-line" }}>{confirmacaoParaOCliente({ nome: "João", data: SABADO, hora: "20:00", pessoas: 4 }, c)}</span></Balao>
-          </Celular>
+          {/* O celular de ilustracoes/aparelhos tem altura fixa: aqui a conversa cresce com o texto da loja. */}
+          <div style={{ width: 260, borderRadius: 26, border: "7px solid #111827", overflow: "hidden", boxShadow: "0 14px 30px rgba(15,23,42,.22)", background: "#ECE5DD" }}>
+            <div style={{ background: "#075E54", color: "#fff", padding: "8px 10px", fontWeight: 700, fontSize: 12.5 }}>Sua loja<small style={{ display: "block", fontWeight: 500, opacity: 0.8 }}>online</small></div>
+            <div style={{ padding: 9, display: "flex", flexDirection: "column", gap: 6, fontSize: 12.5, lineHeight: 1.4, color: "#111" }}>
+              <Balao eu>Quero reservar sábado 20h, 4 pessoas, João</Balao>
+              <Balao><span style={{ whiteSpace: "pre-line" }}>{confirmacaoParaOCliente({ nome: "João", data: SABADO, hora: "20:00", pessoas: 4 }, c)}</span></Balao>
+            </div>
+          </div>
         </div>
       </section>
 
-      <div style={{ position: "sticky", bottom: 12, zIndex: 10, display: "flex", justifyContent: "flex-end" }}>
-        <Botao onClick={() => onSalvar(c)} disabled={(!mudou && configurado) || salvando} style={{ padding: "14px 26px", fontSize: 15, boxShadow: "0 10px 24px rgba(91,33,182,.35)" }}>
-          {salvando ? "Salvando…" : mudou || !configurado ? "Salvar configuração" : "Configuração salva ✓"}
-        </Botao>
-      </div>
+      {(mudou || !configurado) && (
+        <div style={{ position: "sticky", bottom: 12, zIndex: 10, display: "flex", justifyContent: "flex-end" }}>
+          <Botao onClick={() => onSalvar(c)} disabled={salvando} style={{ padding: "14px 26px", fontSize: 15, boxShadow: "0 10px 24px rgba(91,33,182,.35)" }}>
+            {salvando ? "Salvando…" : "Salvar configuração"}
+          </Botao>
+        </div>
+      )}
     </div>
   );
 }

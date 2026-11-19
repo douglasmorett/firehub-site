@@ -1465,7 +1465,8 @@ ${regrasDoRobo({
   diaDeHoje: currentDayName,
   codigoDoDia: currentDayCode,
   diaDeAmanha: tomorrowDayName,
-  lojaFisica: chatbotConfig.storeType === "PHYSICAL",
+  // Quem contratou as reservas de mesa tem salão, mesmo sem marcar "loja física".
+  lojaFisica: chatbotConfig.storeType === "PHYSICAL" || reservasNoRobo.ligado,
   enderecoDaLoja: user.storeAddress || user.city || null,
   fazReservaDeMesa: typeof (chatbotConfig as any).fazReservaDeMesa === "boolean" ? (chatbotConfig as any).fazReservaDeMesa : null,
   regraDaReserva: reservasNoRobo.ligado ? reservasNoRobo.regra : regraDaReservaPelaFicha(respostasProntas),
@@ -1483,7 +1484,7 @@ ${regrasDoRobo({
 
 DADOS DA LOJA:
 - Nome da Loja: ${storeName}
-- Tipo de Atendimento: ${chatbotConfig.storeType === "PHYSICAL" ? "Possui Loja Física / Atende no Local" : "Só Delivery (Sem consumo no local)"}
+- Tipo de Atendimento: ${chatbotConfig.storeType === "PHYSICAL" || reservasNoRobo.ligado ? "Possui Loja Física / Atende no Local" : "Só Delivery (Sem consumo no local)"}
 - Endereço / Cidade: ${user.storeAddress || user.city || "Não informado"}
 - Telefone: ${user.storePhone || "Não informado"}
 - Link do Cardápio: ${storeLink}
@@ -2062,7 +2063,7 @@ Lembre-se: conversa curta e contínua de WhatsApp, sem emoji automático nem rep
                 ? "A loja não faz reserva de mesa."
                 : "";
           const fonteDosFatos = [storeName, user.storeAddress, catalogSummary, customPrompt, fatoDaReserva, textoDasRespostasProntas(respostasProntas)].filter(Boolean).join("\n");
-          const semFonte = servicosSemFonte(semMarcas, fonteDosFatos, { soDelivery: chatbotConfig.storeType !== "PHYSICAL" });
+          const semFonte = servicosSemFonte(semMarcas, fonteDosFatos, { soDelivery: chatbotConfig.storeType !== "PHYSICAL" && !reservasNoRobo.ligado });
           if (semFonte.length > 0) {
             console.warn(`[Chatbot AI] 🚫 Resposta afirmava sem fonte (${semFonte.join(", ")}) — troquei por "não sei" e chamei o atendente. Era: ${semMarcas.slice(0, 200)}`);
             const transcricao = cleanText.match(/\[\[TRANSCRICAO[\s\S]*?\]\]/)?.[0];

@@ -130,7 +130,7 @@ export function Resultados({ dados }: { dados: Dados }) {
   return (
     <div style={{ display: "grid", gap: 16 }} className="rsv-entra">
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
-        <h2 style={{ ...h2, fontSize: 20, textTransform: "capitalize" }}>Resultado de {nomeDoMes(ym)}</h2>
+        <h2 style={{ ...h2, fontSize: 20 }}>Resultado de {nomeDoMes(ym)}</h2>
         <span style={{ ...texto, fontSize: 13 }}>Reservas canceladas não entram na conta.</span>
       </div>
 
@@ -147,7 +147,7 @@ export function Resultados({ dados }: { dados: Dados }) {
         <Colunas itens={porDia} />
       </Grafico>
 
-      <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
+      <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))" }}>
         <Grafico titulo="Horários mais procurados" sub={topHora ? `O pico é às ${topHora[0]}: ${pct(topHora[1] / totalHoras)} das reservas chegam nessa hora.` : "Por hora de chegada."}>
           {horas.length ? <Linhas itens={horas.map(([h, q]) => ({ rotulo: h, valor: q, texto: `${q} (${pct(q / totalHoras)})` }))} /> : <p style={{ ...texto, fontSize: 13 }}>Ainda sem reservas neste mês.</p>}
         </Grafico>

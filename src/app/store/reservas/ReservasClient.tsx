@@ -17,7 +17,7 @@ import InterruptorDoModulo from "@/components/modulos/InterruptorDoModulo";
 import { VERSAO_DO_TERMO_DAS_RESERVAS } from "@/lib/reservas/termo";
 import { dataPorExtenso, somarDias, type ConfigDasReservas } from "@/lib/reservas/regras";
 import {
-  BORDA, Botao, COR, COR_CLARA, CSS_DAS_RESERVAS, Numero, TINTA, TINTA_2, TINTA_3, cartao, diaMes, h2, reais, texto,
+  BORDA, Botao, COR, COR_CLARA, CSS_DAS_RESERVAS, Numero, TINTA, TINTA_2, TINTA_3, cartao, diaMes, h2, nomeDoMes, reais, texto,
   type Aviso, type Dados, type Estado, type ReservaDaTela,
 } from "./comum";
 import { Oferta, Termo } from "./Oferta";
@@ -203,7 +203,7 @@ export default function ReservasClient() {
               <Botao tipo="secundario" onClick={() => irPara(somarDias(dados.data!, aba === "dia" ? -1 : aba === "semana" ? -7 : -28))} title="Anterior">‹</Botao>
               <strong style={{ fontSize: 18, minWidth: 170, textAlign: "center" }}>
                 {aba === "dia" ? dataPorExtenso(dados.data!) : aba === "semana" ? `Semana de ${diaMes(`${dados.semana?.[0]?.data}T12:00:00`)}` : ""}
-                {aba === "mes" && <span style={{ textTransform: "capitalize" }}>{new Date(`${dados.data}T12:00:00`).toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}</span>}
+                {aba === "mes" && nomeDoMes(dados.data!.slice(0, 7)).replace(/^./, (c) => c.toUpperCase())}
                 {ehHoje && aba === "dia" && <span style={{ color: COR }}> · hoje</span>}
               </strong>
               <Botao tipo="secundario" onClick={() => irPara(somarDias(dados.data!, aba === "dia" ? 1 : aba === "semana" ? 7 : 31))} title="Próximo">›</Botao>
