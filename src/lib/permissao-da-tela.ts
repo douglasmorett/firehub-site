@@ -57,6 +57,9 @@ const TELAS: Array<{ prefixo: string; abre: Array<Permissao> | typeof LIVRE }> =
   { prefixo: "/store/painel-de-senhas", abre: ["kds", "orders", "venda_presencial", "minha_loja"] },
   { prefixo: "/store/venda-presencial", abre: ["venda_presencial"] },
   { prefixo: "/store/mesas", abre: ["venda_presencial"] },
+  // Reservas: quem cuida do salão vê o dia, marca chegada e cria reserva;
+  // ligar o módulo cobra no boleto e é só do dono (a API barra: lib/reservas/sessao.ts).
+  { prefixo: "/store/reservas", abre: ["venda_presencial", "minha_loja"] },
   { prefixo: "/store/caixa", abre: ["venda_presencial"] },
   { prefixo: "/store/roteirizacao", abre: ["motoboys"] },
   { prefixo: "/store/motoboys", abre: ["motoboys"] },

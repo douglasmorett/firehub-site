@@ -33,6 +33,12 @@ export type TipoDeAlerta =
    * festa): o aviso leva os dados, e a equipe confirma (lib/respostas-prontas.ts).
    */
   | "ficha_preenchida"
+  /**
+   * O robô fez (ou o cliente cancelou) uma reserva de mesa pelo módulo
+   * Reservas (lib/reservas): já está gravada e confirmada ao cliente — o aviso
+   * é para a equipe saber, não para confirmar.
+   */
+  | "reserva_nova"
   /** O robô caiu / desconectou do WhatsApp. */
   | "robo_desconectado"
   /** Pedido passou do prazo e ainda não saiu para entrega. */
@@ -123,6 +129,7 @@ export const ALERTAS_PADRAO: Record<TipoDeAlerta, boolean> = {
   problema_no_pedido: true,
   pedido_de_atendente: true,
   ficha_preenchida: true,
+  reserva_nova: true,
   robo_desconectado: true,
   pedido_atrasado: true,
   "99food_desconectado": true,
@@ -153,6 +160,7 @@ export const ROTULO_DO_ALERTA: Record<TipoDeAlerta, string> = {
   problema_no_pedido: "Cliente com problema no pedido (atraso, item faltando, reclamação)",
   pedido_de_atendente: "Cliente pediu para falar com atendente",
   ficha_preenchida: "Cliente preencheu a ficha de reserva (vem com os dados para a equipe confirmar)",
+  reserva_nova: "Reserva de mesa feita (ou cancelada) pelo robô, já gravada no painel de Reservas",
   robo_desconectado: "Robô desconectou do WhatsApp",
   pedido_atrasado: "Pedido atrasado que ainda não saiu para entrega",
   "99food_desconectado": "Loja perdeu a conexão com o 99Food (pedidos de lá param de entrar)",
