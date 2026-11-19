@@ -6,6 +6,7 @@ import { separacaoDoDesconto99 } from "./desconto-99food";
 import { documentoDeVerdade } from "./documento-do-cliente";
 import { infoDaEntrega } from "./entrega-parceira";
 import { valorDoAcrescimoGravado } from "./acrescimo-no-credito";
+import { lerIdDoPedidoAQ } from "./aiqfome/id-do-pedido";
 
 // Reexportado para quem já importava daqui.
 export { ratearEmCentavos };
@@ -278,6 +279,8 @@ export function pedidoParaNota(
       ? pedido.ifoodStoreMerchant || opcoes.loja?.ifoodMerchantId || null
       : canal.chave === "99FOOD"
       ? pedido.food99AppShopId || pedido.food99ShopId || opcoes.loja?.food99MerchantId || null
+      : canal.chave === "AIQFOME"
+      ? lerIdDoPedidoAQ(pedido.openDeliveryOrderId)?.storeId || null
       : null;
 
   // Quem pagou o cupom do 99Food. O pedido do 99 grava `discountDetails` como

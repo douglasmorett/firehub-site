@@ -66,6 +66,7 @@ export const INTEGRACOES_DA_NOTA = [
   { canal: "JOTAJA", nome: "JotaJá" },
   { canal: "CARDAPIOWEB", nome: "CardápioWeb" },
   { canal: "ANOTAAI", nome: "Anota AI" },
+  { canal: "AIQFOME", nome: "aiqfome" },
 ] as const;
 
 export type IntegracaoDaNota = (typeof INTEGRACOES_DA_NOTA)[number]["canal"];
@@ -79,7 +80,7 @@ export type IntegracaoDaNota = (typeof INTEGRACOES_DA_NOTA)[number]["canal"];
  * financeira baixada) e a Keeta não disse qual intermedeia — perguntado na
  * homologação de 06/11/2026.
  */
-export const CANAIS_SEM_INTERMEDIADOR_CONHECIDO: readonly string[] = ["AIQFOME", "KEETA"];
+export const CANAIS_SEM_INTERMEDIADOR_CONHECIDO: readonly string[] = ["KEETA"];
 
 export const MOTIVO_DO_CANAL_SEM_INTERMEDIADOR = "o FireHub ainda não tem o CNPJ deste marketplace como intermediador — a nota deste canal não sai sozinha";
 

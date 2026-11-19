@@ -475,7 +475,7 @@ const CAMPOS_DO_TITULAR = new Set<string>([
  * como a Brendi), e o Anota AI também: entram aqui só para a loja com contrato
  * diferente poder ligar.
  */
-export const CANAIS_DO_INTERMEDIADOR = ["IFOOD", "99FOOD", "BRENDI", "WABIZ", "JOTAJA", "CARDAPIOWEB", "ANOTAAI"] as const;
+export const CANAIS_DO_INTERMEDIADOR = ["IFOOD", "99FOOD", "AIQFOME", "BRENDI", "WABIZ", "JOTAJA", "CARDAPIOWEB", "ANOTAAI"] as const;
 
 export type AjusteDoIntermediador = { cnpj?: string | null; id?: string | null; ativo?: boolean };
 

@@ -293,6 +293,36 @@ const pedidoIfood = {
   confere("objeto montado à mão com dados do iFood: recusa pelo total", !aMao.ok && aMao.pendencias.some((x) => x.campo === "valorTotal"), true);
 }
 
+console.log("\n— aiqfome: intermediador com o id da loja que vem no id do pedido —");
+{
+  // O pedido do aiqfome grava a loja dentro do openDeliveryOrderId
+  // (aiqfome_<storeId>_<orderId>, lib/aiqfome/id-do-pedido.ts).
+  const pedidoAiqfome = {
+    ...pedidoIfood,
+    id: "cm-aiq1",
+    source: "AIQFOME",
+    openDeliveryChannel: "AIQFOME",
+    openDeliveryOrderId: "aiqfome_48213_9911",
+    ifoodOrderId: null,
+    ifoodReference: null,
+    totalAmount: 30.89,
+    deliveryFee: 5.99,
+    discountTotal: 0,
+    discountIfood: 0,
+    discountMerchant: 0,
+    discountDetails: null,
+  };
+  const p = pedidoParaNota(pedidoAiqfome as any);
+  confere("canal e id da loja no aiqfome", [p.canal, p.idNaPlataforma], ["AIQFOME", "48213"]);
+  const m = montar(p);
+  confere("aiqfome montou", m.ok, true);
+  if (m.ok) {
+    confere("intermediador aiqfome", [m.corpo.indicador_intermediario, m.corpo.cnpj_intermediario, m.corpo.id_intermediario], [1, "09186786000158", "48213"]);
+  }
+  const semLoja = montar(pedidoParaNota({ ...pedidoAiqfome, openDeliveryOrderId: null } as any));
+  confere("aiqfome sem a loja no id: recusa (438)", !semLoja.ok && semLoja.pendencias.some((x) => x.campo === "idNoIntermediador"), true);
+}
+
 console.log("\n— iFood: retirada, Entrega Parceira e dinheiro na entrega —");
 {
   const retirada = montar(pedidoParaNota({ ...pedidoIfood, deliveryType: "RETIRADA", deliveryFee: 0, totalAmount: 4.9, customerCpfCnpj: null, customerAddress: "" }, { loja: { ifoodMerchantId: MERCHANT } }));
