@@ -580,7 +580,7 @@ export async function POST(req: NextRequest) {
             // contador seguia: na Ragnar (23/10/2026) foram 43 números sem
             // pedido numa noite, e o lojista lê o buraco como pedido sumido.
             // Com a transação, a perdedora devolve o número junto.
-            await prisma.$transaction(async (tx) => (tx.customerOrder as any).create({
+            const criado99 = await prisma.$transaction(async (tx) => (tx.customerOrder as any).create({
               data: {
                 franchiseeId: franchisee.id,
                 dailyOrderNumber: await generateDailyOrderNumberTx(tx, franchisee.id),
@@ -685,6 +685,15 @@ export async function POST(req: NextRequest) {
               ).catch((e) =>
                 console.error(`[99Food Webhook] falha ao confirmar ${orderId} no 99Food:`, e?.message)
               );
+
+              // Baixa do estoque. Ela só dispara na TROCA para ACEITO
+              // (customer-order/status), e o pedido que nasce aceito nunca troca:
+              // na NIK, 0 de 177 pedidos do 99Food tinham baixa (16/11/2026).
+              // Igual ao iFood e à Wabiz: idempotente por `sourceRef`, sem await
+              // (o ACK corre contra 6 s). Nascendo NOVO, a baixa vem no aceite.
+              import("@/lib/stock")
+                .then((m) => m.deductStockForOrder(criado99.id))
+                .catch((e) => console.error(`[99Food Webhook] Baixa de estoque falhou para ${orderId}:`, e?.message));
             }
             created++;
             registrar99Food({ tipo: eventType || "orderNew", reconhecido: true, pedidoCriado: true, payload: event });
