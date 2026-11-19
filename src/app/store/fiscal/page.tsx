@@ -255,6 +255,7 @@ const ESTILO_DO_CABECALHO: CSSProperties = {
 const CANAIS_DE_MARKETPLACE = [
   { canal: "IFOOD", nome: "iFood" },
   { canal: "99FOOD", nome: "99Food" },
+  { canal: "AIQFOME", nome: "aiqfome" },
 ];
 const CANAIS_PROPRIOS = [
   { canal: "BRENDI", nome: "Brendi" },
@@ -2026,7 +2027,7 @@ ${dados.aviso}` : "")
 
                           <span style={rotulo}>Marketplaces (intermediador da venda)</span>
                           <p style={{ ...ajuda, marginTop: 0 }}>
-                            Venda pelo iFood e pelo 99Food vai na nota com o CNPJ da plataforma e o identificador da loja nela
+                            Venda pelo iFood, pelo 99Food e pelo aiqfome vai na nota com o CNPJ da plataforma e o identificador da loja nela
                             (NT 2020.006). Os CNPJs abaixo são os conferidos na Receita; troque só se o seu contador indicar outro
                             (o da NFS-e de comissão que a plataforma emite para você).
                           </p>
