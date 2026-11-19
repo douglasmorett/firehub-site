@@ -13,6 +13,11 @@
  * Regra do Douglas (21/10/2026): o interruptor nunca liga direto. Clicar abre
  * esta janela; só "Entendi, ativar" liga, depois de ler as regras, as
  * configurações e a cobrança.
+ *
+ * Fase 4 (05/11/2026): módulo pago para todas as lojas (R$ 97/mês, 7 dias
+ * grátis — lib/roteirizacao-automatica/assinatura.ts). Ligar manda o aceite
+ * do termo (./termo.ts); depois do teste, desligar marca "desliga em DD/MM"
+ * e a janela oferece "Continuar ligada". No alto, o resultado da loja no mês.
  */
 import { useEffect, useRef, useState } from "react";
 import {
@@ -20,6 +25,12 @@ import {
   type QuemPuxa,
   type RoteirizacaoAutomaticaConfig,
 } from "@/lib/roteirizacao-automatica/config";
+// O termo do módulo pago (Fase 4): arquivo puro, o servidor confere a mesma versão.
+import {
+  CLAUSULAS_DO_TERMO_DA_ROTA_AUTOMATICA,
+  TITULO_DO_TERMO_DA_ROTA_AUTOMATICA,
+  VERSAO_DO_TERMO_DA_ROTA_AUTOMATICA,
+} from "@/lib/roteirizacao-automatica/termo";
 // Só o tipo (apagado na compilação): executar.ts é do servidor.
 import type { ResumoDaRoteirizacao } from "@/lib/roteirizacao-automatica/executar";
 
@@ -33,34 +44,58 @@ export const ROTA_AUTOMATICA_PADRAO: RotaAutomaticaConfig = ROTEIRIZACAO_AUTOMAT
 export type PreviaDaRotaAutomatica = ResumoDaRoteirizacao;
 
 export type RotaAutomaticaEstado = {
+  /** `ativo` = ligada de verdade: a regra E o módulo pago (ou loja isenta). */
   config: RotaAutomaticaConfig;
-  /** Loja na lista de liberação (hoje só a Hakim Centro). Fora dela o botão nem aparece. */
+  /** Desde a Fase 4 (05/11/2026), toda loja (módulo pago). Falso: o botão nem aparece. */
   liberada: boolean;
+  /** Ligar e desligar entram na fatura: só o dono (o funcionário vê e ajusta as regras). */
+  podeContratar?: boolean;
   cobranca: {
     preco: number;
     diasDeTeste: number;
-    /** Fim do teste grátis em andamento (ISO), ou null. */
+    /** Fim do teste grátis (ISO), ou null. */
     testeAte: string | null;
     jaTestou: boolean;
     isento: boolean;
+    emTeste?: boolean;
+    /** Desligamento marcado para a virada do mês (ISO): "desliga em DD/MM · Continuar ligada". */
+    desligaEm?: string | null;
+    /** Início do mês seguinte (ISO). */
+    fimDoMes?: string | null;
   };
   requisitos: {
     temPino: boolean;
     motoboysAtivos: number;
     temHorario: boolean;
   };
+  /** O resultado da loja no mês (lib/relatorios/acerto-de-entregadores.ts). Null: sem leitura. */
+  resultado?: {
+    desde: string;
+    rotas: number;
+    entregas: number;
+    entregasPorRota: number | null;
+    chamadaAtePuxarMin: number | null;
+    rotasComTempo: number;
+  } | null;
 };
+
+/** O que vai junto do PUT além da regra: o aceite do termo e o "Continuar ligada". */
+export type ExtraDoSalvar = { aceite?: { versao: string }; continuar?: boolean };
 
 const ROXO = "linear-gradient(135deg, #7C3AED 0%, #5B21B6 100%)";
 
-const dataCurta = (iso: string | null) =>
+const dataCurta = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "";
+/** O último dia do mês, a partir do início do mês seguinte (como em components/modulos/InterruptorDoModulo). */
+const ultimoDia = (inicioDoProximo: string) => dataCurta(new Date(new Date(inicioDoProximo).getTime() - 60_000).toISOString());
+const emTesteAgora = (c: RotaAutomaticaEstado["cobranca"]) => !!c.testeAte && new Date(c.testeAte) > new Date();
 
 /** O selo ao lado do botão: o estado escrito, como nos outros módulos pagos. */
 function textoDoEstado(e: RotaAutomaticaEstado): string {
   if (!e.config.ativo) return "Desligada";
   if (e.cobranca.isento) return "Ligada · liberada";
-  if (e.cobranca.testeAte && new Date(e.cobranca.testeAte) > new Date()) return `Ligada · grátis até ${dataCurta(e.cobranca.testeAte)}`;
+  if (e.cobranca.desligaEm) return `Ligada · desliga em ${dataCurta(e.cobranca.desligaEm)}`;
+  if (emTesteAgora(e.cobranca)) return `Ligada · grátis até ${dataCurta(e.cobranca.testeAte)}`;
   return `Ligada · R$ ${e.cobranca.preco}/mês`;
 }
 
@@ -72,7 +107,7 @@ export default function RotaAutomatica({
 }: {
   estado: RotaAutomaticaEstado;
   salvando: boolean;
-  onSalvar: (config: RotaAutomaticaConfig) => void;
+  onSalvar: (config: RotaAutomaticaConfig, extra?: ExtraDoSalvar) => void;
   /** "Ver o que o sistema faria agora". Sem ele o botão fica desabilitado. */
   carregarPrevia?: () => Promise<PreviaDaRotaAutomatica>;
 }) {
@@ -115,8 +150,8 @@ export default function RotaAutomatica({
           salvando={salvando}
           carregarPrevia={carregarPrevia}
           onFechar={() => setAberta(false)}
-          onSalvar={(c) => {
-            onSalvar(c);
+          onSalvar={(c, extra) => {
+            onSalvar(c, extra);
             setAberta(false);
           }}
         />
@@ -144,7 +179,7 @@ function JanelaDaRotaAutomatica({
   salvando: boolean;
   carregarPrevia?: () => Promise<PreviaDaRotaAutomatica>;
   onFechar: () => void;
-  onSalvar: (config: RotaAutomaticaConfig) => void;
+  onSalvar: (config: RotaAutomaticaConfig, extra?: ExtraDoSalvar) => void;
 }) {
   const [cfg, setCfg] = useState<RotaAutomaticaConfig>(estado.config);
   const [liTudo, setLiTudo] = useState(false);
@@ -162,9 +197,13 @@ function JanelaDaRotaAutomatica({
   useEffect(() => setCfg(estado.config), [estado.config]);
 
   const ligada = estado.config.ativo;
-  const { requisitos: req, cobranca } = estado;
+  const { requisitos: req, cobranca, resultado } = estado;
   const faltaRequisito = !req.temPino || req.motoboysAtivos === 0;
-  const emTeste = !!cobranca.testeAte && new Date(cobranca.testeAte) > new Date();
+  const emTeste = emTesteAgora(cobranca);
+  // Módulo pago (Fase 4): ligar e desligar entram na fatura — só o dono.
+  const podeContratar = cobranca.isento || estado.podeContratar !== false;
+  const marcado = ligada && !cobranca.isento && !!cobranca.desligaEm;
+  const aceite = { versao: VERSAO_DO_TERMO_DA_ROTA_AUTOMATICA };
   const num = (k: keyof typeof limites) => (
     <label key={k} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       <span style={{ fontSize: "0.8rem", fontWeight: 800, color: "#334155" }}>{limites[k].rotulo}</span>
@@ -197,6 +236,22 @@ function JanelaDaRotaAutomatica({
         </div>
 
         <div style={{ padding: "18px 22px", display: "flex", flexDirection: "column", gap: 18, color: "#0F172A" }}>
+          {resultado && (ligada || resultado.rotas > 0) && (
+            // Produto pago mostra o resultado em números da loja — a mesma conta
+            // do bloco do Acerto de entregadores (rotas AUTO que saíram no mês).
+            <Secao titulo="Resultado na sua loja" sub={`Rotas automáticas que saíram desde ${dataCurta(`${resultado.desde}T12:00:00-03:00`)}.`}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 10 }}>
+                <Numero rotulo="Rotas automáticas" valor={resultado.rotas.toLocaleString("pt-BR")} detalhe={`${resultado.entregas.toLocaleString("pt-BR")} entrega${resultado.entregas === 1 ? "" : "s"}`} />
+                <Numero rotulo="Entregas por viagem" valor={resultado.entregasPorRota == null ? "—" : resultado.entregasPorRota.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} detalhe="média das rotas que saíram" />
+                <Numero
+                  rotulo="Chamada → motoboy puxou"
+                  valor={resultado.chamadaAtePuxarMin == null ? "—" : `${resultado.chamadaAtePuxarMin.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} min`}
+                  detalhe={resultado.rotasComTempo > 0 ? `média de ${resultado.rotasComTempo} rota${resultado.rotasComTempo === 1 ? "" : "s"}: da rota pronta até o motoboy puxar` : "sem rota com os dois horários ainda"}
+                />
+              </div>
+            </Secao>
+          )}
+
           <Secao titulo="Como funciona, passo a passo">
             <ol style={{ margin: 0, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 8, fontSize: "0.9rem", lineHeight: 1.45 }}>
               <li><b>Escolhe o mais urgente.</b> A cada 20 segundos o sistema olha os pedidos de entrega da sua loja e pega o que tem o menor prazo ("Entregar até"). Pedido em que você pediu prioridade à mão vai primeiro.</li>
@@ -249,17 +304,23 @@ function JanelaDaRotaAutomatica({
             <div style={{ background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: 12, padding: "12px 14px", fontSize: "0.9rem", lineHeight: 1.5 }}>
               {cobranca.isento && <p style={{ margin: "0 0 6px", fontWeight: 800 }}>Na sua conta está liberado sem custo. Para o lojista é assim:</p>}
               {ligada && !cobranca.isento ? (
-                emTeste ? (
+                marcado ? (
+                  <p style={{ margin: 0 }}><b>Desliga em {dataCurta(cobranca.desligaEm)}.</b> Este mês já está pago, então ela continua funcionando <b>até {ultimoDia(cobranca.desligaEm!)}</b>. Na virada do mês ela desliga sozinha e o mês que vem <b>não é cobrado</b>. Mudou de ideia? Toque em “Continuar ligada”.</p>
+                ) : emTeste ? (
                   <p style={{ margin: 0 }}><b>Teste grátis até {dataCurta(cobranca.testeAte)}.</b> Depois, R$ {cobranca.preco} por mês na fatura do FireHub. Se desligar antes do fim do teste, para na hora e não paga nada (o teste não volta).</p>
                 ) : (
                   <p style={{ margin: 0 }}><b>R$ {cobranca.preco} por mês</b> na fatura do FireHub. Se desligar, fica funcionando até o último dia do mês: o mês já está no boleto, inteiro, sem proporcional nem devolução.</p>
                 )
               ) : cobranca.jaTestou && !cobranca.isento ? (
-                <p style={{ margin: 0 }}>Você já usou o teste grátis. Ao ligar, <b>este mês entra inteiro</b> na fatura do FireHub: <b>R$ {cobranca.preco}</b>. Depois, R$ {cobranca.preco} por mês enquanto estiver ligada.</p>
+                <>
+                  <p style={{ margin: 0 }}>Você já usou o teste grátis. Ao ligar, <b>este mês entra inteiro</b> na fatura do FireHub: <b>R$ {cobranca.preco}</b>. Depois, R$ {cobranca.preco} por mês enquanto estiver ligada.</p>
+                  <TermoDaRota />
+                </>
               ) : (
                 <>
                   <p style={{ margin: "0 0 6px" }}><b>{cobranca.diasDeTeste} dias grátis</b> para testar com a sua operação. Depois disso, <b>R$ {cobranca.preco} por mês</b> na fatura do FireHub, junto com a mensalidade.</p>
                   <p style={{ margin: 0 }}>Desligar durante o teste: para na hora, R$ 0 (o teste não volta). Desligar depois do teste: fica até o último dia do mês e o mês entra inteiro, sem proporcional.</p>
+                  {!cobranca.isento && <TermoDaRota />}
                 </>
               )}
             </div>
@@ -268,8 +329,13 @@ function JanelaDaRotaAutomatica({
           {!ligada && (
             <label style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: "0.9rem", fontWeight: 700, color: "#334155", cursor: "pointer" }}>
               <input type="checkbox" checked={liTudo} onChange={(e) => setLiTudo(e.target.checked)} style={{ marginTop: 3, width: 18, height: 18 }} />
-              <span>Li e entendi como a rota automática funciona, as regras acima{cobranca.isento ? "" : " e como é cobrada"}.</span>
+              <span>Li e entendi como a rota automática funciona, as regras acima{cobranca.isento ? "" : " e aceito o termo de contratação"}.</span>
             </label>
+          )}
+          {!podeContratar && (
+            <p style={{ margin: 0, fontSize: "0.82rem", color: "#92400E", fontWeight: 700 }}>
+              Só o dono da loja liga ou desliga a rota automática (ela entra na fatura do FireHub). Você pode ver e ajustar as regras.
+            </p>
           )}
 
           {previa && !previa.carregando && <PainelDaPrevia previa={previa} onFechar={() => setPrevia(null)} />}
@@ -289,7 +355,12 @@ function JanelaDaRotaAutomatica({
                 <button type="button" onClick={() => onSalvar({ ...cfg, ativo: true })} disabled={salvando} style={botao("#0F172A", "#fff")}>
                   Salvar regras
                 </button>
-                {confirmandoDesligar ? (
+                {marcado && (
+                  <button type="button" onClick={() => onSalvar({ ...cfg, ativo: true }, { continuar: true })} disabled={salvando || !podeContratar} style={{ ...botao(ROXO, "#fff"), opacity: salvando || !podeContratar ? 0.5 : 1 }}>
+                    Continuar ligada
+                  </button>
+                )}
+                {marcado ? null : confirmandoDesligar ? (
                   <div style={{ width: "100%", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 12, padding: "12px 14px", fontSize: "0.9rem" }}>
                     <p style={{ margin: "0 0 10px", fontWeight: 800, color: "#991B1B" }}>
                       {cobranca.isento
@@ -304,7 +375,7 @@ function JanelaDaRotaAutomatica({
                     </div>
                   </div>
                 ) : (
-                  <button type="button" onClick={() => setConfirmandoDesligar(true)} style={botao("#fff", "#DC2626", "1px solid #FCA5A5")}>
+                  <button type="button" onClick={() => setConfirmandoDesligar(true)} disabled={!podeContratar} style={{ ...botao("#fff", "#DC2626", "1px solid #FCA5A5"), opacity: podeContratar ? 1 : 0.5 }}>
                     Desligar
                   </button>
                 )}
@@ -316,10 +387,10 @@ function JanelaDaRotaAutomatica({
                 </button>
                 <button
                   type="button"
-                  onClick={() => onSalvar({ ...cfg, ativo: true })}
-                  disabled={salvando || !liTudo || faltaRequisito}
+                  onClick={() => onSalvar({ ...cfg, ativo: true }, cobranca.isento ? undefined : { aceite })}
+                  disabled={salvando || !liTudo || faltaRequisito || !podeContratar}
                   title={faltaRequisito ? "Falta um requisito acima" : !liTudo ? "Marque que leu e entendeu" : ""}
-                  style={{ ...botao(ROXO, "#fff"), opacity: salvando || !liTudo || faltaRequisito ? 0.5 : 1 }}
+                  style={{ ...botao(ROXO, "#fff"), opacity: salvando || !liTudo || faltaRequisito || !podeContratar ? 0.5 : 1 }}
                 >
                   {salvando ? "Ligando…" : cobranca.isento || cobranca.jaTestou ? "Entendi, ativar" : `Entendi, ativar · ${cobranca.diasDeTeste} dias grátis`}
                 </button>
@@ -458,6 +529,28 @@ function Secao({ titulo, sub, children }: { titulo: string; sub?: string; childr
       {sub && <p style={{ margin: "0 0 8px", fontSize: "0.8rem", color: "#64748B" }}>{sub}</p>}
       <div style={{ marginTop: sub ? 0 : 8, display: "flex", flexDirection: "column", gap: 8 }}>{children}</div>
     </section>
+  );
+}
+
+/** O termo de contratação (lib/roteirizacao-automatica/termo.ts), dentro do quadro da cobrança. */
+function TermoDaRota() {
+  return (
+    <div style={{ marginTop: 10, background: "#fff", border: "1px solid #E9D5FF", borderRadius: 10, padding: "10px 12px", maxHeight: 220, overflowY: "auto" }}>
+      <div style={{ fontWeight: 900, fontSize: "0.84rem", marginBottom: 6 }}>{TITULO_DO_TERMO_DA_ROTA_AUTOMATICA}</div>
+      <ol style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 6, fontSize: "0.8rem", lineHeight: 1.45, color: "#334155" }}>
+        {CLAUSULAS_DO_TERMO_DA_ROTA_AUTOMATICA.map((c, i) => <li key={i}>{c}</li>)}
+      </ol>
+    </div>
+  );
+}
+
+function Numero({ rotulo, valor, detalhe }: { rotulo: string; valor: string; detalhe: string }) {
+  return (
+    <div style={{ background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: 12, padding: "10px 12px" }}>
+      <div style={{ fontSize: "0.74rem", fontWeight: 800, color: "#5B21B6" }}>{rotulo}</div>
+      <div style={{ fontSize: "1.35rem", fontWeight: 900, color: "#0F172A", lineHeight: 1.2 }}>{valor}</div>
+      <div style={{ fontSize: "0.72rem", color: "#64748B" }}>{detalhe}</div>
+    </div>
   );
 }
 

@@ -18,8 +18,11 @@
  * de ANTES da posição nova dá para saber: se a última posição tinha mais de
  * 3 min (POSICAO_VALE_MS, a mesma régua do mapa ao vivo), a chegada é nova.
  *
- * Só nas lojas liberadas (liberacao.ts): nas outras o GPS não paga nem uma
- * consulta a mais. Nunca lança — a posição do motoboy importa mais que isto.
+ * Só com a rota automática ligada de verdade (a regra E a assinatura —
+ * assinatura.ts, desde a Fase 4, 05/11/2026, quando a liberação passou a
+ * valer para qualquer loja): nas outras o GPS não grava nada, e paga uma
+ * leitura por minuto por loja (o cache abaixo), não uma por posição. Nunca
+ * lança — a posição do motoboy importa mais que isto.
  *
  * Devolve `chegouAgora`: true só quando ESTA posição carimbou a chegada (o
  * banco gravou). É o empurrão da Fase 3 (empurrao.ts): o motoboy que acabou
@@ -31,12 +34,14 @@ import { linhaRetaKm } from "@/lib/geocoding";
 import { POSICAO_VALE_MS } from "@/lib/entrega-ao-vivo";
 import { lerRoteirizacaoAutomatica } from "./config";
 import { liberadaPara } from "./liberacao";
+import { rotaAutomaticaDaLoja } from "./assinatura";
 
-type DaLoja = { ponto: Ponto | null; raioM: number };
+type DaLoja = { ponto: Ponto | null; raioM: number; ligada: boolean };
 
 /**
  * O pino muda uma vez por ano; o GPS chega a cada ~12 s por motoboy. Um
- * minuto de cache: a loja que muda o raio na janela vê valer no minuto seguinte.
+ * minuto de cache: a loja que muda o raio (ou liga, ou desliga) na janela vê
+ * valer no minuto seguinte — o PUT da regra limpa na hora.
  */
 const cache = new Map<string, { dados: DaLoja; exp: number }>();
 const TTL_MS = 60_000;
@@ -44,8 +49,9 @@ const TTL_MS = 60_000;
 async function daLoja(lojaId: string): Promise<DaLoja> {
   const guardado = cache.get(lojaId);
   if (guardado && guardado.exp > Date.now()) return guardado.dados;
-  const linha = await prisma.user.findUnique({ where: { id: lojaId }, select: { storeLatLng: true, deliveryConfig: true } });
-  const dados = { ponto: lerPontoDaLoja(linha?.storeLatLng), raioM: lerRoteirizacaoAutomatica(linha?.deliveryConfig).raioDaLojaM };
+  // Uma leitura só: o pino, a regra e a assinatura (assinatura.ts).
+  const linha = await rotaAutomaticaDaLoja(lojaId);
+  const dados = { ponto: lerPontoDaLoja(linha.storeLatLng), raioM: lerRoteirizacaoAutomatica(linha.deliveryConfig).raioDaLojaM, ligada: linha.ligada };
   cache.set(lojaId, { dados, exp: Date.now() + TTL_MS });
   return dados;
 }
@@ -58,8 +64,8 @@ export function esquecerLojaDoCarimbo(lojaId: string) {
 export async function carimbarChegadaNaLoja(motoboyId: string, franchiseeId: string, lat: number, lng: number): Promise<{ chegouAgora: boolean }> {
   try {
     if (!liberadaPara(franchiseeId)) return { chegouAgora: false };
-    const { ponto, raioM } = await daLoja(franchiseeId);
-    if (!ponto) return { chegouAgora: false };
+    const { ponto, raioM, ligada } = await daLoja(franchiseeId);
+    if (!ligada || !ponto) return { chegouAgora: false };
     const dentro = linhaRetaKm(ponto.lat, ponto.lng, lat, lng) * 1000 <= raioM;
     const motoboy = prisma.motoboy as any; // naLojaDesde: coluna nova (garantir-colunas)
     if (dentro) {

@@ -387,7 +387,8 @@ async function main() {
   {
     conferir("Hakim Centro liberada", liberadaPara("cmpx96phr0000ujf0sb0qk5vr"));
     conferir("loja de demonstração liberada (ensaio com o simulador)", liberadaPara("cmupkiesh0000ujmcjwtpd706"));
-    conferir("outra loja não", !liberadaPara("loja-qualquer-fora-da-lista") && !liberadaPara(null));
+    // Fase 4 (05/11/2026): módulo pago para todas — quem age é a assinatura (teste-rota-automatica-modulo-pago.ts).
+    conferir("qualquer loja liberada (módulo pago); sem loja, não", liberadaPara("loja-qualquer-fora-da-lista") && liberadaPara("cmvvl39a004wns807o0ck8uk3") && !liberadaPara(null) && !liberadaPara(""));
     conferir("funcionário resolve para a loja do dono", lojaDoUsuario({ id: "func", ownerId: "cmpx96phr0000ujf0sb0qk5vr" }) === "cmpx96phr0000ujf0sb0qk5vr");
     const criado = "2026-10-22T21:00:00.000Z";
     conferir("prazo = criação + tempoEntregaMin", prazoDoPedido({ createdAt: criado, deliveryType: "DELIVERY", tempoEntregaMin: 40 }, []).toISOString() === "2026-10-22T21:40:00.000Z");

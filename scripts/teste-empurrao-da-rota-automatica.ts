@@ -2,10 +2,11 @@
  * Rota 100% automatizada, Fase 3 — o empurrão sem esperar o cron e o chip do
  * card do painel:
  *
- *   [1] empurrarRoteirizacao (lib/roteirizacao-automatica/empurrao.ts): loja
- *       fora da liberação não agenda nada nem lê o banco; liberada, o ciclo
- *       vai para o after() e só roda (gravando) com a regra ligada; ciclo que
- *       falha e after() fora de requisição não lançam;
+ *   [1] empurrarRoteirizacao (lib/roteirizacao-automatica/empurrao.ts): sem
+ *       loja não agenda nada nem lê o banco; desde a Fase 4 (módulo pago para
+ *       todas) toda loja vai para o after(), e o ciclo só roda (gravando) com
+ *       a regra ligada E o módulo ligado pela assinatura (aqui, a Hakim
+ *       isenta); ciclo que falha e after() fora de requisição não lançam;
  *   [2] carimbarChegadaNaLoja devolve `chegouAgora` só quando ESTA posição
  *       carimbou a chegada (é o que dispara o empurrão no GPS);
  *   [3] chipsDasRotasAutomaticas: "2/3 prontos", "chamada", "saiu", o
@@ -36,11 +37,16 @@ let regraAtiva = true;
 let contagemDoCarimbo = 1;
 const gravacoesDoMotoboy: any[] = [];
 (globalThis as any).prisma = {
-  user: {
-    findUnique: async (a: any) => {
-      consultas.push(`user:${a.where.id}`);
-      return { deliveryConfig: { roteirizacaoAutomatica: { ativo: regraAtiva } }, storeLatLng: { lat: -22.5, lng: -41.9 } };
-    },
+  // Fase 4: a regra, o pino e a assinatura numa leitura só (assinatura.ts →
+  // rotaAutomaticaDaLoja). Nenhuma loja tem trecho: só a Hakim (isenta) liga.
+  $executeRawUnsafe: async () => 0,
+  $queryRawUnsafe: async (_sql: string, id: string) => {
+    consultas.push(`user:${id}`);
+    return [{
+      id, email: null, planPercent: 2, isFranqueadoHakim: false,
+      deliveryConfig: { roteirizacaoAutomatica: { ativo: regraAtiva } }, storeLatLng: { lat: -22.5, lng: -41.9 },
+      testeAte: null, trechos: null, temLinha: false,
+    }];
   },
   motoboy: {
     updateMany: async (a: any) => {
@@ -83,9 +89,16 @@ async function main() {
   const limpar = () => { consultas.length = 0; ciclos.length = 0; agendados.length = 0; };
 
   console.log("\n[1] empurrão");
-  empurrarRoteirizacao(OUTRA, "teste");
   empurrarRoteirizacao(null, "teste");
-  conferir("loja fora da liberação: nada agendado, nenhuma consulta", agendados.length === 0 && consultas.length === 0);
+  conferir("sem loja: nada agendado, nenhuma consulta", agendados.length === 0 && consultas.length === 0);
+
+  // Fase 4: qualquer loja agenda; sem o módulo ligado pela assinatura, lê uma vez e não roda.
+  limpar();
+  regraAtiva = true;
+  empurrarRoteirizacao(OUTRA, "teste");
+  conferir("outra loja: um after(), nada lido antes da resposta", agendados.length === 1 && consultas.length === 0);
+  await rodarAgendados();
+  conferir("outra loja com a regra ligada e sem assinatura: uma leitura, nenhum ciclo", consultas.length === 1 && ciclos.length === 0, { consultas, ciclos });
 
   limpar();
   regraAtiva = false;
@@ -125,7 +138,9 @@ async function main() {
   const antes = gravacoesDoMotoboy.length;
   conferir("fora do raio → não (e apaga o carimbo)", (await carimbarChegadaNaLoja("m1", HAKIM, -22.6, -41.9)).chegouAgora === false
     && gravacoesDoMotoboy.length === antes + 1 && gravacoesDoMotoboy[antes].data.naLojaDesde === null);
-  conferir("loja fora da liberação → não", (await carimbarChegadaNaLoja("m1", OUTRA, -22.5, -41.9)).chegouAgora === false);
+  const gravacoesAntes = gravacoesDoMotoboy.length;
+  conferir("loja sem o módulo ligado → não, e não grava nada", (await carimbarChegadaNaLoja("m1", OUTRA, -22.5, -41.9)).chegouAgora === false
+    && gravacoesDoMotoboy.length === gravacoesAntes);
 
   console.log("\n[3] chip do card");
   const rota = (numero: string, extra: Record<string, unknown> = {}) => ({ numero, chamadaEm: null, saiu: false, ...extra });
