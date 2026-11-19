@@ -50,6 +50,7 @@ import RotaAutomatica, { type PreviaDaRotaAutomatica, type RotaAutomaticaConfig,
 import { pontoParaRotaAutomatica } from "@/lib/roteirizacao-automatica/ponto";
 import { infoDaEntrega } from "@/lib/entrega-parceira";
 import { estaOnlineNoApp } from "@/lib/motoboy-online";
+import { IlustracaoDaRoteirizacao } from "@/components/customer/IlustracaoDaRoteirizacao";
 
 // ── Aviso que desce do topo (no lugar do alert()) ─────────────────────────
 // Mesma interface do components/AvisoNoTopo.tsx de outra frente, que ainda não
@@ -3467,7 +3468,10 @@ ${mapsUrl}`;
                   <div style={{ textAlign: "center", padding: "3rem 1rem", color: "#94A3B8" }}>
                     <Navigation size={40} style={{ margin: "0 auto 0.5rem", opacity: 0.5 }} />
                     <p style={{ fontWeight: 700, fontSize: "0.9rem" }}>Nenhuma rota despachada ainda</p>
-                    <p style={{ fontSize: "0.78rem" }}>Selecione os pedidos pendentes no mapa e clique em Criar Rota!</p>
+                    {/* O "como funciona" desenhado no lugar da frase, até a primeira rota.
+                        A margem negativa devolve o 1rem do lado: o quadro do despacho
+                        (cartão de 146px + celular de 172px, com bordas) cabe lado a lado nos 390px. */}
+                    <div style={{ textAlign: "left", margin: "0.75rem -1rem 0" }}><IlustracaoDaRoteirizacao /></div>
                   </div>
                 ) : (
                   <>
