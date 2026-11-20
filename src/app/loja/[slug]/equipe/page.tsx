@@ -6,7 +6,8 @@
  * Só para as lojas de LOJAS_COM_LANCHE_DA_EQUIPE (a Hakim Centro); as outras
  * recebem 404. Dinâmica: o limite e o cardápio valem na hora.
  */
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { slugAtualDeUmAntigo } from "@/lib/slug-da-loja";
 import { prisma } from "@/lib/prisma";
 import { propsDoCardapio, SELECT_DA_LOJA_NO_CARDAPIO } from "@/lib/cardapio-publico";
 import { LOJAS_COM_LANCHE_DA_EQUIPE, ehPromocaoDoDia } from "@/lib/lanche-da-equipe-regras";
@@ -20,7 +21,16 @@ export const metadata = { title: "Lanche da equipe", robots: { index: false, fol
 export default async function LancheDaEquipePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const loja = await prisma.user.findUnique({ where: { slug }, select: SELECT_DA_LOJA_NO_CARDAPIO });
-  if (!loja || !LOJAS_COM_LANCHE_DA_EQUIPE.has(loja.id)) notFound();
+  // O QR do lanche está impresso e colado na parede com o endereço da época. A
+  // Hakim Centro trocou de /loja/hakim-contato para /loja/hakim-centro e o QR
+  // antigo passou a dar 404 (19/11/2026: os motoboys não conseguiam pedir o
+  // lanche). Mesmo caminho da página da loja: slug antigo leva ao atual.
+  if (!loja) {
+    const atual = await slugAtualDeUmAntigo(prisma as any, slug);
+    if (atual) redirect(`/loja/${atual}/equipe`);
+    notFound();
+  }
+  if (!LOJAS_COM_LANCHE_DA_EQUIPE.has(loja.id)) notFound();
 
   const props = await propsDoCardapio(loja, "delivery");
   // A Promoção do Dia (a esfiha de R$ 1,90) não é do lanche da equipe.
