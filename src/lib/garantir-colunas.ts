@@ -1388,6 +1388,8 @@ const INSTRUCOES_CRM = [
   `CREATE INDEX IF NOT EXISTS "CrmMensagem_autor_criadoEm_idx" ON "CrmMensagem"("autor", "criadoEm")`,
   // O chat de suporte do painel (lib/atendimento/painel.ts) grava na mesma conversa.
   `ALTER TABLE "CrmMensagem" ADD COLUMN IF NOT EXISTS "canal" TEXT NOT NULL DEFAULT 'WHATSAPP'`,
+  // O suporte pelo navegador (/suporte) guarda o endereço da foto/áudio para a conversa mostrar.
+  `ALTER TABLE "CrmMensagem" ADD COLUMN IF NOT EXISTS "midiaUrl" TEXT`,
   `CREATE TABLE IF NOT EXISTS "CrmEvento" (
      "id" TEXT NOT NULL,
      "contatoId" TEXT NOT NULL,

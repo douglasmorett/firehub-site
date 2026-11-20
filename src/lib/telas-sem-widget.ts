@@ -17,6 +17,8 @@
 
 /** Prefixos de rota onde nenhum widget flutuante deve ser montado. */
 export const TELAS_SEM_WIDGET = [
+  /** O suporte pelo navegador: a tela inteira já é o chat (app/suporte). */
+  "/suporte",
   /** Mesa do garçom: o widget tapava o Total e o "Fechar Conta". */
   "/store/mesas",
   /** A mesma tela de mesa, pelo link próprio do garçom. */

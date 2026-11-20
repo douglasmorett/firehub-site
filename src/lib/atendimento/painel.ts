@@ -123,7 +123,7 @@ export async function canalDaResposta(contatoId: string): Promise<Canal> {
     orderBy: { criadoEm: "desc" },
     select: { canal: true },
   });
-  return ultima?.canal === "PAINEL" ? "PAINEL" : "WHATSAPP";
+  return ultima?.canal === "PAINEL" || ultima?.canal === "SITE" ? (ultima.canal as Canal) : "WHATSAPP";
 }
 
 /** O que o balão do painel mostra: só o que passou por ele, da mais antiga para a mais nova. */

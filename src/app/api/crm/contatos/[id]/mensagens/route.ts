@@ -38,7 +38,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const texto = typeof b.texto === "string" ? b.texto.trim().slice(0, 4000) : "";
   if (!texto) return NextResponse.json({ error: "Escreva a mensagem." }, { status: 400 });
 
-  const canal = b.canal === "PAINEL" || b.canal === "WHATSAPP" ? b.canal : await canalDaResposta(id);
+  const canal = b.canal === "PAINEL" || b.canal === "WHATSAPP" || b.canal === "SITE" ? b.canal : await canalDaResposta(id);
   if (canal === "PAINEL" && !contato.userId) return NextResponse.json({ error: "Este contato não tem loja: não há painel para responder." }, { status: 400 });
   const destino = contato.jid || jidDoTelefone(contato.telefone);
   if (canal === "WHATSAPP" && !destino) return NextResponse.json({ error: "Este contato não tem número de WhatsApp." }, { status: 400 });
@@ -50,7 +50,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const assinar = canal === "WHATSAPP" && quem.tipo === "VENDEDOR" && b.assinar !== false;
   const final = assinar ? `*${quem.nome.split(/\s+/)[0]}:* ${texto}` : texto;
 
-  const envio = canal === "PAINEL" ? { ok: true, erro: undefined } : await enviarTexto(destino!, final);
+  // Painel e suporte pelo navegador: a mensagem fica gravada e a tela da pessoa busca (não passa pelo WhatsApp).
+  const envio = canal === "PAINEL" || canal === "SITE" ? { ok: true, erro: undefined } : await enviarTexto(destino!, final);
   const gravada = await gravarMensagem({
     contatoId: id, direcao: "SAIDA", autor: quem.tipo, autorId: quem.id, autorNome: quem.nome,
     texto: final, status: envio.ok ? "OK" : "FALHOU", canal,

@@ -2663,8 +2663,11 @@ model CrmMensagem {
   texto     String
   /// OK · FALHOU (o gateway recusou o envio)
   status    String     @default("OK")
-  /// WHATSAPP (o número do FireHub) · PAINEL (o chat de suporte dentro do painel da loja)
+  /// WHATSAPP (o número do FireHub) · PAINEL (o chat de suporte dentro do painel da loja) · SITE (o suporte pelo navegador, /suporte)
   canal     String     @default("WHATSAPP")
+  /// Foto, áudio ou arquivo que veio pelo suporte do navegador (/uploads/...), para a conversa mostrar.
+  /// Coluna garantida no boot (src/lib/garantir-colunas.ts).
+  midiaUrl  String?
   criadoEm  DateTime   @default(now())
 
   @@index([contatoId, criadoEm])

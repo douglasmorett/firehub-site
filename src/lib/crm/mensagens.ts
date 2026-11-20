@@ -18,12 +18,14 @@ export type NovaMensagem = {
   tipo?: "TEXTO" | "AUDIO" | "IMAGEM" | "VIDEO" | "ARQUIVO" | "LOCALIZACAO";
   texto: string;
   status?: "OK" | "FALHOU";
-  /** Por onde a mensagem passou: o WhatsApp do FireHub (padrão) ou o chat de suporte do painel. */
+  /** Por onde a mensagem passou: o WhatsApp do FireHub (padrão), o chat de suporte do painel ou o suporte pelo navegador. */
   canal?: Canal;
+  /** Foto/áudio/arquivo do suporte pelo navegador (/uploads/...). */
+  midiaUrl?: string | null;
   criadoEm?: Date;
 };
 
-export type Canal = "WHATSAPP" | "PAINEL";
+export type Canal = "WHATSAPP" | "PAINEL" | "SITE";
 
 export async function gravarMensagem(m: NovaMensagem) {
   const texto = String(m.texto || "").slice(0, 8000);
@@ -44,6 +46,7 @@ export async function gravarMensagem(m: NovaMensagem) {
         texto,
         status: m.status || "OK",
         canal: m.canal || "WHATSAPP",
+        ...(m.midiaUrl ? { midiaUrl: m.midiaUrl } : {}),
         ...(m.criadoEm ? { criadoEm: m.criadoEm } : {}),
       },
     });

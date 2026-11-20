@@ -40,6 +40,11 @@ const TIPOS: Record<string, string> = {
   ".webm": "video/webm",
   // Legenda dos tutoriais em vídeo (uploads/tutoriais, ver lib/tutoriais-no-servidor.ts).
   ".vtt": "text/vtt; charset=utf-8",
+  // Áudios do suporte pelo navegador (uploads/suporte, lib/storage.ts salvarArquivoDoSuporte).
+  ".weba": "audio/webm",
+  ".ogg": "audio/ogg",
+  ".m4a": "audio/mp4",
+  ".mp3": "audio/mpeg",
 };
 
 /**

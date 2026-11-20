@@ -188,7 +188,9 @@ export function instrucoes(
   config: Awaited<ReturnType<typeof configDoAtendimento>>, contato: any, vendedor: string | null, linkDeCadastroEm: Date | null, ofereceuMontagem: boolean,
   lojaInformada: string | null, videos: VideosDaConversa, canal: Canal = "WHATSAPP",
 ): string {
-  const onde = canal === "PAINEL" ? "no chat de suporte dentro do painel do FireHub" : "no WhatsApp";
+  const onde = canal === "PAINEL" ? "no chat de suporte dentro do painel do FireHub"
+    : canal === "SITE" ? "no chat de suporte do FireHub pelo navegador (um link que funciona como o WhatsApp; a pessoa manda texto, foto e áudio)"
+    : "no WhatsApp";
   const apresentacao = config.nomeDoAtendente
     ? `Você é ${config.nomeDoAtendente}, assistente virtual do atendimento do FireHub ${onde}.`
     : `Você é o assistente virtual do atendimento do FireHub ${onde}. Você não tem nome próprio: nunca invente um.`;
@@ -351,8 +353,11 @@ async function responder(contatoId: string) {
 
   // A resposta vai por onde a pessoa escreveu (painel.ts). O chat do painel não
   // depende do WhatsApp: é para ele continuar de pé quando o número cai.
-  const canal: Canal = ultima.canal === "PAINEL" ? "PAINEL" : "WHATSAPP";
-  if (canal === "PAINEL" ? !config.roboNoPainel : (!config.roboLigado || config.conexao.conectado === false || !contato.jid)) return;
+  // O suporte pelo navegador (/suporte, lib/atendimento/site.ts) também não
+  // depende do WhatsApp: existe justamente para quando o número cai (20/11/2026).
+  // Liga junto com o robô do painel; a equipe responde pela mesma tela do atendimento.
+  const canal: Canal = ultima.canal === "PAINEL" ? "PAINEL" : ultima.canal === "SITE" ? "SITE" : "WHATSAPP";
+  if (canal === "WHATSAPP" ? (!config.roboLigado || config.conexao.conectado === false || !contato.jid) : !config.roboNoPainel) return;
   // Esperando uma pessoa cala o robô só no WhatsApp: no painel ninguém da
   // equipe responde, e a espera (vinda de uma conversa no WhatsApp) deixava o
   // lojista falando sozinho ali (Douglas, 22/10/2026; chamarPessoa em ferramentas.ts).
@@ -507,8 +512,8 @@ async function responder(contatoId: string) {
   // uma já chegou enquanto o modelo agia (a confirmação da ação sai mesmo
   // assim), esta resposta entra logo depois da mensagem que ela respondeu.
   const momento = chegouOutra ? new Date(ultima.criadoEm.getTime() + 1) : new Date();
-  // No painel não há envio: gravar é entregar (o balão lê daqui).
-  const envio = canal === "PAINEL" ? { ok: true as const, erro: undefined } : await enviarTexto(contato.jid!, resposta, { comoRobo: true });
+  // No painel e no suporte pelo navegador não há envio: gravar é entregar (a tela lê daqui).
+  const envio = canal !== "WHATSAPP" ? { ok: true as const, erro: undefined } : await enviarTexto(contato.jid!, resposta, { comoRobo: true });
   await gravarMensagem({
     contatoId: contato.id, direcao: "SAIDA", autor: "ROBO", autorNome: config.nomeDoAtendente || "Robô",
     texto: resposta, status: envio.ok ? "OK" : "FALHOU", canal, criadoEm: momento,

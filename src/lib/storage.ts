@@ -236,6 +236,34 @@ export async function saveDataUrl(dataUrl: string, folder?: string | null): Prom
 }
 
 /** true se o valor guardado e uma imagem embutida em base64 (o problema a migrar). */
+/**
+ * Foto, PDF ou áudio que o cliente mandou pelo suporte do navegador (/suporte,
+ * lib/atendimento/site.ts). Sem otimizar: é para a equipe ver/ouvir como veio.
+ * Fica em uploads/suporte, com nome aleatório (a URL não se adivinha).
+ */
+const TIPOS_DO_SUPORTE: Record<string, string> = {
+  "image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif",
+  "application/pdf": "pdf",
+  "audio/webm": "weba", "audio/ogg": "ogg", "audio/mp4": "m4a", "audio/x-m4a": "m4a", "audio/aac": "m4a", "audio/mpeg": "mp3",
+};
+export const TAMANHO_MAXIMO_DO_SUPORTE = 12 * 1024 * 1024;
+
+export function extensaoDoSuporte(mime: string): string | null {
+  return TIPOS_DO_SUPORTE[String(mime || "").split(";")[0].trim().toLowerCase()] || null;
+}
+
+export async function salvarArquivoDoSuporte(bytes: Buffer, mime: string): Promise<SavedFile> {
+  const ext = extensaoDoSuporte(mime);
+  if (!ext) throw new Error(`Tipo de arquivo não aceito: ${mime}`);
+  if (bytes.length > TAMANHO_MAXIMO_DO_SUPORTE) throw new Error("Arquivo muito grande (máximo 12 MB).");
+  const fileName = safeBaseName("suporte", ext);
+  const destDir = path.join(/*turbopackIgnore: true*/ UPLOADS_ROOT, "suporte");
+  await mkdir(destDir, { recursive: true });
+  await writeFile(path.join(/*turbopackIgnore: true*/ destDir, fileName), bytes);
+  await espelharNoBucket(`suporte/${fileName}`, bytes);
+  return { url: `/uploads/suporte/${fileName}`, pathname: `suporte/${fileName}`, size: bytes.length };
+}
+
 export function isDataUrl(value: string | null | undefined): boolean {
   return typeof value === "string" && value.startsWith("data:");
 }
