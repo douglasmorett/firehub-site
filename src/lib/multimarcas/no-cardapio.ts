@@ -7,14 +7,16 @@ import type { ConfigDaPagina } from "./pagina";
 
 export type MarcasNoCardapio = {
   marcas: { id: string; nome: string; logo: string | null; capa: string | null; cor: string; categorias: string[] }[];
+  /** O link da loja abre a página de marcas (opção da loja; ver ConfigDaPagina). */
+  irParaMarcas?: boolean;
 };
 
 const chave = (n: string | null | undefined) => String(n || "").trim().toLowerCase();
 
 /** Só as marcas visíveis, com o que o cardápio usa. */
-export function marcasNoCardapio(config: Pick<ConfigDaPagina, "marcas">): MarcasNoCardapio | null {
+export function marcasNoCardapio(config: Pick<ConfigDaPagina, "marcas" | "linkDaLojaVaiParaMarcas">): MarcasNoCardapio | null {
   const marcas = config.marcas.filter((m) => !m.oculta).map((m) => ({ id: m.id, nome: m.nome, logo: m.logo, capa: m.capa, cor: m.cor, categorias: m.categorias }));
-  return marcas.length ? { marcas } : null;
+  return marcas.length ? { marcas, irParaMarcas: config.linkDaLojaVaiParaMarcas === true } : null;
 }
 
 /**

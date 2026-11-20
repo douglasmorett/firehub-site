@@ -425,6 +425,13 @@ export default function CustomerStorePage({
     try {
       const q = new URLSearchParams(window.location.search);
       const m = q.get("marca");
+      // Loja que quer o link /loja/<slug> levando à página de marcas (opção do
+      // Multimarcas). Só sem ?marca= (a vitrine abre o cardápio assim, sem laço),
+      // sem ?sacola= e fora da mesa/equipe; o resto da query vai junto.
+      if (multimarcas?.irParaMarcas && !mesa && !m && q.get("sacola") !== "1" && franchisee.slug) {
+        window.location.replace(`/marcas/${encodeURIComponent(franchisee.slug)}${window.location.search}`);
+        return;
+      }
       if (m && !mesa && multimarcas?.marcas.some((x) => x.id === m)) setMarcaId(m);
       if (q.get("sacola") === "1") setMobileCartOpen(true);
     } catch {}

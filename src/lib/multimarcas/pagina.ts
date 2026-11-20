@@ -101,6 +101,12 @@ export type ConfigDaPagina = {
    * categorias e dos itens, lib/multimarcas/vitrine.ts); [] = não mostrar.
    */
   tiposDeComida: TipoDeComidaDaPagina[] | null;
+  /**
+   * O link da loja (/loja/<slug>) abre direto a página de marcas (/marcas/<slug>).
+   * Opcional por loja: Lucas Pimenta (Frangoso/Deliverou, 20/11/2026) divulga o
+   * /loja/ e quer que o cliente caia na página que junta as marcas.
+   */
+  linkDaLojaVaiParaMarcas?: boolean;
 };
 
 export const LIMITES = { marcas: 30, banners: 12, categoriasPorMarca: 60, destaques: 20, atalhos: 12, tiposDeComida: 16, lojasPorMarca: 10 } as const;
@@ -223,6 +229,7 @@ export function limparConfig(bruto: unknown, nomeDaLoja = "Minhas marcas"): Conf
     destaques: [...new Set((Array.isArray(b.destaques) ? b.destaques : []).map(idDeProduto).filter(Boolean) as string[])].slice(0, LIMITES.destaques),
     atalhos,
     tiposDeComida,
+    linkDaLojaVaiParaMarcas: b.linkDaLojaVaiParaMarcas === true,
   };
 }
 
