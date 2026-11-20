@@ -279,7 +279,9 @@ export default function TelaDaBalanca({ ligada, simular, nomeDaLoja, produtos }:
 
         {prontoParaCartao && (
           <form onSubmit={(e) => { e.preventDefault(); lancar(cartao); }} style={{ display: "flex", gap: 10, width: "100%", maxWidth: 520, marginTop: 8 }}>
+            {/* O leitor "digita" onde estiver o foco: um toque do cliente na tela não pode tirá-lo daqui. */}
             <input ref={campoRef} value={cartao} onChange={(e) => setCartao(e.target.value)} inputMode="numeric"
+              onBlur={() => setTimeout(() => campoRef.current?.focus(), 0)}
               placeholder="Nº do cartão" aria-label="Número do cartão da comanda" autoComplete="off"
               style={{ flex: 1, minWidth: 0, padding: "16px 18px", borderRadius: 14, border: "3px solid #14B8A6", background: "#0B1220", color: "#fff", fontSize: 28, fontWeight: 900, textAlign: "center", fontFamily: "inherit" }} />
             <button type="submit" style={{ padding: "0 26px", borderRadius: 14, border: "none", background: "#14B8A6", color: "#0F172A", fontSize: 22, fontWeight: 900, cursor: "pointer", fontFamily: "inherit" }}>Lançar</button>

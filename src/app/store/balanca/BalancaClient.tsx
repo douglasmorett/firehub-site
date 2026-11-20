@@ -378,10 +378,12 @@ const EQUIPAMENTO: [string, string, string | null][] = [
     "https://www.mercadolivre.com.br/kit-balanca-toledo-prix-3-fit--cabo-conversor-serial-rs232/up/MLBU1732884937"],
   ["Cabo USB-serial (chip FTDI)", "liga o cabo da balança na porta USB do computador.",
     "https://www.mercadolivre.com.br/ftdi-conversor-usb-porta-com-serial-rs232-cabo-todos-sinais/up/MLBU1413538863"],
-  ["Leitor de código de barras de mesa", "o cliente só encosta o cartão na frente dele e o número entra sozinho; lê o Code 39 dos cartões.",
+  ["Leitor de código de barras de mesa", "o cliente só encosta a comanda na frente dele, com o prato ainda na balança, e o número entra sozinho.",
     "https://www.mercadolivre.com.br/leitor-de-codigo-de-barras-fixo-pdv-usb-1d-2d-qr-code/p/MLB27764962"],
   ["Computador com Windows ao lado da balança", "um notebook simples serve, com o Chrome (ou o Edge).",
     "https://www.mercadolivre.com.br/notebook-positivo-vision-c14-lumina-bar-celeron-4gb-ram-128gb-emmc-windows-11-tela-14-polegadas-hd-antirreflexo-tecla-link-cinza/p/MLB26133653"],
+  ["Comandas de PVC com código de barras", "numeradas acima das mesas da loja (ex.: 101 a 200) e com o código de barras trazendo só o número. Comanda de aproximação (chip) não serve: o leitor é de código de barras. Chegou, cadastre a mesma numeração em Mesas › ⚙️ › 🎫 Comandas.",
+    "https://lista.mercadolivre.com.br/comanda-pvc-numerada-codigo-de-barras"],
 ];
 
 function Equipamento() {
@@ -398,7 +400,7 @@ function Equipamento() {
             {link && <a href={link} target="_blank" rel="noreferrer" style={{ color: COR, fontWeight: 800 }}>Ver no Mercado Livre</a>}
           </li>
         ))}
-        <li><b>Cartões de comanda:</b> o FireHub gera para imprimir (Mesas › ⚙️ › 🎫 Comandas).</li>
+        <li><b>Sem comprar comandas:</b> o FireHub gera os cartões para imprimir (Mesas › ⚙️ › 🎫 Comandas).</li>
       </ol>
       <p style={{ ...texto, marginTop: 8, fontSize: 13 }}>
         No tablet Android a balança só liga por um adaptador serial→Bluetooth, pareado nas configurações do Android; o
