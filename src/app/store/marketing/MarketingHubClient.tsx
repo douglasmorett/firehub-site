@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 
 import ApresentacaoDisparoOficial, { ChamadaDaRecuperacaoOficial } from "@/components/ApresentacaoDisparoOficial";
+import CuponsEditor, { type Coupon } from "@/components/customer/CuponsEditor";
 import { FRASE_DO_ACEITE, type AceiteDoRiscoQr } from "@/lib/disparo-em-massa";
 
 /** Os marcos da recuperação pelo QR, com as chaves que a rota grava (api/cron/recuperacao-clientes). */
@@ -58,7 +59,7 @@ const MARCOS_QR = [
     cupom: "couponJanela",
     titulo: "📅 Cliente numa janela de dias sem pedir (1 vez por mês)",
     ajuda:
-      "Vai para quem está entre os dias escolhidos sem pedir, no máximo 1 vez a cada 30 dias por cliente. Para o cupom valer só 1 vez por mês, em Minha loja › Cupons ponha \"Usos por cliente: 1\" e marque \"por mês\".",
+      "Vai para quem está entre os dias escolhidos sem pedir, no máximo 1 vez a cada 30 dias por cliente. Para o cupom valer só 1 vez por mês, na aba Cupons de desconto ponha \"Usos por cliente: 1\" e marque \"por mês\".",
   },
 ] as const;
 
@@ -69,12 +70,36 @@ const descreverCupom = (c: CupomDaLoja) =>
   (c.validade ? ` · vale até ${c.validade.split("-").reverse().join("/")}` : "") +
   (c.active ? "" : " · DESLIGADO");
 
-export default function MarketingHubClient() {
+export default function MarketingHubClient({ cuponsIniciais = [], paymentConfig = null, slug = null }: { cuponsIniciais?: Coupon[]; paymentConfig?: any; slug?: string | null }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [sendingBroadcast, setSendingBroadcast] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<"broadcast" | "automation" | "qr" | "database">("broadcast");
+  const [activeTab, setActiveTab] = useState<"broadcast" | "cupons" | "automation" | "qr" | "database">("broadcast");
+
+  // Aba Cupons: a mesma lista de Minha loja › Cupons (storeCoupons).
+  const [cuponsEdit, setCuponsEdit] = useState<Coupon[]>(cuponsIniciais);
+  const [cuponsAlterados, setCuponsAlterados] = useState(false);
+  const [salvandoCupons, setSalvandoCupons] = useState(false);
+  const [erroCupons, setErroCupons] = useState<string | null>(null);
+  const salvarCupons = async () => {
+    setSalvandoCupons(true);
+    setErroCupons(null);
+    try {
+      const res = await fetch("/api/store-settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeCoupons: cuponsEdit }) });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d?.error || "Não consegui salvar. Tente de novo.");
+      }
+      setCuponsAlterados(false);
+      // O seletor de cupom da recuperação passa a enxergar o que acabou de ser salvo.
+      setCupons(cuponsEdit.map((c) => ({ code: c.code, type: c.type || "percent", discount: c.discount, active: c.active, validade: c.validade || null, primeiroPedido: c.primeiroPedido === true })));
+    } catch (e: any) {
+      setErroCupons(e?.message || "Não consegui salvar. Tente de novo.");
+    } finally {
+      setSalvandoCupons(false);
+    }
+  };
 
   // Envio pelo QR Code (não oficial): só depois do aceite do risco (lib/disparo-em-massa.ts).
   const [aceite, setAceite] = useState<AceiteDoRiscoQr | null>(null);
@@ -323,6 +348,7 @@ export default function MarketingHubClient() {
       <div style={{ display: "flex", gap: "8px", marginBottom: "1.5rem", borderBottom: "2px solid #E2E8F0", paddingBottom: "8px", flexWrap: "wrap" }}>
         {[
           { id: "broadcast", label: "📢 Disparos (API oficial)", icon: Send },
+          { id: "cupons", label: "🏷️ Cupons de desconto", icon: Gift },
           { id: "automation", label: "🔁 Recuperação 7, 15 e 30 dias (API oficial)", icon: Clock },
           { id: "qr", label: "📱 Pelo QR Code (não oficial)", icon: AlertTriangle },
           { id: "database", label: "👥 Base de Clientes Cadastrados", icon: Users },
@@ -357,6 +383,26 @@ export default function MarketingHubClient() {
 
       {/* ABA 1: DISPARO — desde 13/10/2026 só pela API oficial da Meta (lib/disparo-oficial). */}
       {activeTab === "broadcast" && <ApresentacaoDisparoOficial />}
+
+      {/* ABA CUPONS: criar, ligar e desligar cupons de desconto (o mesmo cadastro de Minha loja › Cupons). */}
+      {activeTab === "cupons" && (
+        <div>
+          {erroCupons && (
+            <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#B91C1C", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: "0.85rem", fontWeight: 700 }}>
+              {erroCupons}
+            </div>
+          )}
+          <CuponsEditor
+            coupons={cuponsEdit}
+            dirty={cuponsAlterados}
+            saving={salvandoCupons}
+            paymentConfig={paymentConfig}
+            storeUrl={`${typeof window !== "undefined" ? window.location.origin : ""}/loja/${slug ?? ""}`}
+            onChange={(proxima) => { setCuponsEdit(proxima); setCuponsAlterados(true); setErroCupons(null); }}
+            onSave={salvarCupons}
+          />
+        </div>
+      )}
 
       {/* ABA 2: RECUPERAÇÃO 7, 15 E 30 DIAS — desde 13/10/2026 pela API oficial (lib/disparo-oficial). */}
       {activeTab === "automation" && <ChamadaDaRecuperacaoOficial />}
@@ -569,7 +615,7 @@ export default function MarketingHubClient() {
                               <option value={autoConfig[m.cupom]}>{autoConfig[m.cupom]} — não existe mais</option>
                             )}
                           </select>
-                          <a href="/store/minha-loja" style={{ fontSize: "0.76rem", fontWeight: 800, color: "#312E81" }}>Criar cupom</a>
+                          <button type="button" onClick={() => setActiveTab("cupons")} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: "0.76rem", fontWeight: 800, color: "#312E81", fontFamily: "inherit" }}>Criar cupom</button>
                         </div>
                       </div>
                     );

@@ -409,6 +409,8 @@ export async function PUT(req: Request) {
     "storeHours", "paymentFees", "storeCoupons", "storePause", "storeLoyalty",
     "repasseConfig", "storeDeliveryOnly", "showAddressOnMenu", "showReviewsOnMenu",
   ]) TELA_DO_CAMPO[k] = ["/store/minha-loja"];
+  // Os cupons também se editam em Marketing & cupons › Cupons (20/11/2026).
+  TELA_DO_CAMPO.storeCoupons = ["/store/minha-loja", "/store/marketing"];
   for (const k of ["facebookPixelId", "metaPixelId", "metaCapiToken", "gaMeasurementId", "gaApiSecret", "gtmContainerId"]) {
     TELA_DO_CAMPO[k] = ["/store/integracoes", "/store/minha-loja"];
   }
