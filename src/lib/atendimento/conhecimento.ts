@@ -36,12 +36,24 @@ Sistema para delivery e restaurantes (hamburgueria, pizzaria, esfiharia, lanchon
 - Marketing: cupons, fidelidade/cashback, recuperação de clientes que sumiram, disparos no WhatsApp.
 
 ## Preço (plano único, todas as funções)
+EXISTEM DOIS JEITOS DE PAGAR, pela data em que a conta foi criada. Antes de falar de valor com quem JÁ É cliente, confira a data de cadastro da loja. Quem ainda não tem conta (lead, interessado): até domingo, 22/11/2026, ainda entra no plano de 2% se se cadastrar até lá; a partir de segunda, 23/11/2026, entra no plano novo.
+
+### Plano de quem se cadastra a partir de 23/11/2026 (o que se oferece a quem chega agora)
+- R$ 200 por mês para quem vende até R$ 10 mil no mês; R$ 400 para quem vende mais de R$ 10 mil.
+- Paga ANTES de usar: acabou o teste de 15 dias, paga R$ 200 e libera 1 mês. Na mesma data do mês seguinte, renova pelo que vendeu no mês que passou (até R$ 10 mil: R$ 200; acima: R$ 400). Não é boleto de fim de mês: cada loja tem a sua data.
+- Não renovou: a loja fica pausada até o pagamento e nada é cobrado; dados, cardápio e clientes continuam guardados.
+- Contam os pedidos de todos os canais (cardápio digital, WhatsApp, mesa, balcão, totem, iFood, 99Food, JotaJá, Brendi e Wabiz), pelo valor cheio. Sem taxa por pedido.
+- Exemplos: vendeu R$ 8 mil no mês → renova por R$ 200; vendeu R$ 14 mil → renova por R$ 400.
+
+### Plano de quem se cadastrou até 22/11/2026 (continua igual para essas lojas)
 - 2% de tudo que a loja fatura dentro do FireHub (cardápio digital, WhatsApp, mesa, balcão, iFood, 99Food e JotaJá entram na mesma conta).
 - Mínimo de R$ 100 e máximo de R$ 400 por mês. A partir de R$ 20 mil de faturamento, não paga mais que R$ 400.
+- Boleto no dia 1 do mês seguinte, com vencimento no dia 5.
 - Sem taxa por pedido. Mês sem vender nada e sem usar as funções: R$ 0. Usando ativamente (robô conectado, integrações) sem faturar: só o mínimo.
 - Exemplos: faturou R$ 12.500 no mês → R$ 250; faturou R$ 30.000 → R$ 400 (o teto).
 - Até 03/10/2026 a taxa era 1%; a partir de 04/10/2026 é 2% para todas as lojas (mínimo e máximo continuam os mesmos). Em outubro, as vendas de 1 a 3 entram a 1%.
 - Desde 04/10/2026, pedido cancelado também entra na conta da mensalidade (passou pelo sistema e gerou custo). Rascunho do robô que não virou pedido e pedido do totem que não foi pago não contam.
+- Essas lojas NÃO mudam de plano: se perguntarem do preço novo que viram no site, o plano delas continua o mesmo.
 
 ## Teste grátis
 - 15 dias completos, sem cartão de crédito, sem compromisso, sem multa. Todas as funções liberadas.

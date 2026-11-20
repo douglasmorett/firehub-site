@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { estadoAoVivoDoRobo } from "@/lib/whatsapp-estado";
 import { atividadeDasLojas, textoDoUltimoPedido } from "@/lib/atividade-da-loja";
 import { vencimentoDoBoleto } from "@/lib/prazo-da-mensalidade";
+import { modeloDaLoja } from "@/lib/modelo-de-cobranca";
 
 /**
  * O RAIO-X DA LOJA PARA O SUPORTE — o que o robô do FireHub lê antes de
@@ -17,6 +18,8 @@ export type EstadoDaLojaParaSuporte = {
   cardapio: string | null;
   lojaAberta: boolean;
   teste: { emTeste: boolean; diasRestantes: number | null; terminaEm: string | null };
+  /** Qual dos dois planos vale para esta loja (lib/modelo-de-cobranca.ts), pela data de cadastro da conta. */
+  planoDeCobranca: string;
   robo: { conectado: boolean | null; ligado: boolean; telefone: string | null };
   impressao: {
     ultimaConsulta: string | null;
@@ -38,7 +41,7 @@ export async function estadoDaLojaParaSuporte(userId: string, opcoes: { aoVivo?:
     select: {
       id: true, name: true, storeName: true, slug: true, storeOpen: true, trialEndsAt: true, createdAt: true,
       chatbotConfig: true, printQueuePolledAt: true, printQueueEstado: true, isFranqueadoHakim: true,
-      food99Connected: true, jotajaConnected: true,
+      food99Connected: true, jotajaConnected: true, accountGroup: { select: { createdAt: true } },
     },
   });
   if (!u) return null;
@@ -72,6 +75,9 @@ export async function estadoDaLojaParaSuporte(userId: string, opcoes: { aoVivo?:
       diasRestantes: emTeste ? Math.ceil((fimDoTeste - Date.now()) / 86_400_000) : null,
       terminaEm: new Date(fimDoTeste).toISOString().slice(0, 10),
     },
+    planoDeCobranca: modeloDaLoja(u.createdAt, u.accountGroup?.createdAt) === "PRE_PAGO"
+      ? "pré-pago, conta criada a partir de 23/11/2026: R$ 200 (vendendo até R$ 10 mil no mês) ou R$ 400 (acima), pago ao fim do teste e renovado na mesma data todo mês"
+      : "2% das vendas do mês, mínimo R$ 100 e máximo R$ 400, boleto no dia 1 com vencimento no dia 5 (conta criada até 22/11/2026)",
     robo: {
       conectado: robo ? robo.conectada : typeof config.connected === "boolean" ? config.connected : null,
       ligado: config.active !== false,

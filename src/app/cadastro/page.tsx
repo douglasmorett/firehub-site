@@ -3,8 +3,10 @@ import { nomeDaLojaPeloCnpj } from "@/lib/slug-da-loja";
 import { diasDeTesteDoLink, TRIAL_PADRAO_DIAS } from "@/lib/trial-do-cadastro";
 import { useState, useEffect } from "react";
 import { VERSAO_DOS_TERMOS } from "@/lib/termos-versao";
-import { FIREHUB_PLAN } from "@/lib/firehub-billing";
+import { PRE_PAGO, VIRADA_DO_PRE_PAGO } from "@/lib/modelo-de-cobranca";
 import { VALOR_DO_TESTE_GRATIS } from "@/lib/valor-do-teste-gratis";
+
+const reais = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 const API = "";
 const PORTAL = API;
@@ -160,7 +162,7 @@ export default function CadastroPage() {
     e.preventDefault();
     if (senha.length < 6) { setError("Senha precisa ter pelo menos 6 caracteres."); return; }
     if (!termos) { setError("Aceite os termos para continuar."); return; }
-    if (!aceiteIntegracoes) { setError("Confirme que entendeu a regra das integrações depois do teste."); return; }
+    if (!aceiteIntegracoes) { setError("Confirme que entendeu como funciona o pagamento depois do teste."); return; }
     setError("");
     if (!titularNome) setTitularNome(nome);
     if (!titularDoc) setTitularDoc(cpf.replace(/\D/g, "") || cnpjData?.cnpj || "");
@@ -301,6 +303,9 @@ export default function CadastroPage() {
             </p>
             {[
               `🔥 ${trialDays} dias grátis, sem cartão`,
+              Date.now() < VIRADA_DO_PRE_PAGO.getTime()
+                ? "💰 Cadastre até domingo (22/11) e fique no plano de 2%"
+                : "💰 Depois, R$ 200/mês (R$ 400 acima de R$ 10 mil em vendas)",
               "📱 Cardápio digital + WhatsApp IA",
               "📊 Relatórios e controle completo",
               "💬 Suporte humano 7 dias por semana",
@@ -461,6 +466,25 @@ export default function CadastroPage() {
                     <input className="inp" type="password" placeholder="Mínimo 6 caracteres" value={senha} autoFocus
                       onChange={e => setSenha(e.target.value)} />
                   </div>
+                  {/* O plano das contas novas (lib/modelo-de-cobranca.ts), dito
+                      ANTES do aceite: "tem que estar bem explicado" (Douglas, 20/11/2026). */}
+                  {Date.now() < VIRADA_DO_PRE_PAGO.getTime() ? (
+                  // Até domingo, 22/11/2026, quem se cadastra ainda entra no plano de 2%.
+                  <div style={{ background: "#F0FDF4", border: "1.5px solid #86EFAC", borderRadius: 12, padding: "12px 14px", fontSize: ".8rem", color: "#14532D", lineHeight: 1.55 }}>
+                    <div style={{ fontWeight: 800, marginBottom: 6, color: "#166534" }}>💰 Como você vai pagar</div>
+                    <div>• <b>{trialDays} dias grátis</b>, sem cartão.</div>
+                    <div>• Cadastrando até domingo (22/11) você entra no plano atual: <b>2% das vendas do mês</b>, mínimo R$ 100 e máximo R$ 400.</div>
+                    <div>• Boleto no começo do mês seguinte. A partir de 23/11, contas novas entram no plano pré-pago (R$ 200 / R$ 400).</div>
+                  </div>
+                  ) : (
+                  <div style={{ background: "#FFF7ED", border: "1.5px solid #FDBA74", borderRadius: 12, padding: "12px 14px", fontSize: ".8rem", color: "#7C2D12", lineHeight: 1.55 }}>
+                    <div style={{ fontWeight: 800, marginBottom: 6, color: "#9A3412" }}>💰 Como você vai pagar</div>
+                    <div>• <b>{trialDays} dias grátis</b>, sem cartão.</div>
+                    <div>• Acabou o teste: paga <b>{reais(PRE_PAGO.VALOR_DA_ATIVACAO)}</b> e libera 1 mês de uso.</div>
+                    <div>• Renova na <b>mesma data todo mês</b>, pelo que vendeu no mês anterior: até R$ {PRE_PAGO.LIMITE.toLocaleString("pt-BR")}, {reais(PRE_PAGO.VALOR_ATE_O_LIMITE)}; acima, {reais(PRE_PAGO.VALOR_ACIMA_DO_LIMITE)}.</div>
+                    <div>• Você paga antes de usar. Sem boleto atrasado e sem juros.</div>
+                  </div>
+                  )}
                   <label className="check-opt">
                     <input type="checkbox" checked={termos} onChange={e => setTermos(e.target.checked)} />
                     <span>
@@ -472,8 +496,13 @@ export default function CadastroPage() {
                   <label className="check-opt">
                     <input type="checkbox" checked={aceiteIntegracoes} onChange={e => setAceiteIntegracoes(e.target.checked)} />
                     <span>
-                      <strong>Entendi que, se eu não for continuar depois dos {trialDays} dias de teste grátis, preciso desconectar as integrações com o iFood e a 99Food</strong> (em Integrações).
-                      {" "}Se entrar qualquer pedido depois do teste, mesmo que um só, a mensalidade daquele mês será cobrada (mínimo de {FIREHUB_PLAN.MIN_MONTHLY.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}).
+                      {Date.now() < VIRADA_DO_PRE_PAGO.getTime() ? (
+                        <><strong>Entendi que, se eu não for continuar depois dos {trialDays} dias de teste grátis, preciso desconectar as integrações com o iFood e a 99Food</strong> (em Integrações).
+                        {" "}Se entrar qualquer pedido depois do teste, mesmo que um só, a mensalidade daquele mês será cobrada (mínimo de R$ 100,00).</>
+                      ) : (
+                        <><strong>Entendi como funciona o pagamento.</strong> Se eu não renovar, a loja fica pausada no FireHub e os pedidos do iFood e da 99Food deixam de entrar aqui;
+                        {" "}se eu não for continuar, desconecto as integrações (em Integrações).</>
+                      )}
                     </span>
                   </label>
                   <button type="submit" className="btn" disabled={loading}>

@@ -15,7 +15,7 @@
  * jeito de garantirEstruturaDeAcompanhamento (lib/garantir-colunas.ts).
  */
 import { prisma } from "@/lib/prisma";
-import { VERSAO_DOS_TERMOS } from "@/lib/termos-versao";
+import { VERSAO_DOS_TERMOS, VERSOES_QUE_CONTINUAM_VALENDO } from "@/lib/termos-versao";
 
 export type OrigemDoAceite = "CADASTRO" | "PAINEL";
 
@@ -63,7 +63,7 @@ export async function aceitouVersaoAtual(userId: string): Promise<boolean> {
   try {
     await garantirTabela();
     const aceite = await prisma.aceiteDosTermos.findFirst({
-      where: { userId, versao: VERSAO_DOS_TERMOS },
+      where: { userId, versao: { in: [VERSAO_DOS_TERMOS, ...VERSOES_QUE_CONTINUAM_VALENDO] } },
       select: { id: true },
     });
     if (aceite) jaAceitaram.add(chave);

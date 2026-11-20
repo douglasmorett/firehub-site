@@ -15,11 +15,14 @@ import { DATA_DOS_TERMOS } from "@/lib/termos-versao";
 import { FIREHUB_PLAN, TOTEM_MENSAL, VIRADA_DOS_2_POR_CENTO } from "@/lib/firehub-billing";
 import { MULTA_POR_ATRASO_PCT, JUROS_AO_MES_PCT } from "@/lib/prazo-da-mensalidade";
 import { SPLIT_FIREHUB_FIXO } from "@/lib/pix-online";
+import { PRE_PAGO, VIRADA_DO_PRE_PAGO } from "@/lib/modelo-de-cobranca";
 
 /** "04/10/2026" e "03/10/2026" — saem da mesma data que a cobrança usa. */
 const dataBr = (d: Date) => d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
 const DATA_DA_VIRADA = dataBr(VIRADA_DOS_2_POR_CENTO);
 const DIA_ANTES_DA_VIRADA = dataBr(new Date(VIRADA_DOS_2_POR_CENTO.getTime() - 1));
+const DATA_DO_PRE_PAGO = dataBr(VIRADA_DO_PRE_PAGO);
+const DIA_ANTES_DO_PRE_PAGO = dataBr(new Date(VIRADA_DO_PRE_PAGO.getTime() - 1));
 
 const reais = (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -87,6 +90,16 @@ export default function TextoDosTermos({ compacto = false }: { compacto?: boolea
       </Secao>
 
       <Secao n="4" titulo="Preço, cobrança e atraso">
+        <Item n="4.0"><strong>Dois planos, pela data de criação da conta.</strong> A conta criada a partir de {DATA_DO_PRE_PAGO} segue o <strong>plano pré-pago</strong> (itens 4.10 a 4.16). A conta criada até {DIA_ANTES_DO_PRE_PAGO} continua no <strong>plano percentual</strong> (itens 4.1 a 4.3 e 4.6 a 4.8). Loja adicional de uma conta segue o plano da conta principal. Os itens 4.4, 4.5 e 4.9 valem para os dois.</Item>
+        <p style={{ ...p, fontWeight: 800, color: "#0F172A", margin: "0.9rem 0 0.4rem" }}>Plano pré-pago (contas criadas a partir de {DATA_DO_PRE_PAGO})</p>
+        <Item n="4.10"><strong>Teste grátis:</strong> 15 dias a partir do cadastro, ou o prazo informado na página de cadastro, sem cobrança.</Item>
+        <Item n="4.11"><strong>Ativação:</strong> ao fim do teste, o Lojista paga {reais(PRE_PAGO.VALOR_DA_ATIVACAO)} para liberar o primeiro mês de uso. Sem esse pagamento, a conta fica pausada.</Item>
+        <Item n="4.12"><strong>Renovação:</strong> a cada mês, na mesma data do pagamento da ativação (se o mês não tiver esse dia, no último dia do mês), o Lojista paga o mês seguinte <strong>antes de usá-lo</strong>. O valor sai das vendas registradas no FireHub no mês que terminou: até {reais(PRE_PAGO.LIMITE)}, {reais(PRE_PAGO.VALOR_ATE_O_LIMITE)}; acima de {reais(PRE_PAGO.LIMITE)}, {reais(PRE_PAGO.VALOR_ACIMA_DO_LIMITE)}.</Item>
+        <Item n="4.13"><strong>O que conta como venda:</strong> todo pedido de todos os canais (cardápio digital, WhatsApp, mesa, balcão, totem, iFood, 99Food, Jotajá e demais integrações), pelo valor cheio antes de cupons e descontos, inclusive pedidos cancelados, que passaram pelo sistema e geraram custo de processamento. Não entram o rascunho do robô que não virou pedido e o pedido do totem que não foi pago.</Item>
+        <Item n="4.14"><strong>Sem renovação:</strong> a conta fica pausada (painel, cardápio, robô e integrações deixam de funcionar) até o pagamento, e volta sozinha quando ele compensa. Não há multa nem juros, e o mês não pago não é cobrado. Os dados continuam guardados. A pausa por falta de pagamento não gera direito a indenização.</Item>
+        <Item n="4.15"><strong>Serviços adicionais</strong> (item 4.4) e módulos contratados à parte são cobrados junto da renovação.</Item>
+        <Item n="4.16">O valor pago por um mês não é devolvido se o Lojista deixar de usar ou cancelar no meio dele; a conta continua liberada até o fim do mês pago.</Item>
+        <p style={{ ...p, fontWeight: 800, color: "#0F172A", margin: "0.9rem 0 0.4rem" }}>Plano percentual (contas criadas até {DIA_ANTES_DO_PRE_PAGO})</p>
         <Item n="4.1"><strong>Teste grátis:</strong> 15 dias a partir do cadastro, ou o prazo informado na página de cadastro. As vendas feitas durante o teste não entram na cobrança. <strong>Ao fim do teste, se o Lojista não for continuar, ele deve desconectar no FireHub as integrações com iFood, 99Food e demais marketplaces (em Integrações).</strong> Se entrar qualquer pedido depois do fim do teste, mesmo que um só, a mensalidade daquele mês é devida, com o mínimo do item 4.2.</Item>
         <Item n="4.2"><strong>Mensalidade:</strong> {FIREHUB_PLAN.PERCENT_RATE}% do faturamento do mês registrado no FireHub, no mínimo {reais(FIREHUB_PLAN.MIN_MONTHLY)} e no máximo {reais(FIREHUB_PLAN.MAX_MONTHLY)}. Entra todo pedido de todos os canais (cardápio digital, WhatsApp, mesa, balcão, totem, iFood, 99Food, Jotajá e demais integrações), pelo valor cheio antes de cupons e descontos. A partir de {DATA_DA_VIRADA}, <strong>pedidos cancelados também entram</strong>, porque passaram pelo sistema e geraram custo de processamento (antes dessa data, ficam de fora); só não entram o rascunho do robô que não virou pedido e o pedido do totem que não foi pago. O percentual de {FIREHUB_PLAN.PERCENT_RATE}% vale para as vendas a partir de {DATA_DA_VIRADA}; as vendas até {DIA_ANTES_DA_VIRADA} são cobradas a 1%, e o mínimo e o máximo valem sobre o total do mês.</Item>
         <Item n="4.3">Mês sem nenhuma venda e sem uso do sistema: R$ 0,00. Mês sem venda, mas com uso ativo (robô conectado, integrações ligadas, financeiro ou estoque em uso): cobra-se o mínimo.</Item>
@@ -95,6 +108,7 @@ export default function TextoDosTermos({ compacto = false }: { compacto?: boolea
         <Item n="4.6"><strong>Fatura e vencimento:</strong> o mês fecha no dia 1 do mês seguinte (horário de Brasília) e o boleto/Pix sai pelo Asaas com <strong>vencimento no dia 5</strong>. Depois do vencimento incidem multa de {MULTA_POR_ATRASO_PCT}% e juros de {JUROS_AO_MES_PCT}% ao mês, proporcionais aos dias de atraso.</Item>
         <Item n="4.7"><strong>Bloqueio:</strong> sem pagamento até o dia 10, o painel é bloqueado até a compensação, e o desbloqueio é automático. O bloqueio por falta de pagamento não gera direito a indenização.</Item>
         <Item n="4.8">Discordou de algum valor da fatura? Avise o suporte até o vencimento, indicando o pedido ou o valor contestado.</Item>
+        <p style={{ ...p, fontWeight: 800, color: "#0F172A", margin: "0.9rem 0 0.4rem" }}>Para os dois planos</p>
         <Item n="4.9"><strong>Mudança de preço:</strong> é avisada pelo painel, por e-mail ou pelo WhatsApp. Quem não concordar pode cancelar sem multa. Continuar usando depois do aviso significa concordar.</Item>
       </Secao>
 

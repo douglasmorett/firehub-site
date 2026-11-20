@@ -13,6 +13,7 @@
  */
 import { useEffect, useState, type ReactNode } from "react";
 import { FIREHUB_PLAN, MES_DOS_2_POR_CENTO } from "@/lib/firehub-billing";
+import { PRE_PAGO } from "@/lib/modelo-de-cobranca";
 import type { VisaoDoCiclo } from "@/lib/billing";
 import { diasAte } from "@/lib/prazo-da-mensalidade";
 import { nomeDoMes } from "@/lib/financeiro/dre";
@@ -74,6 +75,16 @@ export default function AbaMensalidade({ ciclo, tz }: { ciclo: VisaoDoCiclo | nu
           <h2 style={{ fontSize: "1.5rem", fontWeight: 900, margin: "8px 0 2px", color: "#F8FAFC" }}>Mensalidade FireHub (isenta)</h2>
           <p style={{ margin: 0, fontSize: "0.85rem", color: "#94A3B8" }}>Esta loja não paga mensalidade nem comissão da plataforma.</p>
         </div>
+        <CartaoIndiqueEGanhe />
+      </div>
+    );
+  }
+
+  // Plano pré-pago (conta criada a partir de 23/11/2026): outra regra, outra tela.
+  if (ciclo.prePago) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+        <MensalidadePrePaga prePago={ciclo.prePago} tz={tz} />
         <CartaoIndiqueEGanhe />
       </div>
     );
@@ -221,6 +232,70 @@ export default function AbaMensalidade({ ciclo, tz }: { ciclo: VisaoDoCiclo | nu
       <CartaoIndiqueEGanhe />
 
       {verDetalhes && <DetalhesDaCobranca ciclo={ciclo} tz={tz} onFechar={() => setVerDetalhes(false)} />}
+    </div>
+  );
+}
+
+/**
+ * A mensalidade do plano pré-pago (lib/modelo-de-cobranca.ts): a regra em
+ * passos, a data da primeira cobrança e o que o ritmo de venda dá na
+ * renovação. "Tem que estar muito explicado" (Douglas, 20/11/2026).
+ */
+function MensalidadePrePaga({ prePago, tz }: { prePago: NonNullable<VisaoDoCiclo["prePago"]>; tz: string }) {
+  const testeAte = prePago.testeAte ? new Date(prePago.testeAte) : null;
+  const dataLonga = (d: Date) => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "long", timeZone: tz });
+  const limite = `R$ ${(PRE_PAGO.LIMITE / 1000).toLocaleString("pt-BR")} mil`;
+  const passo = (n: number, titulo: ReactNode, texto: ReactNode) => (
+    <div style={{ display: "grid", gridTemplateColumns: "30px 1fr", gap: 12, alignItems: "start", padding: "10px 0", borderTop: n > 1 ? "1px solid #1E293B" : "none" }}>
+      <div style={{ width: 28, height: 28, borderRadius: 999, background: "#EF4444", color: "#fff", fontWeight: 900, display: "grid", placeItems: "center", fontSize: "0.9rem" }}>{n}</div>
+      <div>
+        <div style={{ fontWeight: 800, color: "#F8FAFC", fontSize: "0.92rem" }}>{titulo}</div>
+        <div style={{ color: "#94A3B8", fontSize: "0.82rem", marginTop: 2, lineHeight: 1.5 }}>{texto}</div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div id="fatura" style={{ background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", borderRadius: 20, padding: "1.75rem", color: "#fff", boxShadow: "0 10px 30px rgba(0,0,0,0.15)", border: "1px solid #334155", scrollMarginTop: 80 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem", marginBottom: "1rem" }}>
+        <div>
+          <span style={{ background: "#FFF7E6", color: "#92400E", padding: "4px 12px", borderRadius: 20, fontSize: "0.78rem", fontWeight: 900 }}>
+            {prePago.emTeste && testeAte ? `🧪 Teste grátis até ${dataLonga(testeAte)}` : "💳 Plano pré-pago"}
+          </span>
+          <h2 style={{ fontSize: "1.45rem", fontWeight: 900, margin: "8px 0 2px", color: "#F8FAFC" }}>Sua mensalidade FireHub</h2>
+          <p style={{ margin: 0, fontSize: "0.85rem", color: "#94A3B8" }}>
+            {fmtR(PRE_PAGO.VALOR_ATE_O_LIMITE)} por mês vendendo até {limite} · {fmtR(PRE_PAGO.VALOR_ACIMA_DO_LIMITE)} acima de {limite}
+          </p>
+        </div>
+        {prePago.emTeste && testeAte && (
+          <div style={{ textAlign: "right", background: "#1E293B", padding: "12px 18px", borderRadius: 14, border: "1px solid #334155" }}>
+            <div style={{ fontSize: "0.72rem", color: "#94A3B8", fontWeight: 700 }}>PRIMEIRO PAGAMENTO</div>
+            <div style={{ fontSize: "1.8rem", fontWeight: 900, color: "#F8FAFC", marginTop: 2 }}>{fmtR(prePago.valorDaAtivacao)}</div>
+            <div style={{ fontSize: "0.78rem", color: "#CBD5E1" }}>em {dataLonga(testeAte)}, no fim do teste</div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ background: "#0B1220", borderRadius: 14, padding: "6px 16px 10px" }}>
+        <div style={{ fontSize: "0.72rem", fontWeight: 800, color: "#94A3B8", letterSpacing: ".04em", padding: "8px 0 2px" }}>COMO VOCÊ PAGA</div>
+        {passo(1, "Teste grátis", testeAte ? `Até ${dataLonga(testeAte)} você usa tudo sem pagar nada.` : "Você usa tudo sem pagar nada durante o teste.")}
+        {passo(2, `Acabou o teste: ${fmtR(prePago.valorDaAtivacao)} libera 1 mês`, "Você paga antes de usar. Sem boleto de fim de mês, sem juros, sem surpresa.")}
+        {passo(3, "Renova na mesma data todo mês", <>O valor sai do que você vendeu no mês que passou: até {limite}, {fmtR(PRE_PAGO.VALOR_ATE_O_LIMITE)}; acima de {limite}, {fmtR(PRE_PAGO.VALOR_ACIMA_DO_LIMITE)}. Contam os pedidos de todos os canais, pelo valor cheio.</>)}
+        {passo(4, "Não renovou? A loja pausa", "Painel, cardápio, robô e integrações param até o pagamento, e nada é cobrado. Seus dados continuam guardados; pagou, volta na hora.")}
+      </div>
+
+      <div style={{ marginTop: "1rem", background: "#1E293B", borderRadius: 14, padding: "14px 16px", border: "1px solid #334155", display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <div>
+          <div style={{ fontSize: "0.86rem", fontWeight: 800, color: "#E2E8F0" }}>Seu ritmo de vendas</div>
+          <div style={{ fontSize: "0.78rem", color: "#94A3B8", marginTop: 2 }}>
+            {fmtR(prePago.vendaRecente)} em {prePago.diasDeVenda} {prePago.diasDeVenda === 1 ? "dia" : "dias"} · num mês cheio, cerca de {fmtR(prePago.ritmoDoMes)}
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: "0.72rem", color: "#94A3B8", fontWeight: 700 }}>NESSE RITMO, A RENOVAÇÃO SERIA</div>
+          <div style={{ fontSize: "1.3rem", fontWeight: 900, color: "#F8FAFC" }}>{fmtR(prePago.renovacaoNoRitmo)}</div>
+        </div>
+      </div>
     </div>
   );
 }

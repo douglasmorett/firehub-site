@@ -34,6 +34,7 @@ import { prepararAvisoDoBoleto } from "@/lib/aviso-do-boleto";
 import { bloqueioDaMensalidade, bloqueioDoCiclo, JUROS_AO_MES_PCT, MULTA_POR_ATRASO_PCT, vencimentoDoBoleto } from "@/lib/prazo-da-mensalidade";
 import { fimDoTeste } from "@/lib/fim-do-teste";
 import { anualCobreOMes } from "@/lib/black-november";
+import { modeloDaLoja, PRE_PAGO, valorDaRenovacao } from "@/lib/modelo-de-cobranca";
 
 /**
  * Teto de comissão que pode sair de uma mensalidade, somando os dois níveis do
@@ -740,6 +741,20 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   // PAID que ainda pode ser refeito é só o "nada a cobrar", que não tem boleto.
   if (cycle.status === "PAID" && cycle.asaasPaymentId) return { charged: false, message: "Ciclo já pago no Asaas" };
 
+  // Plano pré-pago (conta criada a partir de 23/11/2026, lib/modelo-de-cobranca.ts):
+  // não tem boleto de fim de mês — paga antes de usar, na data dele. O ciclo
+  // fecha como "nada a cobrar" para não ficar aberto nem gerar boleto.
+  const principalCriadaEm = cycle.franchisee?.accountGroupId
+    ? (await prisma.user.findUnique({ where: { id: cycle.franchisee.accountGroupId }, select: { createdAt: true } }))?.createdAt
+    : null;
+  if (modeloDaLoja(cycle.franchisee?.createdAt, principalCriadaEm) === "PRE_PAGO") {
+    await prisma.franchiseeBillingCycle.update({
+      where: { id: cycle.id },
+      data: { status: "PAID", amountDue: 0, amountPending: 0, closedAt: new Date(), notes: "Plano pré-pago: sem boleto de fim de mês" },
+    });
+    return { charged: false, message: "Plano pré-pago: sem boleto de fim de mês" };
+  }
+
   const isSpecialStore = lojaIsenta(cycle.franchisee);
 
   // Recalcula valores finais (pedidos confirmados do mês)
@@ -1207,10 +1222,45 @@ export type FaturaEmAberto = Awaited<ReturnType<typeof faturasEmAbertoDaLoja>>[n
 /** O Indique e Ganhe na previsão do painel, quando não há nada (teste, isenta, sem indicação). */
 const SEM_INDIQUE = { isenta: false, ativosPagantes: 0, saldo: 0, abate: 0 };
 
+/**
+ * O que a aba Mensalidade mostra para a loja do plano pré-pago
+ * (lib/modelo-de-cobranca.ts): a regra dela e o que o ritmo de venda dá na
+ * renovação. Nulo para as lojas do plano percentual.
+ */
+export type PrePagoNaTela = {
+  emTeste: boolean;
+  testeAte: string | null;
+  valorDaAtivacao: number;
+  /** Venda dos últimos 30 dias (ou desde o cadastro, se a conta é mais nova). */
+  vendaRecente: number;
+  diasDeVenda: number;
+  /** A venda recente levada a 30 dias — o ritmo de um mês cheio. */
+  ritmoDoMes: number;
+  /** O que a renovação daria nesse ritmo. */
+  renovacaoNoRitmo: number;
+};
+
+async function prePagoNaTela(franchiseeId: string, criadaEm: Date, trialEndsAt: Date | null): Promise<PrePagoNaTela> {
+  const agora = new Date();
+  const de = new Date(Math.max(criadaEm.getTime(), agora.getTime() - 30 * 86_400_000));
+  const dias = Math.max(1, (agora.getTime() - de.getTime()) / 86_400_000);
+  const venda = await vendasQueContam(franchiseeId, de, agora);
+  const ritmo = (venda / dias) * 30;
+  return {
+    emTeste: !!trialEndsAt && trialEndsAt > agora,
+    testeAte: trialEndsAt ? trialEndsAt.toISOString() : null,
+    valorDaAtivacao: PRE_PAGO.VALOR_DA_ATIVACAO,
+    vendaRecente: parseFloat(venda.toFixed(2)),
+    diasDeVenda: Math.round(dias),
+    ritmoDoMes: Math.round(ritmo),
+    renovacaoNoRitmo: valorDaRenovacao(ritmo),
+  };
+}
+
 export async function getCurrentCycleView(franchiseeId: string) {
   const user = await prisma.user.findUnique({
     where: { id: franchiseeId },
-    select: { ...CAMPOS_DA_ISENCAO, storeTimezone: true, trialEndsAt: true, ifoodConnected: true, food99Connected: true, accountGroupId: true },
+    select: { ...CAMPOS_DA_ISENCAO, storeTimezone: true, trialEndsAt: true, ifoodConnected: true, food99Connected: true, accountGroupId: true, createdAt: true, accountGroup: { select: { createdAt: true } } },
   });
 
   const isExempt = lojaIsenta(user);
@@ -1250,6 +1300,35 @@ export async function getCurrentCycleView(franchiseeId: string) {
       asaasBoletoCode: null as string | null,
       faturasEmAberto,
       indiqueEGanhe: SEM_INDIQUE,
+      prePago: null as PrePagoNaTela | null,
+    };
+  }
+
+  // Plano pré-pago (conta criada a partir de 23/11/2026): não existe o mês com
+  // boleto no dia 1. A tela mostra a regra dele e o ritmo de venda.
+  if (user && modeloDaLoja(user.createdAt, user.accountGroup?.createdAt) === "PRE_PAGO") {
+    const prePago = await prePagoNaTela(franchiseeId, user.createdAt, user.trialEndsAt ? new Date(user.trialEndsAt) : null);
+    return {
+      yearMonth,
+      totalSales: prePago.vendaRecente,
+      vendasA1PorCento: 0,
+      amountDue: 0,
+      amountOffset: 0,
+      amountPending: 0,
+      mensalidadePrevista: 0,
+      taxas: { trafegoPago: 0, totem: 0, lojasExtras: 0 },
+      lojasExtras: semLojasExtras,
+      status: "OPEN",
+      isExempt: false,
+      emTeste: prePago.emTeste,
+      cobrancaPorUso: null as { valor: number; motivos: string[] } | null,
+      cobrancaDesde: null as string | null,
+      trialEndsAt,
+      asaasBoletoUrl: null as string | null,
+      asaasBoletoCode: null as string | null,
+      faturasEmAberto,
+      indiqueEGanhe: SEM_INDIQUE,
+      prePago: prePago as PrePagoNaTela | null,
     };
   }
 
@@ -1344,6 +1423,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
       asaasBoletoCode: null as string | null,
       faturasEmAberto,
       indiqueEGanhe: indique,
+      prePago: null as PrePagoNaTela | null,
     };
   }
 
@@ -1426,6 +1506,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
     trialEndsAt,
     faturasEmAberto,
     indiqueEGanhe: indique,
+    prePago: null as PrePagoNaTela | null,
   };
 }
 

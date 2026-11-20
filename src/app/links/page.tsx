@@ -36,7 +36,7 @@ const PRODUTOS = [
     logo: "/firehub-flame.png",
     nome: "FireHub",
     para: "Para restaurante e delivery",
-    texto: "Pedidos do iFood, WhatsApp e site num quadro só, robô que anota pedido, mesas, KDS e nota fiscal. Tudo incluído por 2% do faturamento, no máximo R$ 400 por mês.",
+    texto: "Pedidos do iFood, WhatsApp e site num quadro só, robô que anota pedido, mesas, KDS e nota fiscal. Tudo incluído por R$ 200 por mês (R$ 400 para quem vende mais de R$ 10 mil no mês).",
     botao: "Testar 15 dias grátis",
     url: `/?${UTM}&utm_campaign=links-firehub`,
   },

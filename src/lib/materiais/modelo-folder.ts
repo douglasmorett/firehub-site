@@ -175,12 +175,12 @@ h2 em { font-style: normal; color: var(--fogo); }
   <!-- verso (100): preço, Bill, app e contato -->
   <div class="p" style="left:100mm;width:100mm">
     <span class="sobre"><i></i>Quanto custa</span>
-    <h2>Um plano só. <em>Paga conforme vende.</em></h2>
+    <h2>Um plano só. <em>Paga antes de usar.</em></h2>
     <div class="plano">
-      <div class="g">2%</div>
-      <div class="d">do que a loja vende pelo FireHub</div>
-      <div class="lim"><div>mínimo<b>R$ 100</b>por mês</div><div>máximo<b>R$ 400</b>por mês</div></div>
-      <p>Sem taxa por pedido, sem fidelidade e sem multa. Vendeu R$ 12.500? Paga R$ 250.</p>
+      <div class="g">R$ 200</div>
+      <div class="d">por mês, vendendo até R$ 10 mil no mês</div>
+      <div class="lim"><div>acima de R$ 10 mil<b>R$ 400</b>por mês</div><div>teste<b>15 dias</b>grátis</div></div>
+      <p>Acabou o teste, R$ 200 libera o mês; renova na mesma data, pelo que vendeu. Sem taxa por pedido, sem fidelidade e sem multa.</p>
     </div>
     <div class="bill">
       <div class="bill-topo"><b>🎙️ Bill, seu assessor</b><span>+ R$ 49,90/mês</span></div>

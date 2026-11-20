@@ -350,27 +350,27 @@ h3.sec { font-size: 12.5pt; font-weight: 850; font-weight: 800; margin-top: 7mm;
 <!-- 7. PREÇO -->
 <section class="pg">
   <span class="sobre"><i></i>6 · Quanto custa</span>
-  <h2>Um plano só. <em>Você paga conforme vende.</em></h2>
-  <p class="lead">Sem taxa por pedido e sem comissão. A mensalidade é uma porcentagem do que a loja vende pelo FireHub, com piso e teto.</p>
+  <h2>Um plano só. <em>Você paga antes de usar.</em></h2>
+  <p class="lead">Sem taxa por pedido e sem comissão. Dois valores, pelo que a loja vende no mês, pagos sempre antes do mês de uso.</p>
 
   <div class="plano">
     <div>
-      <div class="grande"><em>2%</em></div>
-      <div class="de">do que a loja vende pelo FireHub</div>
-      <div class="limites"><div>mínimo<b>R$ 100</b>por mês</div><div>máximo<b>R$ 400</b>por mês</div></div>
+      <div class="grande"><em>R$ 200</em></div>
+      <div class="de">por mês, vendendo até R$ 10 mil no mês</div>
+      <div class="limites"><div>acima de R$ 10 mil<b>R$ 400</b>por mês</div><div>teste<b>15 dias</b>grátis</div></div>
     </div>
     <ul>
       <li>Todas as funções do plano liberadas</li>
-      <li>Cardápio, WhatsApp, mesa, balcão, iFood, 99Food e JotaJá na mesma conta</li>
-      <li>A partir de R$ 20 mil de venda no mês, nunca passa de R$ 400</li>
-      <li>Mês sem vender e sem usar: R$ 0</li>
+      <li>Acabou o teste: R$ 200 libera o primeiro mês</li>
+      <li>Renova na mesma data todo mês, pelo que vendeu no mês anterior</li>
+      <li>Sem boleto de fim de mês, sem juros. Não renovou, a loja pausa</li>
     </ul>
   </div>
 
   <div class="exemplos">
-    <div><small>Vendeu no mês</small><b>R$ 5.000</b><br><span>paga R$ 100 (o mínimo)</span></div>
-    <div><small>Vendeu no mês</small><b>R$ 12.500</b><br><span>paga R$ 250</span></div>
-    <div><small>Vendeu no mês</small><b>R$ 30.000</b><br><span>paga R$ 400 (o teto)</span></div>
+    <div><small>Vendeu no mês</small><b>R$ 5.000</b><br><span>renova por R$ 200</span></div>
+    <div><small>Vendeu no mês</small><b>R$ 10.000</b><br><span>renova por R$ 200</span></div>
+    <div><small>Vendeu no mês</small><b>R$ 14.000</b><br><span>renova por R$ 400</span></div>
   </div>
 
   <h3 class="sec">Já vem no plano, sem pagar nada a mais</h3>

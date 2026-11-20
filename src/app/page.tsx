@@ -1,6 +1,7 @@
 "use client";
 import { Fragment, useState, useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import "./landing.css";
+import { valorDaRenovacao } from "@/lib/modelo-de-cobranca";
 
 const WA = "https://wa.me/5522981118514?text=Ol%C3%A1!%20Quero%20testar%20o%20FireHub%20gr%C3%A1tis%20por%2015%20dias";
 const TRIAL = "/cadastro";
@@ -35,8 +36,8 @@ const JSON_LD = JSON.stringify({
       },
     },
     {
-      // O produto: Plano Único de 2% das vendas, mínimo R$ 100 e máximo R$ 400
-      // por mês (o mesmo calcPrice da seção de planos, abaixo).
+      // O produto: plano pré-pago das contas novas (lib/modelo-de-cobranca.ts):
+      // R$ 200 até R$ 10 mil de venda no mês, R$ 400 acima.
       "@type": "SoftwareApplication",
       "@id": "https://firehubfood.com.br/#sistema",
       name: "FireHub",
@@ -51,9 +52,9 @@ const JSON_LD = JSON.stringify({
       offers: {
         "@type": "AggregateOffer",
         priceCurrency: "BRL",
-        lowPrice: "100",
+        lowPrice: "200",
         highPrice: "400",
-        description: "Plano Único: 2% do faturamento que passa pelo FireHub, mínimo de R$ 100 e máximo de R$ 400 por mês. 15 dias grátis.",
+        description: "Plano Único: R$ 200 por mês para quem vende até R$ 10 mil no mês, R$ 400 para quem vende mais. Paga antes de usar, renova na mesma data todo mês. 15 dias grátis.",
       },
     },
     {
@@ -122,16 +123,16 @@ const COMPARE = [
   ["Integração iFood / 99Food", true, true, false],
 ];
 
-// Preço = 2% do faturamento, mín R$100, máx R$400 (teto em R$ 20 mil)
-const calcPrice = (rev: number) => rev === 0 ? 0 : Math.max(100, Math.min(400, rev * 0.02));
+// Preço das contas novas (lib/modelo-de-cobranca.ts): R$ 200 até R$ 10 mil de
+// venda no mês, R$ 400 acima. Quem se cadastrou até 22/11/2026 segue no plano
+// antigo (2%, mín R$ 100, máx R$ 400) — dito no FAQ.
+const calcPrice = (rev: number) => valorDaRenovacao(rev);
 
 const FAQ = [
   { q: "Como funciona o teste grátis?", a: "15 dias completos sem cobrar nada. Sem cartão de crédito. Sem compromisso. Você tem acesso a todas as funcionalidades do plano durante o teste (Tráfego Pago e Disparos são cobrados à parte, só se você usar)." },
-  // A regra do mínimo está em lib/billing.ts: conta como uso o robô ou a IA
-  // respondendo, caixa aberto, contas a pagar, nota de compra, totem e tráfego
-  // pago. Integração ligada sem pedido NÃO conta.
-  { q: "E se eu não usar a plataforma?", a: "Se você não vender nada e não usar nenhuma funcionalidade no mês, você não paga nada. Se você usar a plataforma ativamente (robô atendendo, caixa aberto, contas a pagar) sem faturar, aplica-se apenas a mensalidade mínima." },
-  { q: "Como funciona a cobrança?", a: "Cobramos apenas 2% do valor dos pedidos que passam pelo FireHub — cardápio digital, WhatsApp, mesa, balcão, totem, iFood, 99Food, Jotajá, Brendi e Wabiz entram na mesma conta (valor cheio do pedido, como está nos Termos de Uso). Mínimo de R$ 100 e máximo de R$ 400 por mês — a partir de R$ 20 mil de faturamento você não paga mais nada a mais. Sem taxa por pedido, sem surpresas." },
+  { q: "Como funciona a cobrança?", a: "Você paga antes de usar, sempre pelo mês que vem pela frente. Acabou o teste, você paga R$ 200 e libera 1 mês de uso. Na mesma data do mês seguinte, renova pelo que vendeu no mês que passou: até R$ 10 mil em vendas, R$ 200; acima de R$ 10 mil, R$ 400. Contam os pedidos de todos os canais que passam pelo FireHub (cardápio digital, WhatsApp, mesa, balcão, totem, iFood, 99Food, Jotajá, Brendi e Wabiz), pelo valor cheio. Sem taxa por pedido, sem boleto atrasado, sem juros." },
+  { q: "E se eu não renovar?", a: "A loja fica pausada até o pagamento e nada é cobrado. Seus dados, cardápio e clientes continuam guardados. Pagou, volta a funcionar na hora." },
+  { q: "Já sou cliente. Muda alguma coisa para mim?", a: "Não. Quem se cadastrou até 22/11/2026 continua no plano de sempre: 2% das vendas do mês, mínimo de R$ 100 e máximo de R$ 400, com boleto no começo do mês seguinte." },
   { q: "Precisa instalar algum aplicativo?", a: "Não! O FireHub funciona no navegador. Celular, tablet ou computador — em qualquer lugar, a qualquer momento. Para imprimir as comandas, você instala o Assistente de Impressão no computador da loja." },
   { q: "Como é o suporte?", a: "Pelo WhatsApp e pelo chat do painel, 7 dias por semana, com a nossa equipe." },
   { q: "Integra com iFood?", a: "Sim! Receba pedidos do iFood direto no painel, junto com cardápio digital e WhatsApp." },
@@ -1062,36 +1063,28 @@ export default function Home() {
                 <span className="period">/mês</span>
               </div>
 
-              {/* Percentual info */}
-              <div style={{display:"flex",justifyContent:"center",gap:24,marginBottom:20}}>
-                <div style={{textAlign:"center"}}>
-                  <p style={{fontSize:"1.5rem",fontWeight:900,color:"#EF4444"}}>2%</p>
-                  <p style={{fontSize:".72rem",color:"#9CA3AF"}}>do faturamento</p>
-                </div>
-                <div style={{width:1,background:"#E5E7EB"}} />
-                <div style={{textAlign:"center"}}>
-                  <p style={{fontSize:"1.5rem",fontWeight:900,color:"#374151"}}>R$ 100</p>
-                  <p style={{fontSize:".72rem",color:"#9CA3AF"}}>mínimo/mês</p>
-                </div>
-                <div style={{width:1,background:"#E5E7EB"}} />
-                <div style={{textAlign:"center"}}>
-                  <p style={{fontSize:"1.5rem",fontWeight:900,color:"#374151"}}>R$ 400</p>
-                  <p style={{fontSize:".72rem",color:"#9CA3AF"}}>máximo/mês</p>
-                </div>
+              {/* As duas faixas: a que vale para o faturamento do slider acende. */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:20}}>
+                {[
+                  { valor: "R$ 200", rotulo: "vendendo até R$ 10 mil no mês", ativa: sliderValue <= 10000 },
+                  { valor: "R$ 400", rotulo: "vendendo acima de R$ 10 mil", ativa: sliderValue > 10000 },
+                ].map((f) => (
+                  <div key={f.valor} style={{textAlign:"center",padding:"12px 8px",borderRadius:14,border:`2px solid ${f.ativa ? "#EF4444" : "#E5E7EB"}`,background:f.ativa ? "#FEF2F2" : "#fff",transition:"all .2s"}}>
+                    <p style={{fontSize:"1.4rem",fontWeight:900,color:f.ativa ? "#EF4444" : "#9CA3AF"}}>{f.valor}<span style={{fontSize:".75rem",fontWeight:700}}>/mês</span></p>
+                    <p style={{fontSize:".74rem",color:f.ativa ? "#7F1D1D" : "#9CA3AF",fontWeight:600}}>{f.rotulo}</p>
+                  </div>
+                ))}
               </div>
 
-              {/* Faixa info */}
+              {/* Como paga: pré-pago, na data do próprio cliente. */}
               <div style={{background:"#F9FAFB",border:"1px solid #E5E7EB",borderRadius:14,padding:"16px 20px",marginBottom:24}}>
-                <p style={{fontWeight:700,fontSize:".9rem",marginBottom:4}}>{(() => {
-                  if (sliderValue === 0) return "Zero faturamento e sem uso ativo?";
-                  const fat = `R$ ${sliderValue.toLocaleString("pt-BR")}`;
-                  const pct = sliderValue * 0.02;
-                  const r = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
-                  // Acima do teto só aparece o limite: nenhum valor maior que R$ 400 na tela.
-                  if (pct > 400) return `Faturamento de ${fat} → ${r(400)} (limite máximo)`;
-                  return `Faturamento de ${fat} × 2% = ${r(pct)}`;
-                })()}</p>
-                <p style={{fontSize:".82rem",color:"#6B7280",lineHeight:1.5}}>{sliderValue === 0 ? "Sem vendas E sem usar as funcionalidades ativamente, a taxa é R$ 0. Se houver uso ativo (ex: Chatbot), aplica-se a taxa mínima." : calculatedPrice <= 100 ? "Valor mínimo de R$ 100,00 para ter acesso a todas as funcionalidades." : calculatedPrice >= 400 ? "Valor máximo de R$ 400,00 por mês. Acima de R$ 20k de faturamento, você não paga mais." : "Simples e justo: quanto mais você cresce, nós crescemos junto."}</p>
+                <p style={{fontWeight:800,fontSize:".9rem",marginBottom:10}}>Como você paga</p>
+                <ol style={{margin:0,paddingLeft:18,fontSize:".84rem",color:"#4B5563",lineHeight:1.6,display:"flex",flexDirection:"column",gap:6}}>
+                  <li><b>15 dias grátis</b>, sem cartão, para montar a loja e vender de verdade.</li>
+                  <li>Acabou o teste, você paga <b>R$ 200</b> e libera <b>1 mês</b> de uso.</li>
+                  <li>Na <b>mesma data do mês seguinte</b>, renova pelo que vendeu no mês que passou: até R$ 10 mil, R$ 200; acima, R$ 400.</li>
+                  <li>Você paga <b>antes de usar</b>: sem boleto atrasado, sem juros, sem surpresa. Não renovou? A loja pausa e nada é cobrado.</li>
+                </ol>
               </div>
 
               {/* O que vem no plano: o que a página mostra lá em cima, em uma
@@ -1222,7 +1215,7 @@ export default function Home() {
 
       {/* Barra fixa do celular: aparece depois do topo, com o mesmo botão. */}
       <div className={`lp-barra ${barra ? "on" : ""}`}>
-        <small><b>15 dias grátis</b><br />Sem cartão · 2%, máx. R$ 400/mês</small>
+        <small><b>15 dias grátis</b><br />Sem cartão · R$ 200 ou R$ 400/mês</small>
         <a href={TRIAL} className="btn-primary">🔥 Testar Grátis</a>
       </div>
     </main>

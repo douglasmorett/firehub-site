@@ -47,8 +47,8 @@ const GRUPOS: { titulo: string; explica: string; proporcao: string; pecas: Peca[
 ];
 
 const TEXTOS = [
-  { titulo: "Tudo incluído por 2% do faturamento", texto: "Quanto você paga por mês no sistema da sua loja? No FireHub vem tudo incluído: 2% do faturamento, máx. R$ 400/mês. Teste 15 dias grátis, sem cartão." },
-  { titulo: "Máximo R$ 400/mês. Tudo liberado.", texto: "Cardápio, robô do WhatsApp, mesas, nota fiscal, etiquetas… no FireHub vem tudo incluído por 2% do faturamento (máx. R$ 400/mês). Teste 15 dias grátis, sem cartão." },
+  { titulo: "Tudo incluído por R$ 200/mês", texto: "Quanto você paga por mês no sistema da sua loja? No FireHub vem tudo incluído: R$ 200/mês vendendo até R$ 10 mil (R$ 400 acima disso). Teste 15 dias grátis, sem cartão." },
+  { titulo: "Um preço só. Tudo liberado.", texto: "Cardápio, robô do WhatsApp, mesas, nota fiscal, etiquetas… no FireHub vem tudo incluído por R$ 200/mês (R$ 400 para quem vende mais de R$ 10 mil). Teste 15 dias grátis, sem cartão." },
   { titulo: "Robô que anota pedido por áudio", texto: "Seu cliente manda áudio e o robô do FireHub anota o pedido, confirma e manda pra cozinha. Direto no WhatsApp da loja, 24h. Teste 15 dias grátis." },
   { titulo: "Nunca mais esqueça a bebida", texto: "A bebida esquecida na geladeira é o maior motivo de avaliação 1 estrela no delivery. O FireHub acha a bebida no pedido (até dentro do combo) e carimba na comanda. Teste 15 dias grátis." },
   { titulo: "Prazo do iFood ajustado sozinho", texto: "Cozinha lotou e o prazo no iFood continua 35 min? O FireHub lê a fila real da cozinha e os motoboys na rua e sobe o prazo sozinho. Menos atraso, menos cancelamento. Grátis por 15 dias." },
