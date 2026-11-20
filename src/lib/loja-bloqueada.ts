@@ -65,7 +65,7 @@ export function ehLojaEspecial(
 
 /** O ciclo em aberto já passou do dia do bloqueio? */
 export function cicloBloqueia(
-  ciclo: { yearMonth: string; closedAt?: Date | string | null; amountPending: number; status?: string | null } | null | undefined,
+  ciclo: { yearMonth: string; closedAt?: Date | string | null; amountPending: number; status?: string | null; dueDate?: Date | string | null; notes?: string | null } | null | undefined,
   emailDaLoja: string | null | undefined,
   agora: Date = new Date(),
 ): boolean {
@@ -146,7 +146,7 @@ export async function lojaBloqueadaPorMensalidade(lojaId: string | null | undefi
   let bloqueada = false;
   try {
     const { prisma } = await import("./prisma");
-    const campos = { id: true, role: true, email: true, isFranqueadoHakim: true, ownerId: true } as const;
+    const campos = { id: true, role: true, email: true, isFranqueadoHakim: true, ownerId: true, createdAt: true, trialEndsAt: true, planPercent: true, accountGroup: { select: { createdAt: true } } } as const;
     const conta = await prisma.user.findUnique({ where: { id: lojaId }, select: campos });
     if (conta) {
       const dono = conta.ownerId
@@ -155,9 +155,19 @@ export async function lojaBloqueadaPorMensalidade(lojaId: string | null | undefi
       const ciclo = await prisma.franchiseeBillingCycle.findFirst({
         where: { franchiseeId: dono.id, status: "CLOSED", amountPending: { gt: 0 } },
         orderBy: { closedAt: "desc" },
-        select: { yearMonth: true, closedAt: true, amountPending: true, status: true },
+        select: { yearMonth: true, closedAt: true, amountPending: true, status: true, dueDate: true, notes: true },
       });
       bloqueada = decidirBloqueio({ conta, dono, ciclo, agora: new Date(agora) });
+      // Plano pré-pago: acabou o teste e não ativou (nenhuma cobrança ainda).
+      if (!bloqueada && (conta.role === "FRANCHISEE" || conta.role === "STAFF") && !ehLojaEspecial(dono, conta)) {
+        const { prePagoSemAtivacao } = await import("./modelo-de-cobranca");
+        const { MARCA_DO_PRE_PAGO } = await import("./prazo-da-mensalidade");
+        const base = { criadaEm: dono.createdAt, principalCriadaEm: dono.accountGroup?.createdAt, trialEndsAt: dono.trialEndsAt, planPercent: dono.planPercent };
+        if (prePagoSemAtivacao({ ...base, temCobranca: false }, new Date(agora))) {
+          const temCobranca = (await prisma.franchiseeBillingCycle.count({ where: { franchiseeId: dono.id, notes: { startsWith: MARCA_DO_PRE_PAGO } } })) > 0;
+          bloqueada = prePagoSemAtivacao({ ...base, temCobranca }, new Date(agora));
+        }
+      }
     }
   } catch (e: any) {
     console.error(`[loja-bloqueada] Erro ao conferir ${lojaId}: ${e?.message}`);

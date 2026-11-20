@@ -131,7 +131,7 @@ const calcPrice = (rev: number) => valorDaRenovacao(rev);
 const FAQ = [
   { q: "Como funciona o teste grátis?", a: "15 dias completos sem cobrar nada. Sem cartão de crédito. Sem compromisso. Você tem acesso a todas as funcionalidades do plano durante o teste (Tráfego Pago e Disparos são cobrados à parte, só se você usar)." },
   { q: "Como funciona a cobrança?", a: "Você paga antes de usar, sempre pelo mês que vem pela frente. Acabou o teste, você paga R$ 200 e libera 1 mês de uso. Na mesma data do mês seguinte, renova pelo que vendeu no mês que passou: até R$ 10 mil em vendas, R$ 200; acima de R$ 10 mil, R$ 400. Contam os pedidos de todos os canais que passam pelo FireHub (cardápio digital, WhatsApp, mesa, balcão, totem, iFood, 99Food, Jotajá, Brendi e Wabiz), pelo valor cheio. Sem taxa por pedido, sem boleto atrasado, sem juros." },
-  { q: "E se eu não renovar?", a: "A loja fica pausada até o pagamento e nada é cobrado. Seus dados, cardápio e clientes continuam guardados. Pagou, volta a funcionar na hora." },
+  { q: "E se eu não renovar?", a: "A cobrança chega 5 dias antes da data e, depois que vence, você ainda tem 5 dias de tolerância. Passou disso, a loja fica pausada até o pagamento e nada é cobrado. Seus dados, cardápio e clientes continuam guardados. Pagou, volta a funcionar na hora." },
   { q: "Já sou cliente. Muda alguma coisa para mim?", a: "Não. Quem se cadastrou até 22/11/2026 continua no plano de sempre: 2% das vendas do mês, mínimo de R$ 100 e máximo de R$ 400, com boleto no começo do mês seguinte." },
   { q: "Precisa instalar algum aplicativo?", a: "Não! O FireHub funciona no navegador. Celular, tablet ou computador — em qualquer lugar, a qualquer momento. Para imprimir as comandas, você instala o Assistente de Impressão no computador da loja." },
   { q: "Como é o suporte?", a: "Pelo WhatsApp e pelo chat do painel, 7 dias por semana, com a nossa equipe." },
@@ -1083,7 +1083,7 @@ export default function Home() {
                   <li><b>15 dias grátis</b>, sem cartão, para montar a loja e vender de verdade.</li>
                   <li>Acabou o teste, você paga <b>R$ 200</b> e libera <b>1 mês</b> de uso.</li>
                   <li>Na <b>mesma data do mês seguinte</b>, renova pelo que vendeu no mês que passou: até R$ 10 mil, R$ 200; acima, R$ 400.</li>
-                  <li>Você paga <b>antes de usar</b>: sem boleto atrasado, sem juros, sem surpresa. Não renovou? A loja pausa e nada é cobrado.</li>
+                  <li>Você paga <b>antes de usar</b>: sem juros, sem surpresa. A cobrança chega 5 dias antes; venceu, ainda tem 5 dias de tolerância.</li>
                 </ol>
               </div>
 

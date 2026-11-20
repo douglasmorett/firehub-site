@@ -31,7 +31,7 @@ import { prisma } from "@/lib/prisma";
 import { calcMensalidade, FIREHUB_PLAN, percentualDoMes, percentualDaVenda, MES_DOS_2_POR_CENTO, VIRADA_DOS_2_POR_CENTO } from "@/lib/firehub-billing";
 import { getAsaasKey } from "@/lib/asaas";
 import { prepararAvisoDoBoleto } from "@/lib/aviso-do-boleto";
-import { bloqueioDaMensalidade, bloqueioDoCiclo, JUROS_AO_MES_PCT, MULTA_POR_ATRASO_PCT, vencimentoDoBoleto } from "@/lib/prazo-da-mensalidade";
+import { bloqueioDaMensalidade, bloqueioDoCiclo, ehCicloPrePago, JUROS_AO_MES_PCT, MARCA_DO_PRE_PAGO, MULTA_POR_ATRASO_PCT, vencimentoDoBoleto, vencimentoDoCiclo } from "@/lib/prazo-da-mensalidade";
 import { fimDoTeste } from "@/lib/fim-do-teste";
 import { anualCobreOMes } from "@/lib/black-november";
 import { modeloDaLoja, PRE_PAGO, valorDaRenovacao } from "@/lib/modelo-de-cobranca";
@@ -442,8 +442,10 @@ async function ensureCycle(franchiseeId: string, yearMonth: string) {
 
   const user = await prisma.user.findUnique({
     where: { id: franchiseeId },
-    select: CAMPOS_DA_ISENCAO,
+    select: { ...CAMPOS_DA_ISENCAO, createdAt: true, accountGroup: { select: { createdAt: true } } },
   });
+  // Plano pré-pago: não existe o mês do calendário (lib/pre-pago/cobranca.ts).
+  if (user && modeloDaLoja(user.createdAt, user.accountGroup?.createdAt) === "PRE_PAGO") return null;
 
   const isExempt = lojaIsenta(user);
 
@@ -472,13 +474,16 @@ async function ensureCycle(franchiseeId: string, yearMonth: string) {
 export async function recalcularCiclo(franchiseeId: string, yearMonth?: string) {
   const user = await prisma.user.findUnique({
     where: { id: franchiseeId },
-    select: { ...CAMPOS_DA_ISENCAO, storeTimezone: true, trialEndsAt: true },
+    select: { ...CAMPOS_DA_ISENCAO, storeTimezone: true, trialEndsAt: true, createdAt: true, accountGroup: { select: { createdAt: true } } },
   });
+  // Plano pré-pago: a cobrança é outra (lib/pre-pago/cobranca.ts); nada de 2% aqui.
+  if (user && modeloDaLoja(user.createdAt, user.accountGroup?.createdAt) === "PRE_PAGO") return null;
 
   const tz = user?.storeTimezone || "America/Sao_Paulo";
   const mes = yearMonth || getCurrentYearMonth(0, tz);
 
   const cycle = await ensureCycle(franchiseeId, mes);
+  if (!cycle) return null;
 
   const isExempt = lojaIsenta(user);
 
@@ -748,9 +753,13 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
     ? (await prisma.user.findUnique({ where: { id: cycle.franchisee.accountGroupId }, select: { createdAt: true } }))?.createdAt
     : null;
   if (modeloDaLoja(cycle.franchisee?.createdAt, principalCriadaEm) === "PRE_PAGO") {
+    // A linha já é uma cobrança do pré-pago (lib/pre-pago/cobranca.ts): não mexe.
+    if (cycle.notes?.startsWith(MARCA_DO_PRE_PAGO)) return { charged: false, message: "Cobrança do plano pré-pago" };
+    // Linha do calendário (criada pelo tráfego/totem): fecha sem boleto e
+    // GUARDA as taxas — a renovação seguinte cobra (montarCobranca).
     await prisma.franchiseeBillingCycle.update({
       where: { id: cycle.id },
-      data: { status: "PAID", amountDue: 0, amountPending: 0, closedAt: new Date(), notes: "Plano pré-pago: sem boleto de fim de mês" },
+      data: { status: "PAID", amountDue: 0, amountPending: 0, closedAt: new Date(), notes: "Plano pré-pago: sem boleto de fim de mês (taxas entram na renovação)" },
     });
     return { charged: false, message: "Plano pré-pago: sem boleto de fim de mês" };
   }
@@ -1188,13 +1197,15 @@ async function faturasEmAbertoDaLoja(franchiseeId: string) {
   const ciclos = await prisma.franchiseeBillingCycle.findMany({
     where: { franchiseeId, status: "CLOSED", amountPending: { gt: 0 } },
     orderBy: { yearMonth: "asc" },
-    select: { yearMonth: true, amountPending: true, asaasBoletoUrl: true, closedAt: true },
+    select: { yearMonth: true, amountPending: true, asaasBoletoUrl: true, closedAt: true, dueDate: true, notes: true },
   });
   const agora = new Date();
   return ciclos.map((c) => {
-    const venc = vencimentoDoBoleto(c.yearMonth);
+    const venc = vencimentoDoCiclo(c);
     return {
       yearMonth: c.yearMonth,
+      /** Cobrança do plano pré-pago (o vencimento é a data da loja, não o dia 5). */
+      prePago: ehCicloPrePago(c),
       valor: c.amountPending,
       /** "2026-10-05" — o vencimento impresso no boleto. */
       venceEm: venc.dia,
@@ -1231,25 +1242,33 @@ export type PrePagoNaTela = {
   emTeste: boolean;
   testeAte: string | null;
   valorDaAtivacao: number;
-  /** Venda dos últimos 30 dias (ou desde o cadastro, se a conta é mais nova). */
+  /** A próxima cobrança: a ativação (fim do teste) ou a renovação (mesma data todo mês). */
+  proxima: { tipo: "ATIVACAO" | "RENOVACAO"; vencimento: string };
+  /** Venda desde o início do período que a próxima renovação mede (ou dos últimos 30 dias, na ativação). */
   vendaRecente: number;
   diasDeVenda: number;
-  /** A venda recente levada a 30 dias — o ritmo de um mês cheio. */
+  /** A venda do período levada a 30 dias — o ritmo de um mês cheio. */
   ritmoDoMes: number;
   /** O que a renovação daria nesse ritmo. */
   renovacaoNoRitmo: number;
 };
 
-async function prePagoNaTela(franchiseeId: string, criadaEm: Date, trialEndsAt: Date | null): Promise<PrePagoNaTela> {
+async function prePagoNaTela(franchiseeId: string, criadaEm: Date, trialEndsAt: Date | null, tz: string): Promise<PrePagoNaTela> {
   const agora = new Date();
-  const de = new Date(Math.max(criadaEm.getTime(), agora.getTime() - 30 * 86_400_000));
+  const fimDoTeste = trialEndsAt || new Date(criadaEm.getTime() + 15 * 86_400_000);
+  const { proximaCobranca } = await import("@/lib/pre-pago/cobranca");
+  const prox = await proximaCobranca(franchiseeId, fimDoTeste, tz);
+  const de = prox.periodoAnterior
+    ? prox.periodoAnterior.de
+    : new Date(Math.max(criadaEm.getTime(), agora.getTime() - 30 * 86_400_000));
   const dias = Math.max(1, (agora.getTime() - de.getTime()) / 86_400_000);
   const venda = await vendasQueContam(franchiseeId, de, agora);
   const ritmo = (venda / dias) * 30;
   return {
-    emTeste: !!trialEndsAt && trialEndsAt > agora,
-    testeAte: trialEndsAt ? trialEndsAt.toISOString() : null,
+    emTeste: fimDoTeste > agora,
+    testeAte: fimDoTeste.toISOString(),
     valorDaAtivacao: PRE_PAGO.VALOR_DA_ATIVACAO,
+    proxima: { tipo: prox.tipo, vencimento: prox.vencimento.toISOString() },
     vendaRecente: parseFloat(venda.toFixed(2)),
     diasDeVenda: Math.round(dias),
     ritmoDoMes: Math.round(ritmo),
@@ -1307,7 +1326,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
   // Plano pré-pago (conta criada a partir de 23/11/2026): não existe o mês com
   // boleto no dia 1. A tela mostra a regra dele e o ritmo de venda.
   if (user && modeloDaLoja(user.createdAt, user.accountGroup?.createdAt) === "PRE_PAGO") {
-    const prePago = await prePagoNaTela(franchiseeId, user.createdAt, user.trialEndsAt ? new Date(user.trialEndsAt) : null);
+    const prePago = await prePagoNaTela(franchiseeId, user.createdAt, user.trialEndsAt ? new Date(user.trialEndsAt) : null, tz);
     return {
       yearMonth,
       totalSales: prePago.vendaRecente,

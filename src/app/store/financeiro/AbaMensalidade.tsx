@@ -84,6 +84,7 @@ export default function AbaMensalidade({ ciclo, tz }: { ciclo: VisaoDoCiclo | nu
   if (ciclo.prePago) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+        {faturas.length > 0 && <FaturasEmAberto faturas={faturas} />}
         <MensalidadePrePaga prePago={ciclo.prePago} tz={tz} />
         <CartaoIndiqueEGanhe />
       </div>
@@ -260,20 +261,22 @@ function MensalidadePrePaga({ prePago, tz }: { prePago: NonNullable<VisaoDoCiclo
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem", marginBottom: "1rem" }}>
         <div>
           <span style={{ background: "#FFF7E6", color: "#92400E", padding: "4px 12px", borderRadius: 20, fontSize: "0.78rem", fontWeight: 900 }}>
-            {prePago.emTeste && testeAte ? `🧪 Teste grátis até ${dataLonga(testeAte)}` : "💳 Plano pré-pago"}
+            {prePago.emTeste && testeAte ? `🧪 Teste grátis até ${dataLonga(testeAte)}` : `💳 Plano pré-pago · renova todo dia ${new Date(prePago.proxima.vencimento).toLocaleDateString("pt-BR", { day: "2-digit", timeZone: tz })}`}
           </span>
           <h2 style={{ fontSize: "1.45rem", fontWeight: 900, margin: "8px 0 2px", color: "#F8FAFC" }}>Sua mensalidade FireHub</h2>
           <p style={{ margin: 0, fontSize: "0.85rem", color: "#94A3B8" }}>
             {fmtR(PRE_PAGO.VALOR_ATE_O_LIMITE)} por mês vendendo até {limite} · {fmtR(PRE_PAGO.VALOR_ACIMA_DO_LIMITE)} acima de {limite}
           </p>
         </div>
-        {prePago.emTeste && testeAte && (
-          <div style={{ textAlign: "right", background: "#1E293B", padding: "12px 18px", borderRadius: 14, border: "1px solid #334155" }}>
-            <div style={{ fontSize: "0.72rem", color: "#94A3B8", fontWeight: 700 }}>PRIMEIRO PAGAMENTO</div>
-            <div style={{ fontSize: "1.8rem", fontWeight: 900, color: "#F8FAFC", marginTop: 2 }}>{fmtR(prePago.valorDaAtivacao)}</div>
-            <div style={{ fontSize: "0.78rem", color: "#CBD5E1" }}>em {dataLonga(testeAte)}, no fim do teste</div>
+        <div style={{ textAlign: "right", background: "#1E293B", padding: "12px 18px", borderRadius: 14, border: "1px solid #334155" }}>
+          <div style={{ fontSize: "0.72rem", color: "#94A3B8", fontWeight: 700 }}>{prePago.proxima.tipo === "ATIVACAO" ? "PRIMEIRO PAGAMENTO" : "PRÓXIMA RENOVAÇÃO"}</div>
+          <div style={{ fontSize: "1.8rem", fontWeight: 900, color: "#F8FAFC", marginTop: 2 }}>
+            {fmtR(prePago.proxima.tipo === "ATIVACAO" ? prePago.valorDaAtivacao : prePago.renovacaoNoRitmo)}
           </div>
-        )}
+          <div style={{ fontSize: "0.78rem", color: "#CBD5E1" }}>
+            em {dataLonga(new Date(prePago.proxima.vencimento))}{prePago.proxima.tipo === "ATIVACAO" ? ", no fim do teste" : " · pelo ritmo de agora, sem módulos"}
+          </div>
+        </div>
       </div>
 
       <div style={{ background: "#0B1220", borderRadius: 14, padding: "6px 16px 10px" }}>
@@ -281,7 +284,7 @@ function MensalidadePrePaga({ prePago, tz }: { prePago: NonNullable<VisaoDoCiclo
         {passo(1, "Teste grátis", testeAte ? `Até ${dataLonga(testeAte)} você usa tudo sem pagar nada.` : "Você usa tudo sem pagar nada durante o teste.")}
         {passo(2, `Acabou o teste: ${fmtR(prePago.valorDaAtivacao)} libera 1 mês`, "Você paga antes de usar. Sem boleto de fim de mês, sem juros, sem surpresa.")}
         {passo(3, "Renova na mesma data todo mês", <>O valor sai do que você vendeu no mês que passou: até {limite}, {fmtR(PRE_PAGO.VALOR_ATE_O_LIMITE)}; acima de {limite}, {fmtR(PRE_PAGO.VALOR_ACIMA_DO_LIMITE)}. Contam os pedidos de todos os canais, pelo valor cheio.</>)}
-        {passo(4, "Não renovou? A loja pausa", "Painel, cardápio, robô e integrações param até o pagamento, e nada é cobrado. Seus dados continuam guardados; pagou, volta na hora.")}
+        {passo(4, "Venceu? Mais 5 dias de tolerância", "A cobrança chega 5 dias antes da data. Venceu, a loja segue funcionando por mais 5 dias; depois disso pausa até o pagamento, e a sua data não muda. A ativação, no fim do teste, não tem tolerância.")}
       </div>
 
       <div style={{ marginTop: "1rem", background: "#1E293B", borderRadius: 14, padding: "14px 16px", border: "1px solid #334155", display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
@@ -316,7 +319,7 @@ function FaturasEmAberto({ faturas }: { faturas: VisaoDoCiclo["faturasEmAberto"]
                 {f.vencida ? "FATURA VENCIDA" : "FATURA EM ABERTO"}
               </div>
               <div style={{ fontSize: "1.25rem", fontWeight: 900, color: "#0F172A", marginTop: 2 }}>
-                Mensalidade de {mesPorExtenso(f.yearMonth)} · {fmtR(f.valor)}
+                {f.prePago ? <>Plano FireHub (uso a partir de {diaEMes(f.venceEm)})</> : <>Mensalidade de {mesPorExtenso(f.yearMonth)}</>} · {fmtR(f.valor)}
               </div>
               <div style={{ fontSize: "0.84rem", color: "#475569", marginTop: 4 }}>
                 {dias > 0
@@ -325,7 +328,7 @@ function FaturasEmAberto({ faturas }: { faturas: VisaoDoCiclo["faturasEmAberto"]
                     ? <>Vence <strong>hoje ({diaEMes(f.venceEm)})</strong>.</>
                     // `bloqueiaEm` é o INSTANTE da trava (00h do dia 11): o último dia
                     // de uso é o anterior a ele.
-                    : <>Venceu em <strong>{diaEMes(f.venceEm)}</strong> e já está com juros e multa. Sem o pagamento, o sistema trava depois do dia {new Date(new Date(f.bloqueiaEm).getTime() - 1).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" })}.</>}
+                    : <>Venceu em <strong>{diaEMes(f.venceEm)}</strong>{f.prePago ? "" : " e já está com juros e multa"}. Sem o pagamento, o sistema trava depois do dia {new Date(new Date(f.bloqueiaEm).getTime() - 1).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" })}.</>}
               </div>
             </div>
             {f.boletoUrl ? (

@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { estadoAoVivoDoRobo } from "@/lib/whatsapp-estado";
 import { atividadeDasLojas, textoDoUltimoPedido } from "@/lib/atividade-da-loja";
-import { vencimentoDoBoleto } from "@/lib/prazo-da-mensalidade";
+import { vencimentoDoCiclo } from "@/lib/prazo-da-mensalidade";
 import { modeloDaLoja } from "@/lib/modelo-de-cobranca";
 
 /**
@@ -56,7 +56,7 @@ export async function estadoDaLojaParaSuporte(userId: string, opcoes: { aoVivo?:
       : prisma.franchiseeBillingCycle.findFirst({
           where: { franchiseeId: u.id, status: "CLOSED", amountPending: { gt: 0 } },
           orderBy: { closedAt: "desc" },
-          select: { yearMonth: true, amountPending: true, asaasBoletoUrl: true },
+          select: { yearMonth: true, amountPending: true, asaasBoletoUrl: true, dueDate: true, notes: true },
         }).catch(() => null),
     prisma.$queryRaw<{ c: boolean | null }[]>`SELECT "brendiConnected" AS c FROM "User" WHERE id = ${u.id}`.then((r) => r[0]?.c === true).catch(() => false),
   ]);
@@ -99,8 +99,8 @@ export async function estadoDaLojaParaSuporte(userId: string, opcoes: { aoVivo?:
           // O `dueDate` é o BLOQUEIO (fim do dia 10), não o vencimento: o robô
           // dizia "vence 11/10" de um boleto que vencia em 05/10. A folga até o
           // bloqueio fica fora de propósito: não é prazo para pagar.
-          vencimento: vencimentoDoBoleto(fatura.yearMonth).dia,
-          vencida: Date.now() >= vencimentoDoBoleto(fatura.yearMonth).vencidoDepoisDe.getTime(),
+          vencimento: vencimentoDoCiclo(fatura).dia,
+          vencida: Date.now() >= vencimentoDoCiclo(fatura).vencidoDepoisDe.getTime(),
           link: fatura.asaasBoletoUrl || null,
         }
       : null,

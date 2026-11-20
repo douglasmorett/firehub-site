@@ -70,6 +70,25 @@ export function dataDaRenovacao(liberadaEm: Date | string, n = 1, timeZone = "Am
   return new Date(Date.UTC(ano, alvoMes, diaAlvo, Number(partes.hour), Number(partes.minute), Number(partes.second)) - deslocamento);
 }
 
+/**
+ * Conta pré-paga que terminou o teste e ainda não tem NENHUMA cobrança do
+ * plano (nem emitida): fica travada até ativar — "paga pra usar". Isenta
+ * (planPercent 0) nunca trava. Teste sem data = 15 dias do cadastro.
+ */
+export function prePagoSemAtivacao(loja: {
+  criadaEm: Date | string;
+  principalCriadaEm?: Date | string | null;
+  trialEndsAt?: Date | string | null;
+  planPercent?: number | null;
+  temCobranca: boolean;
+}, agora: Date = new Date()): boolean {
+  if (loja.planPercent === 0) return false;
+  if (modeloDaLoja(loja.criadaEm, loja.principalCriadaEm) !== "PRE_PAGO") return false;
+  if (loja.temCobranca) return false;
+  const fim = loja.trialEndsAt ? new Date(loja.trialEndsAt) : new Date(new Date(loja.criadaEm).getTime() + 15 * 86_400_000);
+  return agora >= fim;
+}
+
 const reais = (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const limite = `R$ ${PRE_PAGO.LIMITE.toLocaleString("pt-BR")}`;
 

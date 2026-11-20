@@ -83,9 +83,10 @@ export function bloqueioDaMensalidade(yearMonth: string, fechadoEm: Date = new D
  * à mão em `PRAZO_DADO_A_MAO`; sem ele vale a regra de sempre.
  */
 export function bloqueioDoCiclo(
-  ciclo: { yearMonth: string; closedAt?: Date | string | null },
+  ciclo: CicloComPrazo,
   emailDaLoja?: string | null,
 ): Date {
+  if (ehCicloPrePago(ciclo)) return bloqueioDoPrePago(ciclo);
   const doMes = bloqueioDaMensalidade(ciclo.yearMonth, ciclo.closedAt ? new Date(ciclo.closedAt) : new Date(0));
   const email = emailDaLoja?.toLowerCase().replace(/\s+/g, "");
   const ateODia = email ? PRAZO_DADO_A_MAO[`${email}:${ciclo.yearMonth}`] : undefined;
@@ -106,6 +107,41 @@ const PRAZO_DADO_A_MAO: Record<string, number> = {
   // Showrrascão, mensalidade de outubro/2026: dono liberou até 12/11 (07/11) e depois até 16/11 (pedido em 12/11/2026).
   "showrrascaodelivery@gmail.com:2026-10": 16,
 };
+
+// ── Plano pré-pago (lib/modelo-de-cobranca.ts) ─────────────────────────────
+//
+// O ciclo da conta pré-paga não segue o calendário: o vencimento é a data da
+// própria loja, gravada no `dueDate`, e o `notes` começa com a marca. Douglas,
+// 20/11/2026: a cobrança sai 5 dias antes; venceu, mais 5 dias de tolerância
+// sem bloqueio ("só uma moral que a gente deu"); a ATIVAÇÃO (fim do teste) não
+// tem tolerância — "é o start".
+
+export const MARCA_DO_PRE_PAGO = "pre-pago:";
+export const MARCA_DA_ATIVACAO = `${MARCA_DO_PRE_PAGO}ativacao`;
+export const MARCA_DA_RENOVACAO = `${MARCA_DO_PRE_PAGO}renovacao`;
+export const TOLERANCIA_DO_PRE_PAGO_DIAS = 5;
+export const AVISO_ANTES_DO_PRE_PAGO_DIAS = 5;
+
+type CicloComPrazo = { yearMonth: string; closedAt?: Date | string | null; dueDate?: Date | string | null; notes?: string | null };
+
+/** Ciclo de cobrança do plano pré-pago (tem a data dele no `dueDate`). */
+export function ehCicloPrePago(ciclo: CicloComPrazo | null | undefined): boolean {
+  return !!ciclo?.dueDate && !!ciclo.notes?.startsWith(MARCA_DO_PRE_PAGO);
+}
+
+/** Vencimento de qualquer ciclo: o do pré-pago é a data gravada; o resto, dia 5 do mês seguinte. */
+export function vencimentoDoCiclo(ciclo: CicloComPrazo): { dia: string; vencidoDepoisDe: Date } {
+  if (!ehCicloPrePago(ciclo)) return vencimentoDoBoleto(ciclo.yearMonth);
+  const venc = new Date(ciclo.dueDate!);
+  return { dia: diaEmBrasilia(venc), vencidoDepoisDe: venc };
+}
+
+/** Quando o ciclo pré-pago trava a loja: ativação no vencimento; renovação 5 dias depois. */
+function bloqueioDoPrePago(ciclo: CicloComPrazo): Date {
+  const venc = new Date(ciclo.dueDate!);
+  if (ciclo.notes?.startsWith(MARCA_DA_ATIVACAO)) return venc;
+  return new Date(venc.getTime() + TOLERANCIA_DO_PRE_PAGO_DIAS * 86_400_000);
+}
 
 /** "2026-10-05" → "05/10". */
 export function diaEMes(isoDia: string): string {

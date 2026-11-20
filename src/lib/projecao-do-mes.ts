@@ -14,6 +14,7 @@ import {
   lojasExtrasDeMarketplace, detectarUsoDaLoja,
 } from "@/lib/billing";
 import { FIREHUB_PLAN, VIRADA_DOS_2_POR_CENTO } from "@/lib/firehub-billing";
+import { modeloDaLoja, PRE_PAGO, valorDaRenovacao } from "@/lib/modelo-de-cobranca";
 import {
   DIA, DIAS_PARA_PARADA, chanceDePagar, diaNoFuso, faixaDaVenda, mesCheioNoRitmo,
   projetarMes, ritmoPorDia, somarDias, telefoneDoWhatsapp, totaisDaProjecao,
@@ -67,6 +68,7 @@ export async function montarProjecao(agora = new Date()) {
       select: {
         id: true, name: true, storeName: true, email: true, city: true, storePhone: true,
         createdAt: true, trialEndsAt: true, planPercent: true, isFranqueadoHakim: true,
+        accountGroup: { select: { createdAt: true } },
         ambassadorAccount: { select: { active: true } },
         ifoodConnected: true, food99Connected: true, jotajaConnected: true, chatbotConfig: true,
         accountGroupId: true, vendedor: { select: { name: true } },
@@ -162,7 +164,14 @@ export async function montarProjecao(agora = new Date()) {
     mesSeguinteNoRitmo += mesCheioNoRitmo(porDia, mesSeguinte);
 
     const inicio = inicioDaCobranca(monthStart, monthEnd, l.trialEndsAt);
-    const p = projetarMes({ mes, contaAntesDaVirada: s.antes, contaDepois: s.depois, porDia, inicioDaCobranca: inicio, agora, fimDoMes: monthEnd });
+    const pPercentual = projetarMes({ mes, contaAntesDaVirada: s.antes, contaDepois: s.depois, porDia, inicioDaCobranca: inicio, agora, fimDoMes: monthEnd });
+    // Plano pré-pago (contas desde 23/11/2026): R$ 200 na ativação (o teste acaba
+    // neste mês) ou a renovação pelo ritmo de um mês cheio (lib/modelo-de-cobranca.ts).
+    const prePago = modeloDaLoja(l.createdAt, l.accountGroup?.createdAt) === "PRE_PAGO";
+    const ativaNoMes = !!l.trialEndsAt && new Date(l.trialEndsAt) >= monthStart;
+    const p = prePago
+      ? { ...pPercentual, mensalidade: inicio ? (ativaNoMes ? PRE_PAGO.VALOR_DA_ATIVACAO : valorDaRenovacao(porDia * 30)) : 0 }
+      : pPercentual;
     if (p.mensalidade <= 0) continue;
     linhas.push(linhaDaLoja(l, {
       situacao: inicio && inicio <= agora ? "PAGANDO" : "TESTE_ACABA",

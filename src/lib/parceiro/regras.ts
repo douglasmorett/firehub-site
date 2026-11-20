@@ -21,7 +21,7 @@
  */
 
 // Vencimento (dia 5) e bloqueio (depois do dia 10) moram em lib/prazo-da-mensalidade.ts.
-import { bloqueioDoCiclo, mesSeguinte, vencimentoDoBoleto } from "../prazo-da-mensalidade";
+import { bloqueioDoCiclo, mesSeguinte, vencimentoDoBoleto, vencimentoDoCiclo } from "../prazo-da-mensalidade";
 
 export type Papel = "EMBAIXADOR" | "REDE" | "VENDEDOR";
 export const PAPEIS: Papel[] = ["EMBAIXADOR", "REDE", "VENDEDOR"];

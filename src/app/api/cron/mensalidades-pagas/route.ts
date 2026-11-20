@@ -3,7 +3,7 @@ import { verifyCronAuth } from "@/lib/cron-auth";
 import { conferirMensalidadesNoAsaas } from "@/lib/pagamento-da-mensalidade";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 /**
  * A cada 30 minutos (scripts/cron-runner.js): pergunta ao Asaas por cada boleto
@@ -19,10 +19,15 @@ export async function GET(req: NextRequest) {
     const { conferirBlackNovemberNoAsaas } = await import("@/lib/black-november-no-banco");
     const anuaisPagos = await conferirBlackNovemberNoAsaas().catch((e) => { console.error(`[Black November] Conferência falhou: ${e?.message}`); return 0; });
     if (anuaisPagos > 0) console.log(`[Black November] Conferência: ${anuaisPagos} anuais pagos agora.`);
+    // Plano pré-pago (contas desde 23/11/2026): emite a ativação e a renovação
+    // que entraram na janela de 5 dias antes do vencimento (lib/pre-pago/cobranca.ts).
+    const { emitirCobrancasPrePagas } = await import("@/lib/pre-pago/cobranca");
+    const prePago = await emitirCobrancasPrePagas().catch((e) => { console.error(`[Pré-pago] Varredura falhou: ${e?.message}`); return { emitidas: 0, erros: 1, log: [] as string[] }; });
+    if (prePago.emitidas > 0 || prePago.erros > 0) console.log(`[Pré-pago] Varredura: ${prePago.emitidas} emitidas, ${prePago.erros} erros. ${prePago.log.join(" · ")}`);
     if (r.pagos > 0 || r.erros.length > 0) {
       console.log(`[Mensalidade] Conferência: ${r.conferidos} boletos, ${r.pagos} pagos agora, ${r.erros.length} erros.`);
     }
-    return NextResponse.json({ ok: true, ...r, anuaisPagos });
+    return NextResponse.json({ ok: true, ...r, anuaisPagos, prePago: { emitidas: prePago.emitidas, erros: prePago.erros } });
   } catch (err: any) {
     console.error(`[Mensalidade] Conferência falhou: ${err?.message}`);
     return NextResponse.json({ ok: false, error: err?.message }, { status: 500 });

@@ -29,6 +29,7 @@ export async function POST(req: Request) {
 
   const r = await definirIsencao(userId, isenta);
   if (!r.ok) return NextResponse.json({ error: r.motivo }, { status: 400 });
-  console.log(`[Admin] Isenção ${isenta ? "LIGADA" : "DESLIGADA"} para ${userId} por ${session.user?.email} · ciclo ${r.ciclo.yearMonth} devido R$ ${r.ciclo.amountDue.toFixed(2)}`);
-  return NextResponse.json({ ok: true, isenta, devido: r.ciclo.amountDue, mes: r.ciclo.yearMonth });
+  // Loja do plano pré-pago não tem ciclo de mês (lib/pre-pago/cobranca.ts).
+  console.log(`[Admin] Isenção ${isenta ? "LIGADA" : "DESLIGADA"} para ${userId} por ${session.user?.email} · ${r.ciclo ? `ciclo ${r.ciclo.yearMonth} devido R$ ${r.ciclo.amountDue.toFixed(2)}` : "plano pré-pago"}`);
+  return NextResponse.json({ ok: true, isenta, devido: r.ciclo?.amountDue ?? 0, mes: r.ciclo?.yearMonth ?? null });
 }

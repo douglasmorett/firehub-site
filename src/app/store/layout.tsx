@@ -9,7 +9,9 @@ import ImpersonationBanner from "@/components/ImpersonationBanner";
 import { prisma } from "@/lib/prisma";
 import { caixaAbertoPara, caixaPorUsuarioLigado } from "@/lib/caixa-por-usuario";
 import { diasDeTesteRestantes } from "@/lib/fim-do-teste";
-import { diaEMes, diasAte, vencimentoDoBoleto } from "@/lib/prazo-da-mensalidade";
+import { bloqueioDoCiclo, diaEMes, diaEmBrasilia, diasAte, ehCicloPrePago, MARCA_DA_ATIVACAO, MARCA_DO_PRE_PAGO, vencimentoDoCiclo } from "@/lib/prazo-da-mensalidade";
+import { PRE_PAGO, prePagoSemAtivacao, VIRADA_DO_PRE_PAGO } from "@/lib/modelo-de-cobranca";
+import AtivarPlano from "@/components/customer/AtivarPlano";
 import { cicloBloqueia, ehLojaEspecial } from "@/lib/loja-bloqueada";
 import HideOnCompras from "@/components/HideOnCompras";
 import AvisoRoboDesconectado from "@/components/customer/AvisoRoboDesconectado";
@@ -122,6 +124,12 @@ export default async function StoreLayout({ children }: { children: React.ReactN
     /** Dias de calendário até o vencimento; negativo depois dele. */
     diasParaVencer: number;
     ocorrencia: string;
+    /** Cobrança do plano pré-pago (lib/pre-pago/cobranca.ts): ativação ou renovação. */
+    prePago?: "ATIVACAO" | "RENOVACAO" | null;
+    /** Pré-pago que terminou o teste sem cobrança emitida: a tela gera na hora. */
+    semCobranca?: boolean;
+    /** "15/12" — até quando a renovação vencida ainda não trava (5 dias de tolerância). */
+    bloqueiaEm?: string;
   } | null = null;
   const targetFranchiseeId = storeOwner?.id || user?.id;
   const userEmailClean = (storeOwner?.email || user?.email)?.toLowerCase().replace(/\s+/g, "");
@@ -151,21 +159,26 @@ export default async function StoreLayout({ children }: { children: React.ReactN
         // 05/10, a loja lia "faltam 9 dias". A folga até o dia 10 não aparece
         // para a loja — o prazo é o dia 5, e depois dele o boleto já cobra
         // juros e multa (dono, 02/10/2026).
-        const venc = vencimentoDoBoleto(closedCycle.yearMonth);
+        const venc = vencimentoDoCiclo(closedCycle);
         const now = new Date();
         const isOverdue = cicloBloqueia(closedCycle, userEmailClean, now);
         const diasParaVencer = diasAte(venc.dia, now);
+        const prePago = ehCicloPrePago(closedCycle)
+          ? (closedCycle.notes!.startsWith(MARCA_DA_ATIVACAO) ? "ATIVACAO" as const : "RENOVACAO" as const)
+          : null;
 
         pendingPayment = {
           amount: closedCycle.amountPending,
           url: closedCycle.asaasBoletoUrl,
           isOverdue,
           venceEm: diaEMes(venc.dia),
-          referenteA: (() => {
+          referenteA: prePago ? `uso a partir de ${diaEMes(venc.dia)}` : (() => {
             const [ano, mes] = closedCycle.yearMonth.split("-").map(Number);
             const nome = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"][mes - 1];
             return nome ? `${nome} de ${ano}` : closedCycle.yearMonth;
           })(),
+          prePago,
+          bloqueiaEm: prePago ? diaEMes(diaEmBrasilia(bloqueioDoCiclo(closedCycle))) : undefined,
           diasParaVencer,
           // Para o "não ver mais" (components/customer/NaoVerMais.tsx): cala
           // ESTA fatura — e volta uma vez perto do vencimento e outra depois
@@ -173,6 +186,28 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           // bloqueio sem aviso é pior para a loja do que uma faixa a mais.
           ocorrencia: `${closedCycle.id}:${diasParaVencer < 0 ? "vencida" : diasParaVencer <= 3 ? "reta-final" : "inicio"}`,
         };
+      }
+
+      // Plano pré-pago: o teste acabou e ainda não há cobrança nenhuma (a loja
+      // não usou no teste, então a varredura não emitiu). Trava e oferece ativar.
+      // (Conta criada antes da virada nunca é pré-paga: nem consulta.)
+      if (!pendingPayment && storeOwner?.createdAt && new Date(storeOwner.createdAt) >= VIRADA_DO_PRE_PAGO) {
+        const dono = await prisma.user.findUnique({
+          where: { id: targetFranchiseeId },
+          select: { createdAt: true, trialEndsAt: true, planPercent: true, accountGroup: { select: { createdAt: true } } },
+        });
+        const base = { criadaEm: dono!.createdAt, principalCriadaEm: dono!.accountGroup?.createdAt, trialEndsAt: dono!.trialEndsAt, planPercent: dono!.planPercent };
+        if (dono && prePagoSemAtivacao({ ...base, temCobranca: false })) {
+          const temCobranca = (await prisma.franchiseeBillingCycle.count({ where: { franchiseeId: targetFranchiseeId, notes: { startsWith: MARCA_DO_PRE_PAGO } } })) > 0;
+          if (!temCobranca) {
+            const fim = dono.trialEndsAt ? new Date(dono.trialEndsAt) : new Date(dono.createdAt.getTime() + 15 * 86_400_000);
+            pendingPayment = {
+              amount: PRE_PAGO.VALOR_DA_ATIVACAO, url: null, isOverdue: true,
+              venceEm: diaEMes(diaEmBrasilia(fim)), referenteA: "", diasParaVencer: -1,
+              ocorrencia: "pre-pago:sem-cobranca", prePago: "ATIVACAO", semCobranca: true,
+            };
+          }
+        }
       }
     } catch (err) {
       console.error("[StoreLayout] Erro ao verificar pagamento:", err);
@@ -329,7 +364,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
         )}
 
         {/* Banner: Pagamento pendente DENTRO DO PRAZO */}
-        {pendingPayment && !pendingPayment.isOverdue && !isInTrial && (
+        {pendingPayment && !pendingPayment.isOverdue && (!isInTrial || pendingPayment.prePago) && (
           <HideOnCompras>
             <AvisoDispensavel aviso="cobranca-pendente" ocorrencia={pendingPayment.ocorrencia}>
             <div style={{
@@ -340,8 +375,10 @@ export default async function StoreLayout({ children }: { children: React.ReactN
               display: "flex", alignItems: "center", justifyContent: "center", gap: 10, flexWrap: "wrap",
             }}>
               <span>
-                ⚠️ Mensalidade de R$ {pendingPayment.amount.toFixed(2).replace(".", ",")}{" "}
-                {pendingPayment.diasParaVencer > 0 ? (
+                ⚠️ {pendingPayment.prePago === "ATIVACAO" ? "Ativação do seu plano" : pendingPayment.prePago === "RENOVACAO" ? "Renovação do seu plano" : "Mensalidade"} de R$ {pendingPayment.amount.toFixed(2).replace(".", ",")}{" "}
+                {pendingPayment.prePago && pendingPayment.diasParaVencer < 0 ? (
+                  <>venceu em <strong>{pendingPayment.venceEm}</strong>. Pague até <strong>{pendingPayment.bloqueiaEm}</strong> para o sistema não pausar.</>
+                ) : pendingPayment.diasParaVencer > 0 ? (
                   <>vence em <strong>{pendingPayment.venceEm}</strong> ({pendingPayment.diasParaVencer === 1 ? "falta 1 dia" : `faltam ${pendingPayment.diasParaVencer} dias`}).</>
                 ) : pendingPayment.diasParaVencer === 0 ? (
                   <>vence <strong>hoje ({pendingPayment.venceEm})</strong>.</>
@@ -394,27 +431,36 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           }}>
             <div style={{ background: "#fff", borderRadius: 20, padding: "2.5rem", maxWidth: 500, width: "100%", textAlign: "center", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.3)" }}>
               <div style={{ fontSize: "3.5rem", marginBottom: "0.75rem" }}>🔒</div>
-              <h2 style={{ fontSize: "1.6rem", fontWeight: 900, color: "#0F172A", marginBottom: "0.5rem" }}>Sua conta está bloqueada</h2>
+              <h2 style={{ fontSize: "1.6rem", fontWeight: 900, color: "#0F172A", marginBottom: "0.5rem" }}>
+                {pendingPayment!.prePago === "ATIVACAO" ? "Seu teste grátis terminou" : pendingPayment!.prePago === "RENOVACAO" ? "Seu plano está pausado" : "Sua conta está bloqueada"}
+              </h2>
               {/* Sem o valor e sem falar de juros: tudo isso está no boleto. A
                   loja abre a fatura para ver quanto é — e o Asaas registra que
                   ela abriu (Douglas, 09/10/2026). */}
               <p style={{ color: "#64748B", fontSize: "0.95rem", lineHeight: 1.6, marginBottom: "1.5rem" }}>
-                A mensalidade referente a <strong>{pendingPayment!.referenteA}</strong> venceu em {pendingPayment!.venceEm} e não foi paga. Pague o boleto para liberar o sistema.
+                {pendingPayment!.prePago === "ATIVACAO" ? (
+                  <>O teste terminou em {pendingPayment!.venceEm}. Pague <strong>R$ {pendingPayment!.amount.toFixed(2).replace(".", ",")}</strong> para ativar o plano e liberar 1 mês de uso. Por Pix, libera em poucos minutos.</>
+                ) : pendingPayment!.prePago === "RENOVACAO" ? (
+                  <>A renovação do seu plano venceu em {pendingPayment!.venceEm} e não foi paga. Pague para liberar o sistema: a sua data de renovação continua a mesma.</>
+                ) : (
+                  <>A mensalidade referente a <strong>{pendingPayment!.referenteA}</strong> venceu em {pendingPayment!.venceEm} e não foi paga. Pague o boleto para liberar o sistema.</>
+                )}
               </p>
 
               <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                {pendingPayment!.semCobranca ? <AtivarPlano /> : null}
                 {/* Abre a FATURA do Asaas (boleto, Pix e cartão) em outra aba.
                     Levava a /store/financeiro#fatura — que fica debaixo deste
                     mesmo bloqueio e nem tem a seção: a loja clicava em pagar e
                     continuava presa, sem ver o boleto (09/10/2026). */}
-                <a
+                {!pendingPayment!.semCobranca && <a
                   href={pendingPayment!.url || "/store/financeiro"}
                   target={pendingPayment!.url ? "_blank" : undefined}
                   rel="noopener noreferrer"
                   style={{ width: "100%", background: "#C92E09", color: "#fff", padding: "14px", borderRadius: 12, fontSize: "1rem", fontWeight: 800, textDecoration: "none", display: "inline-block" }}
                 >
                   ⚡ Pagar e Liberar Conta →
-                </a>
+                </a>}
                 <p style={{ margin: 0, fontSize: "0.8rem", color: "#475569", lineHeight: 1.5 }}>
                   Pagando por <strong>Pix</strong> na fatura, o sistema libera sozinho em poucos minutos.
                   Boleto leva de 1 a 3 dias úteis para o banco compensar.
