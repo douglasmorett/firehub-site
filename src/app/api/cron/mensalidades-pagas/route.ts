@@ -19,6 +19,10 @@ export async function GET(req: NextRequest) {
     const { conferirBlackNovemberNoAsaas } = await import("@/lib/black-november-no-banco");
     const anuaisPagos = await conferirBlackNovemberNoAsaas().catch((e) => { console.error(`[Black November] Conferência falhou: ${e?.message}`); return 0; });
     if (anuaisPagos > 0) console.log(`[Black November] Conferência: ${anuaisPagos} anuais pagos agora.`);
+    // O anual oferecido na fatura (lib/plano-anual-no-banco.ts).
+    const { conferirAnuaisNoAsaas } = await import("@/lib/plano-anual-no-banco");
+    const planosAnuaisPagos = await conferirAnuaisNoAsaas().catch((e) => { console.error(`[Plano anual] Conferência falhou: ${e?.message}`); return 0; });
+    if (planosAnuaisPagos > 0) console.log(`[Plano anual] Conferência: ${planosAnuaisPagos} anuais pagos agora.`);
     // Plano pré-pago (contas desde 23/11/2026): emite a ativação e a renovação
     // que entraram na janela de 5 dias antes do vencimento (lib/pre-pago/cobranca.ts).
     const { emitirCobrancasPrePagas } = await import("@/lib/pre-pago/cobranca");
@@ -27,7 +31,7 @@ export async function GET(req: NextRequest) {
     if (r.pagos > 0 || r.erros.length > 0) {
       console.log(`[Mensalidade] Conferência: ${r.conferidos} boletos, ${r.pagos} pagos agora, ${r.erros.length} erros.`);
     }
-    return NextResponse.json({ ok: true, ...r, anuaisPagos, prePago: { emitidas: prePago.emitidas, erros: prePago.erros } });
+    return NextResponse.json({ ok: true, ...r, anuaisPagos, planosAnuaisPagos, prePago: { emitidas: prePago.emitidas, erros: prePago.erros } });
   } catch (err: any) {
     console.error(`[Mensalidade] Conferência falhou: ${err?.message}`);
     return NextResponse.json({ ok: false, error: err?.message }, { status: 500 });

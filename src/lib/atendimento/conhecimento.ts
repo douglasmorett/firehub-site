@@ -55,6 +55,12 @@ EXISTEM DOIS JEITOS DE PAGAR, pela data em que a conta foi criada. Antes de fala
 - Desde 04/10/2026, pedido cancelado também entra na conta da mensalidade (passou pelo sistema e gerou custo). Rascunho do robô que não virou pedido e pedido do totem que não foi pago não contam.
 - Essas lojas NÃO mudam de plano: se perguntarem do preço novo que viram no site, o plano delas continua o mesmo.
 
+### Plano anual (para quem paga R$ 400, nos dois planos)
+- Na hora de pagar a fatura de R$ 400, aparece em Financeiro › Mensalidade a opção "Pagar o ano": 12 meses de mensalidade por R$ 4.000 em vez de R$ 4.800 (2 mensalidades de presente, R$ 800 de economia).
+- A fatura em aberto já entra nos 12 meses: paga o valor dela + R$ 3.600, de uma vez (Pix, boleto ou cartão).
+- Nos 12 meses não paga mensalidade, venda o quanto vender. Módulos à parte (Bill, reservas, cotação, app etc.), lojas extras, tráfego e totem continuam na fatura de cada mês. Sem devolução.
+- Só aparece para quem paga R$ 400; quem paga menos não tem a opção.
+
 ## Teste grátis
 - 15 dias completos, sem cartão de crédito, sem compromisso, sem multa. Todas as funções liberadas.
 - Cadastro em menos de 2 minutos: firehubfood.com.br/cadastro — o cardápio fica no ar na hora.

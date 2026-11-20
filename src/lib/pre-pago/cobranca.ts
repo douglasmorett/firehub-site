@@ -29,6 +29,7 @@ import { splitDoBoletoNoAsaas, TETO_DE_SPLIT } from "@/lib/parceiro/regras";
 import { marcarSplitRecusado } from "@/lib/embaixador-do-curso";
 import { lojaIsenta, lojasExtrasDeMarketplace, vendasQueContam } from "@/lib/billing";
 import { dataDaRenovacao, modeloDaLoja, PRE_PAGO, valorDaRenovacao } from "@/lib/modelo-de-cobranca";
+import { anualCobreOMes } from "@/lib/plano-anual";
 import { AVISO_ANTES_DO_PRE_PAGO_DIAS, diaEmBrasilia, MARCA_DA_ATIVACAO, MARCA_DA_RENOVACAO, MARCA_DO_PRE_PAGO } from "@/lib/prazo-da-mensalidade";
 
 const DIA = 86_400_000;
@@ -68,7 +69,7 @@ export async function proximaCobranca(lojaId: string, fimDoTeste: Date, tz: stri
 type Linha = { texto: string; valor: number };
 
 /** O que vai na cobrança. Sem banco do Asaas: dá para simular. */
-export async function montarCobranca(lojaId: string, prox: Proxima, loja: { ifoodConnected?: boolean | null; food99Connected?: boolean | null }) {
+export async function montarCobranca(lojaId: string, prox: Proxima, loja: { ifoodConnected?: boolean | null; food99Connected?: boolean | null; onboardingData?: unknown }) {
   // Tráfego pago e totem caem no ciclo do mês do calendário (rotas do Meta Ads
   // e o fechamento): cada mês entra UMA vez, na cobrança emitida no mês seguinte.
   const doMesAnterior = await prisma.franchiseeBillingCycle.findUnique({
@@ -84,8 +85,13 @@ export async function montarCobranca(lojaId: string, prox: Proxima, loja: { ifoo
   }
   const { de, ate } = prox.periodoAnterior!;
   const base = await vendasQueContam(lojaId, de, ate);
-  const mensalidade = valorDaRenovacao(base);
-  const linhas: Linha[] = [{ texto: `Mensalidade (vendeu ${fmt(base)} no período)`, valor: mensalidade }];
+  // Renovação coberta por um plano anual pago (lib/plano-anual.ts): a mensalidade
+  // já foi paga; módulos, lojas extras e taxas seguem.
+  const noAnual = anualCobreOMes(loja.onboardingData, mesDoVencimento(prox.vencimento));
+  const mensalidade = noAnual ? 0 : valorDaRenovacao(base);
+  const linhas: Linha[] = [noAnual
+    ? { texto: "Mensalidade paga no plano anual", valor: 0 }
+    : { texto: `Mensalidade (vendeu ${fmt(base)} no período)`, valor: mensalidade }];
 
   const modulos: [string, () => Promise<number>][] = [
     ["Bill, seu assessor", async () => (await import("@/lib/assessor/assinatura")).cobrancaDoAssessorNoMes(lojaId, de, ate)],
@@ -154,9 +160,13 @@ export async function emitirCobrancaPrePaga(lojaId: string, opcoes: { forcar?: b
     status: "CLOSED", closedAt: agora, dueDate: prox.vencimento,
     notes: `${marca} | ${linhas.map((l) => `${l.texto} ${fmt(l.valor)}`).join(" + ")}`,
   };
+  // Nada a pagar (mensalidade no plano anual e nenhum item à parte): fica a
+  // linha da renovação, paga, para a próxima data seguir contando dela.
+  if (total < 1) Object.assign(dados, { status: "PAID", amountPending: 0 });
   const ciclo = existente
     ? await prisma.franchiseeBillingCycle.update({ where: { id: existente.id }, data: dados })
     : await prisma.franchiseeBillingCycle.create({ data: { franchiseeId: lojaId, yearMonth, ...dados } });
+  if (total < 1) return { ok: true, motivo: "renovação sem nada a pagar (plano anual)", cicloId: ciclo.id, valor: 0, url: null };
 
   const chave = getAsaasKey();
   if (!chave || !loja.cpfCnpj) {

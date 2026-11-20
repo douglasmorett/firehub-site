@@ -123,6 +123,10 @@ export async function registrarCobrancaDaMensalidade(c: CobrancaDoAsaas, evento?
     // passa de novo por aqui não geram outro. Nunca lança.
     await creditarIndicacaoPelaMensalidadePaga(ciclo.id);
     void avisarVendaAprovada(valor);
+    // Pagou pela cobrança mensal: a do plano anual deste ciclo, se gerada, é
+    // apagada no Asaas (lib/plano-anual-no-banco.ts). Nunca lança.
+    const { cancelarAnualPendente } = await import("@/lib/plano-anual-no-banco");
+    await cancelarAnualPendente(ciclo.franchiseeId, ciclo.id, c.id);
     return "PAGO";
   }
 

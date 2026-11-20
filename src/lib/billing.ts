@@ -31,9 +31,9 @@ import { prisma } from "@/lib/prisma";
 import { calcMensalidade, FIREHUB_PLAN, percentualDoMes, percentualDaVenda, MES_DOS_2_POR_CENTO, VIRADA_DOS_2_POR_CENTO } from "@/lib/firehub-billing";
 import { getAsaasKey } from "@/lib/asaas";
 import { prepararAvisoDoBoleto } from "@/lib/aviso-do-boleto";
-import { bloqueioDaMensalidade, bloqueioDoCiclo, ehCicloPrePago, JUROS_AO_MES_PCT, MARCA_DO_PRE_PAGO, MULTA_POR_ATRASO_PCT, vencimentoDoBoleto, vencimentoDoCiclo } from "@/lib/prazo-da-mensalidade";
+import { bloqueioDaMensalidade, bloqueioDoCiclo, ehCicloPrePago, JUROS_AO_MES_PCT, MARCA_DA_ATIVACAO, MARCA_DO_PRE_PAGO, MULTA_POR_ATRASO_PCT, vencimentoDoBoleto, vencimentoDoCiclo } from "@/lib/prazo-da-mensalidade";
 import { fimDoTeste } from "@/lib/fim-do-teste";
-import { anualCobreOMes } from "@/lib/black-november";
+import { anualAte, anualCobreOMes, ofertaDoAnual, type OfertaDoAnual } from "@/lib/plano-anual";
 import { modeloDaLoja, PRE_PAGO, valorDaRenovacao } from "@/lib/modelo-de-cobranca";
 
 /**
@@ -832,8 +832,9 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
     ? null
     : await indiqueEGanheDaLoja(cycle.franchisee);
   const isentaPorIndicacoes = !!indique?.isenta;
-  // Plano anual da Black November pago e cobrindo este mês: a mensalidade já
-  // foi paga adiantada. As taxas à parte (tráfego, totem, módulos) seguem.
+  // Plano anual pago e cobrindo este mês (o da Black November ou o oferecido
+  // na fatura, lib/plano-anual.ts): a mensalidade já foi paga adiantada. As
+  // taxas à parte (tráfego, totem, módulos) seguem.
   const cobertoPeloAnual = !isSpecialStore && anualCobreOMes(cycle.franchisee?.onboardingData, yearMonth);
   const mensalidadePerdoada = isSpecialStore || isentoPorTeste || !hasUsage || isentaPorIndicacoes || cobertoPeloAnual;
   const mensalidadeCheia = mensalidadePerdoada ? 0 : Math.max(0, amountDue - cycle.amountOffset);
@@ -847,7 +848,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
     : 0;
   const mensalidadePendente = parseFloat(Math.max(0, mensalidadeCheia - creditoDeIndicacao).toFixed(2));
   const notaDoIndique = [
-    cobertoPeloAnual ? "Mensalidade paga no plano anual (Black November)." : null,
+    cobertoPeloAnual ? "Mensalidade paga no plano anual." : null,
     isentaPorIndicacoes ? `Mensalidade isenta pelo Indique e Ganhe: ${indique!.ativosPagantes} lojas indicadas ativas e pagantes (a partir de ${INDICADOS_PARA_ISENCAO}).` : null,
     creditoDeIndicacao > 0 ? `Indique e Ganhe: R$ ${creditoDeIndicacao.toFixed(2)} de crédito abatido da mensalidade de R$ ${mensalidadeCheia.toFixed(2)}.` : null,
   ].filter(Boolean).join(" ");
@@ -1194,15 +1195,24 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
  * não achava a fatura que a faixa mandava pagar.
  */
 async function faturasEmAbertoDaLoja(franchiseeId: string) {
-  const ciclos = await prisma.franchiseeBillingCycle.findMany({
-    where: { franchiseeId, status: "CLOSED", amountPending: { gt: 0 } },
-    orderBy: { yearMonth: "asc" },
-    select: { yearMonth: true, amountPending: true, asaasBoletoUrl: true, closedAt: true, dueDate: true, notes: true },
-  });
+  const [ciclos, loja] = await Promise.all([
+    prisma.franchiseeBillingCycle.findMany({
+      where: { franchiseeId, status: "CLOSED", amountPending: { gt: 0 } },
+      orderBy: { yearMonth: "asc" },
+      select: { yearMonth: true, amountDue: true, amountPending: true, asaasBoletoUrl: true, closedAt: true, dueDate: true, notes: true },
+    }),
+    prisma.user.findUnique({ where: { id: franchiseeId }, select: { ...CAMPOS_DA_ISENCAO, onboardingData: true } }),
+  ]);
   const agora = new Date();
+  const isenta = lojaIsenta(loja);
   return ciclos.map((c) => {
     const venc = vencimentoDoCiclo(c);
     return {
+      /** "Pague o ano e economize 2 mensalidades" (lib/plano-anual.ts): só com a mensalidade em R$ 400. */
+      anual: ofertaDoAnual({
+        yearMonth: c.yearMonth, mensalidade: c.amountDue, valorDaFatura: c.amountPending, isenta,
+        onboardingData: loja?.onboardingData, ativacao: !!c.notes?.startsWith(MARCA_DA_ATIVACAO),
+      }) as OfertaDoAnual | null,
       yearMonth: c.yearMonth,
       /** Cobrança do plano pré-pago (o vencimento é a data da loja, não o dia 5). */
       prePago: ehCicloPrePago(c),
@@ -1279,13 +1289,15 @@ async function prePagoNaTela(franchiseeId: string, criadaEm: Date, trialEndsAt: 
 export async function getCurrentCycleView(franchiseeId: string) {
   const user = await prisma.user.findUnique({
     where: { id: franchiseeId },
-    select: { ...CAMPOS_DA_ISENCAO, storeTimezone: true, trialEndsAt: true, ifoodConnected: true, food99Connected: true, accountGroupId: true, createdAt: true, accountGroup: { select: { createdAt: true } } },
+    select: { ...CAMPOS_DA_ISENCAO, storeTimezone: true, trialEndsAt: true, ifoodConnected: true, food99Connected: true, accountGroupId: true, createdAt: true, onboardingData: true, accountGroup: { select: { createdAt: true } } },
   });
 
   const isExempt = lojaIsenta(user);
   const tz = user?.storeTimezone || "America/Sao_Paulo";
   const yearMonth = getCurrentYearMonth(0, tz);
   const trialEndsAt = user?.trialEndsAt ? new Date(user.trialEndsAt).toISOString() : null;
+  // Mês coberto por um plano anual pago (lib/plano-anual.ts): sem mensalidade, só os itens à parte.
+  const planoAnualAte = isExempt ? null : anualAte(user?.onboardingData, yearMonth);
 
   const [cycle, faturasEmAberto] = await Promise.all([
     prisma.franchiseeBillingCycle.findUnique({
@@ -1320,6 +1332,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
       faturasEmAberto,
       indiqueEGanhe: SEM_INDIQUE,
       prePago: null as PrePagoNaTela | null,
+      planoAnualAte,
     };
   }
 
@@ -1348,6 +1361,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
       faturasEmAberto,
       indiqueEGanhe: SEM_INDIQUE,
       prePago: prePago as PrePagoNaTela | null,
+      planoAnualAte,
     };
   }
 
@@ -1409,7 +1423,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
   const previsaoPorVendas = (vendasDoMes > 0 && !emTeste)
     ? calcMensalidade(vendasDoMes, true, yearMonth, vendasA1PorCento).mensalidade
     : 0;
-  const devidoAgora = emTeste ? 0 : Math.max(previsaoPorVendas, previsaoPorUso?.valor || 0);
+  const devidoAgora = emTeste || planoAnualAte ? 0 : Math.max(previsaoPorVendas, previsaoPorUso?.valor || 0);
 
   // Lojas extras de marketplace: o fechamento cobra sempre que o teste NÃO
   // cobre o mês inteiro (`isentoPorTeste` lá é `inicio === null`) — inclusive
@@ -1443,6 +1457,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
       faturasEmAberto,
       indiqueEGanhe: indique,
       prePago: null as PrePagoNaTela | null,
+      planoAnualAte,
     };
   }
 
@@ -1492,7 +1507,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
   const reservas = cobraServicos ? await cobrancaDasReservasNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd) : 0;
   const taxasDoCiclo = trafegoPago + totem + lojasExtras.valor + assessor + aplicativo + multimarcas + rotaAutomatica + tabletNaMesa + balanca + caixaDeMercado + cotacao + firecheck + reservas;
 
-  const calculada = emTeste ? 0 : Math.max(cycle.amountDue, devidoAgora);
+  const calculada = emTeste || planoAnualAte ? 0 : Math.max(cycle.amountDue, devidoAgora);
   const indique = emTeste ? SEM_INDIQUE : await indiqueDoMes(Math.max(0, calculada - cycle.amountOffset));
   const mensalidadePrevista = indique.isenta ? 0 : calculada;
   // O abatimento de pagamentos online desconta a MENSALIDADE, não as taxas —
@@ -1526,6 +1541,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
     faturasEmAberto,
     indiqueEGanhe: indique,
     prePago: null as PrePagoNaTela | null,
+    planoAnualAte,
   };
 }
 

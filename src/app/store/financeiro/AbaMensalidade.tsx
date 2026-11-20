@@ -14,6 +14,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { FIREHUB_PLAN, MES_DOS_2_POR_CENTO } from "@/lib/firehub-billing";
 import { PRE_PAGO } from "@/lib/modelo-de-cobranca";
+import { MENSALIDADE_CHEIA, MESES_DO_ANUAL, VALOR_DO_ANUAL } from "@/lib/plano-anual";
 import type { VisaoDoCiclo } from "@/lib/billing";
 import { diasAte } from "@/lib/prazo-da-mensalidade";
 import { nomeDoMes } from "@/lib/financeiro/dre";
@@ -85,7 +86,7 @@ export default function AbaMensalidade({ ciclo, tz }: { ciclo: VisaoDoCiclo | nu
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
         {faturas.length > 0 && <FaturasEmAberto faturas={faturas} />}
-        <MensalidadePrePaga prePago={ciclo.prePago} tz={tz} />
+        <MensalidadePrePaga prePago={ciclo.prePago} tz={tz} planoAnualAte={ciclo.planoAnualAte} />
         <CartaoIndiqueEGanhe />
       </div>
     );
@@ -180,7 +181,7 @@ export default function AbaMensalidade({ ciclo, tz }: { ciclo: VisaoDoCiclo | nu
           {linha(
             "Mensalidade",
             fmtR(mensalidade),
-            ciclo.emTeste ? "em teste: sem mensalidade por enquanto" : motivoDoValor || undefined,
+            ciclo.emTeste ? "em teste: sem mensalidade por enquanto" : ciclo.planoAnualAte ? `paga no plano anual até ${mesPorExtenso(ciclo.planoAnualAte)}` : motivoDoValor || undefined,
           )}
           {nExtras > 0 && linha(
             `${nExtras} ${nExtras === 1 ? "loja extra" : "lojas extras"} de marketplace (${partesDasLojas})`,
@@ -242,7 +243,7 @@ export default function AbaMensalidade({ ciclo, tz }: { ciclo: VisaoDoCiclo | nu
  * passos, a data da primeira cobrança e o que o ritmo de venda dá na
  * renovação. "Tem que estar muito explicado" (Douglas, 20/11/2026).
  */
-function MensalidadePrePaga({ prePago, tz }: { prePago: NonNullable<VisaoDoCiclo["prePago"]>; tz: string }) {
+function MensalidadePrePaga({ prePago, tz, planoAnualAte }: { prePago: NonNullable<VisaoDoCiclo["prePago"]>; tz: string; planoAnualAte?: string | null }) {
   const testeAte = prePago.testeAte ? new Date(prePago.testeAte) : null;
   const dataLonga = (d: Date) => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "long", timeZone: tz });
   const limite = `R$ ${(PRE_PAGO.LIMITE / 1000).toLocaleString("pt-BR")} mil`;
@@ -271,10 +272,10 @@ function MensalidadePrePaga({ prePago, tz }: { prePago: NonNullable<VisaoDoCiclo
         <div style={{ textAlign: "right", background: "#1E293B", padding: "12px 18px", borderRadius: 14, border: "1px solid #334155" }}>
           <div style={{ fontSize: "0.72rem", color: "#94A3B8", fontWeight: 700 }}>{prePago.proxima.tipo === "ATIVACAO" ? "PRIMEIRO PAGAMENTO" : "PRÓXIMA RENOVAÇÃO"}</div>
           <div style={{ fontSize: "1.8rem", fontWeight: 900, color: "#F8FAFC", marginTop: 2 }}>
-            {fmtR(prePago.proxima.tipo === "ATIVACAO" ? prePago.valorDaAtivacao : prePago.renovacaoNoRitmo)}
+            {fmtR(prePago.proxima.tipo === "ATIVACAO" ? prePago.valorDaAtivacao : planoAnualAte ? 0 : prePago.renovacaoNoRitmo)}
           </div>
           <div style={{ fontSize: "0.78rem", color: "#CBD5E1" }}>
-            em {dataLonga(new Date(prePago.proxima.vencimento))}{prePago.proxima.tipo === "ATIVACAO" ? ", no fim do teste" : " · pelo ritmo de agora, sem módulos"}
+            em {dataLonga(new Date(prePago.proxima.vencimento))}{prePago.proxima.tipo === "ATIVACAO" ? ", no fim do teste" : planoAnualAte ? ` · mensalidade paga no plano anual até ${mesPorExtenso(planoAnualAte)}` : " · pelo ritmo de agora, sem módulos"}
           </div>
         </div>
       </div>
@@ -343,6 +344,7 @@ function FaturasEmAberto({ faturas }: { faturas: VisaoDoCiclo["faturasEmAberto"]
                 O link do boleto não ficou gravado. Fale com o suporte pelo WhatsApp para receber a fatura.
               </span>
             )}
+            {f.anual && <OfertaDoAnual fatura={f} />}
           </div>
         );
       })}
@@ -351,7 +353,54 @@ function FaturasEmAberto({ faturas }: { faturas: VisaoDoCiclo["faturasEmAberto"]
 }
 
 /**
- * A janela "Detalhes da Cobrança": os pedidos que formam a base do mês
+ * "Pague o ano e ganhe 2 meses" (lib/plano-anual.ts), embaixo da fatura de
+ * quem paga a mensalidade de R$ 400: a fatura de agora já entra no ano.
+ */
+function OfertaDoAnual({ fatura }: { fatura: VisaoDoCiclo["faturasEmAberto"][number] }) {
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState("");
+  const a = fatura.anual!;
+  const curto = (ym: string) => { const [y, m] = ym.split("-").map(Number); return `${MESES[m - 1]?.slice(0, 3)}/${y}`; };
+
+  async function pagarOAno() {
+    setEnviando(true);
+    setErro("");
+    try {
+      const r = await fetch("/api/billing/anual", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ yearMonth: fatura.yearMonth }) });
+      const d = await r.json().catch(() => ({}));
+      if (d.url) { window.location.href = d.url; return; }
+      setErro(d.error || "Não deu para gerar a cobrança agora. Tente de novo ou fale com o suporte.");
+    } catch {
+      setErro("Sem conexão. Tente de novo em instantes.");
+    }
+    setEnviando(false);
+  }
+
+  return (
+    <div style={{ flexBasis: "100%", background: "#fff", border: "1.5px dashed #16A34A", borderRadius: 14, padding: "14px 16px", display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center", justifyContent: "space-between" }}>
+      <div style={{ flex: "1 1 320px" }}>
+        <div style={{ fontSize: "0.78rem", fontWeight: 900, color: "#15803D", letterSpacing: 0.5 }}>PAGUE O ANO E GANHE 2 MESES</div>
+        <div style={{ fontSize: "1.02rem", fontWeight: 900, color: "#0F172A", marginTop: 2 }}>
+          {MESES_DO_ANUAL} meses de mensalidade por {fmtR(VALOR_DO_ANUAL)} em vez de {fmtR(MENSALIDADE_CHEIA * MESES_DO_ANUAL)}: economia de {fmtR(a.economia)}
+        </div>
+        <div style={{ fontSize: "0.82rem", color: "#475569", marginTop: 4, lineHeight: 1.5 }}>
+          {fatura.prePago ? "Esta renovação já entra" : "Esta fatura já entra"}: o plano cobre a mensalidade de <strong>{curto(a.de)}</strong> a <strong>{curto(a.ate)}</strong>, venda o quanto vender.
+          Você paga esta fatura ({fmtR(fatura.valor)}) + {fmtR(VALOR_DO_ANUAL - MENSALIDADE_CHEIA)} de uma vez. Módulos e taxas à parte continuam na fatura de cada mês. Sem devolução.
+        </div>
+        {erro && <div style={{ color: "#B91C1C", fontSize: "0.82rem", marginTop: 6 }}>{erro}</div>}
+      </div>
+      <button type="button" onClick={pagarOAno} disabled={enviando} style={{
+        background: "#16A34A", color: "#fff", border: "none", padding: "12px 20px", borderRadius: 12, fontSize: "0.92rem", fontWeight: 900,
+        cursor: enviando ? "wait" : "pointer", fontFamily: "inherit", whiteSpace: "nowrap", opacity: enviando ? 0.7 : 1,
+      }}>
+        {enviando ? "Gerando…" : `Pagar o ano · ${fmtR(a.valor)}`}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * A janela "Detalhes da Cobrança":os pedidos que formam a base do mês
  * corrente, lidos do CICLO (lib/billing.ts, pedidosDoCicloAtual). Antes ela
  * listava os pedidos do período do DRE e chamava a receita do período de
  * "Vendas registradas no ciclo"; o "Valor bruto" saía líquido, o número do

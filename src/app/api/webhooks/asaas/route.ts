@@ -44,6 +44,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, recarga: resultado });
     }
 
+    // Plano anual na fatura em aberto (lib/plano-anual-no-banco.ts, "anual:<ciclo>").
+    if (String(payment.externalReference || "").startsWith("anual:")) {
+      const { registrarPagamentoDoAnual } = await import("@/lib/plano-anual-no-banco");
+      const resultado = await registrarPagamentoDoAnual(payment, event);
+      console.log(`[webhook/asaas] Plano anual ${payment.externalReference}: ${resultado} (${event})`);
+      return NextResponse.json({ success: true, planoAnual: resultado });
+    }
+
     // Black November: plano anual de R$ 4.000 (lib/black-november-no-banco.ts,
     // "black-november:<loja>"). No cartão em 12x chega um evento por parcela.
     if (String(payment.externalReference || "").startsWith("black-november:")) {
