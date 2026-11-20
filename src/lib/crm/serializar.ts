@@ -58,7 +58,9 @@ export function mensagemParaTela(m: any) {
     tipo: m.tipo as string,
     texto: m.texto as string,
     status: m.status as string,
-    canal: (m.canal === "PAINEL" ? "PAINEL" : "WHATSAPP") as "WHATSAPP" | "PAINEL",
+    canal: (m.canal === "PAINEL" || m.canal === "SITE" ? m.canal : "WHATSAPP") as "WHATSAPP" | "PAINEL" | "SITE",
+    /** Foto/áudio/arquivo do suporte pelo navegador (/uploads/suporte/...). */
+    midiaUrl: (m.midiaUrl as string | null) || null,
     criadoEm: new Date(m.criadoEm).toISOString(),
   };
 }

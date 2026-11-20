@@ -1,7 +1,7 @@
 "use client";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowLeft, Bot, Check, CheckCheck, Clock, Hand, MessageCircle, Monitor, PanelRight, Pause, Search, SendHorizontal, Smartphone,
+  ArrowLeft, Bot, Check, CheckCheck, Clock, Globe, Hand, MessageCircle, Monitor, PanelRight, Pause, Search, SendHorizontal, Smartphone,
   Store, TriangleAlert, UserRound, X, type LucideIcon,
 } from "lucide-react";
 import type { ContatoDaLista, MensagemDaTela } from "@/lib/crm/serializar";
@@ -60,7 +60,7 @@ export default function CaixaDeAtendimento({
   const [assinar, setAssinar] = useState(true);
   // Por onde a resposta sai: null = por onde o contato escreveu por último (o
   // WhatsApp do FireHub ou o chat de suporte do painel da loja).
-  const [canalEscolhido, setCanalEscolhido] = useState<"WHATSAPP" | "PAINEL" | null>(null);
+  const [canalEscolhido, setCanalEscolhido] = useState<"WHATSAPP" | "PAINEL" | "SITE" | null>(null);
   const [enviando, setEnviando] = useState(false);
   const [erroEnvio, setErroEnvio] = useState<string | null>(null);
   const [fichaAberta, setFichaAberta] = useState(false);
@@ -191,11 +191,14 @@ export default function CaixaDeAtendimento({
 
   const c = detalhe?.contato;
   const ultimaEntrada = [...mensagens].reverse().find((m) => m.direcao === "ENTRADA");
-  const canal: "WHATSAPP" | "PAINEL" = canalEscolhido || (ultimaEntrada?.canal === "PAINEL" && c?.temPainel ? "PAINEL" : "WHATSAPP");
+  // O suporte pelo navegador (/suporte) responde por lá, sem o WhatsApp (lib/atendimento/site.ts).
+  const temSite = mensagens.some((m) => m.canal === "SITE");
+  const canal: "WHATSAPP" | "PAINEL" | "SITE" = canalEscolhido
+    || (ultimaEntrada?.canal === "SITE" ? "SITE" : ultimaEntrada?.canal === "PAINEL" && c?.temPainel ? "PAINEL" : "WHATSAPP");
   // O número do FireHub só responde: a 1ª mensagem pelo WhatsApp tem que ser do
   // contato (o servidor confere de novo; 300 é o tamanho da conversa carregada).
   const frioNoWhatsApp = canal === "WHATSAPP" && mensagens.length < 300 && !mensagens.some((m) => m.direcao === "ENTRADA" && m.canal === "WHATSAPP");
-  const podeEscrever = !!c?.podeResponder && !frioNoWhatsApp;
+  const podeEscrever = canal === "SITE" || (!!c?.podeResponder && !frioNoWhatsApp);
   const nomeDe = (x: { nomeDaLoja: string | null; nome: string | null; telefone: string | null }) => x.nomeDaLoja || x.nome || x.telefone || "Contato";
 
   const blocos = useMemo(() => {
@@ -212,8 +215,8 @@ export default function CaixaDeAtendimento({
   // O robô nesta conversa, numa palavra e numa cor (a pílula da faixa).
   const estadoDoRobo = !c
     ? null
-    : (ultimaEntrada?.canal === "PAINEL" ? roboNoPainel : roboLigado) === false
-      ? { tom: "cinza", texto: ultimaEntrada?.canal === "PAINEL" ? "Robô do painel desligado (geral)" : "Robô desligado (geral)" }
+    : (ultimaEntrada?.canal === "PAINEL" || ultimaEntrada?.canal === "SITE" ? roboNoPainel : roboLigado) === false
+      ? { tom: "cinza", texto: ultimaEntrada?.canal === "PAINEL" || ultimaEntrada?.canal === "SITE" ? "Robô do painel e do site desligado (geral)" : "Robô desligado (geral)" }
       : c.roboDesligado
         ? { tom: "cinza", texto: "Robô desligado aqui" }
         : c.aguardandoHumano
@@ -359,9 +362,18 @@ export default function CaixaDeAtendimento({
                       return (
                         <div key={m.id} className={`crm-balao ${m.direcao === "ENTRADA" ? "entrada" : `saida ${autor!.classe}`}${m.status === "FALHOU" ? " falhou" : ""}`}>
                           {rotulo && <div className="quem">{Icone && <Icone size={12} strokeWidth={2.4} aria-hidden />}{rotulo}</div>}
+                          {m.midiaUrl && m.tipo === "AUDIO" && <audio controls preload="metadata" src={m.midiaUrl} style={{ display: "block", width: 240, maxWidth: "100%", height: 36, marginBottom: 4 }} />}
+                          {m.midiaUrl && m.tipo === "IMAGEM" && (
+                            <a href={m.midiaUrl} target="_blank" rel="noopener noreferrer">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={m.midiaUrl} alt="Imagem enviada" style={{ display: "block", maxWidth: 240, maxHeight: 280, borderRadius: 6, marginBottom: 4 }} />
+                            </a>
+                          )}
+                          {m.midiaUrl && m.tipo === "ARQUIVO" && <a href={m.midiaUrl} target="_blank" rel="noopener noreferrer" style={{ display: "block", fontWeight: 700, marginBottom: 4 }}>📄 Abrir arquivo</a>}
                           {comNegrito(m.texto)}
                           <div className="hora">
                             {m.canal === "PAINEL" && <span title="Pelo chat de suporte do painel da loja" style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Monitor size={11} strokeWidth={2.4} aria-hidden /> painel</span>}
+                            {m.canal === "SITE" && <span title="Pelo suporte do navegador (firehubfood.com.br/suporte)" style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><Globe size={11} strokeWidth={2.4} aria-hidden /> site</span>}
                             {m.status === "FALHOU" && <span className="erro-envio"><TriangleAlert size={11} strokeWidth={2.6} aria-hidden /> não enviada</span>}
                             {horaDe(m.criadoEm)}
                             {m.direcao === "SAIDA" && m.status !== "FALHOU" && <CheckCheck size={13} strokeWidth={2.2} aria-label="enviada" />}
@@ -379,7 +391,7 @@ export default function CaixaDeAtendimento({
                   <textarea
                     className="crm-textarea"
                     rows={1}
-                    placeholder={!c.podeResponder ? "Este contato não tem WhatsApp." : frioNoWhatsApp ? `Ele nunca escreveu para o WhatsApp do FireHub: a 1ª mensagem tem que ser dele (é o que bane o número).${c.temPainel ? " Dá para responder pelo Painel." : ""}` : canal === "PAINEL" ? "Escreva a resposta (vai para o chat do painel da loja)…" : "Escreva a resposta…"}
+                    placeholder={canal === "SITE" ? "Escreva a resposta (vai para o suporte do navegador)…" : !c.podeResponder ? "Este contato não tem WhatsApp." : frioNoWhatsApp ? `Ele nunca escreveu para o WhatsApp do FireHub: a 1ª mensagem tem que ser dele (é o que bane o número).${c.temPainel ? " Dá para responder pelo Painel." : ""}` : canal === "PAINEL" ? "Escreva a resposta (vai para o chat do painel da loja)…" : "Escreva a resposta…"}
                     aria-label="Resposta"
                     disabled={!podeEscrever}
                     value={texto}
@@ -392,24 +404,24 @@ export default function CaixaDeAtendimento({
                 </div>
                 <div className="crm-compor-dica">
                   <span>Enter envia · Shift+Enter pula linha</span>
-                  {c.temPainel && (
+                  {(c.temPainel || temSite) && (
                     <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }} role="radiogroup" aria-label="Responder por">
                       Responder por
-                      {(["WHATSAPP", "PAINEL"] as const).map((k) => (
+                      {(["WHATSAPP", ...(c.temPainel ? ["PAINEL"] as const : []), ...(temSite ? ["SITE"] as const : [])] as const).map((k) => (
                         <button
                           key={k}
                           type="button"
                           role="radio"
                           aria-checked={canal === k}
                           onClick={() => setCanalEscolhido(k)}
-                          title={k === "PAINEL" ? "O chat “Suporte FireHub” dentro do painel da loja: não depende do WhatsApp" : "O WhatsApp do FireHub"}
+                          title={k === "PAINEL" ? "O chat “Suporte FireHub” dentro do painel da loja: não depende do WhatsApp" : k === "SITE" ? "O suporte pelo navegador (firehubfood.com.br/suporte): não depende do WhatsApp" : "O WhatsApp do FireHub"}
                           style={{
                             display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 8px", borderRadius: 999, cursor: "pointer", font: "inherit", fontWeight: 700,
                             border: `1px solid ${canal === k ? "#C2410C" : "#D6D3D1"}`, background: canal === k ? "#FFF7ED" : "transparent", color: canal === k ? "#C2410C" : "inherit",
                           }}
                         >
-                          {k === "PAINEL" ? <Monitor size={11} aria-hidden /> : <Smartphone size={11} aria-hidden />}
-                          {k === "PAINEL" ? "Painel" : "WhatsApp"}
+                          {k === "PAINEL" ? <Monitor size={11} aria-hidden /> : k === "SITE" ? <Globe size={11} aria-hidden /> : <Smartphone size={11} aria-hidden />}
+                          {k === "PAINEL" ? "Painel" : k === "SITE" ? "Site" : "WhatsApp"}
                         </button>
                       ))}
                     </span>
