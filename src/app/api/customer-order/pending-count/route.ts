@@ -20,6 +20,9 @@ export async function GET() {
     where: {
       franchiseeId: targetId,
       status: "SAIU_ENTREGA",
+      // Mesa não é "pedido na rua": o fechamento do caixa não a finaliza (quem fecha é a
+      // conta da mesa), então contá-la aqui avisava de algo que não ia acontecer.
+      tableSessionId: null,
     },
   });
 
