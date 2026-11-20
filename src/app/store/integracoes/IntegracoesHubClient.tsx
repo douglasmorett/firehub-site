@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import PagamentoOnlineAsaas from "@/components/customer/PagamentoOnlineAsaas";
 import FoodyDeliveryConfig from "@/components/customer/FoodyDeliveryConfig";
+import GuiaDeConexao from "@/components/customer/GuiaDeConexao";
 import { CheckCircle2, ShieldCheck, Zap, Key, Store, Save, ExternalLink, RefreshCw, X, ArrowRight, Activity, CreditCard, Radio, Plus, Trash2, Loader2 } from "lucide-react";
 
 export default function IntegracoesHubClient({
@@ -41,7 +42,7 @@ export default function IntegracoesHubClient({
   brendiHasSecret?: boolean;
   initialIfoodIntegrations?: {id:string;label:string;merchantId:string;connected:boolean;active:boolean;widgetId?:string|null;createdAt:string}[];
 }) {
-  const [activeTab, setActiveTab] = useState<"all" | "channels" | "marketing" | "payments">("all");
+  const [activeTab, setActiveTab] = useState<"all" | "pedidos" | "pagamentos" | "entrega" | "marketing">("all");
   const [openModal, setOpenModal] = useState<"pixel" | "google" | "whatsapp" | "jotaja" | "ifood" | "asaas" | "99food" | "brendi" | "wabiz" | "keeta" | "cardapioweb" | "anotaai" | "aiqfome" | "foody" | null>(null);
 
   // ── FOODY / VOE DELIVERY (motoboy terceirizado) ──
@@ -1626,7 +1627,7 @@ export default function IntegracoesHubClient({
     },
     {
       id: "jotaja" as const,
-      category: "channels",
+      category: "pedidos",
       title: "JotaJá (Open Delivery)",
       subtitle: "API Oficial OpenDelivery",
       icon: "🛵",
@@ -1636,7 +1637,7 @@ export default function IntegracoesHubClient({
     },
     {
       id: "ifood" as const,
-      category: "channels",
+      category: "pedidos",
       title: "iFood Merchant API",
       subtitle: "Loja Oficial iFood",
       icon: "🔴",
@@ -1655,22 +1656,30 @@ export default function IntegracoesHubClient({
       // O cartão "Mercado Pago / Mercado Livre" que ficava aqui dizia
       // "🟢 PIX / Cartão Ativos" para toda loja — o pagamento online estava
       // desligado desde 23/08/2026 e nenhuma loja tinha conta conectada.
-      id: "asaas" as const,
-      category: "payments",
-      title: "Asaas",
-      subtitle: "Pix e cartão pelo site",
+      // Pix e cartão são UM cartão só (Douglas, 20/11/2026: "não era pra ser
+      // uma coisa só? cartão e Pix do Asaas?"): é a mesma conta Asaas e os dois
+      // se ligam no mesmo modal (`abrir`).
+      id: "pix-online" as const,
+      abrir: "asaas" as const,
+      category: "pagamentos",
+      title: "Pagamento online",
+      subtitle: "Pix e cartão · via Asaas · cai na sua conta",
       icon: "💳",
-      gradient: "linear-gradient(135deg, #0030B9, #1D4ED8)",
-      badge: asaas?.pixAtivo || asaas?.cartaoAtivo
-        ? { text: `🟢 ${[asaas.pixAtivo && "Pix", asaas.cartaoAtivo && "Cartão"].filter(Boolean).join(" + ")} no cardápio`, bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" }
-        : asaas?.conectado
-          ? { text: "🟡 Conectado · desligado", bg: "#FFF7E6", color: "#B45309", border: "#FDE68A" }
-          : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
-      description: "O cliente paga Pix ou cartão na hora, no cardápio, e o dinheiro cai na sua conta Asaas. O pedido só vai para a cozinha depois de pago.",
+      gradient: "linear-gradient(135deg, #0F766E, #1D4ED8)",
+      badge: asaas?.pixAtivo && asaas?.cartaoAtivo
+        ? { text: "🟢 Pix e cartão ligados", bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" }
+        : asaas?.pixAtivo
+          ? { text: "🟢 Pix ligado · cartão desligado", bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" }
+          : asaas?.cartaoAtivo
+            ? { text: "🟢 Cartão ligado · Pix desligado", bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" }
+            : asaas?.conectado
+              ? { text: "🟡 Conta conectada · pagamento desligado", bg: "#FFF7E6", color: "#B45309", border: "#FDE68A" }
+              : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
+      description: "O cliente paga com Pix ou cartão de crédito direto no cardápio, sem maquininha, e o dinheiro cai na sua conta. O pedido só vai para a cozinha depois de pago.",
     },
     {
       id: "99food" as const,
-      category: "channels",
+      category: "pedidos",
       title: "99Food Delivery",
       subtitle: "Integração Open Delivery",
       icon: "🟡",
@@ -1680,7 +1689,7 @@ export default function IntegracoesHubClient({
     },
     {
       id: "keeta" as const,
-      category: "channels",
+      category: "pedidos",
       title: "Keeta",
       subtitle: "Integração oficial Open Delivery",
       icon: "🟨",
@@ -1695,7 +1704,7 @@ export default function IntegracoesHubClient({
     },
     {
       id: "brendi" as const,
-      category: "channels",
+      category: "pedidos",
       title: "Brendi",
       subtitle: "Cardápio digital + IA no WhatsApp",
       icon: "🤖",
@@ -1708,7 +1717,7 @@ export default function IntegracoesHubClient({
     },
     {
       id: "cardapioweb" as const,
-      category: "channels",
+      category: "pedidos",
       title: "CardápioWeb",
       subtitle: "Cardápio digital — integração oficial",
       icon: "🍽️",
@@ -1728,7 +1737,7 @@ export default function IntegracoesHubClient({
     },
     {
       id: "anotaai" as const,
-      category: "channels",
+      category: "pedidos",
       title: "Anota AI",
       subtitle: "Cardápio digital + robô no WhatsApp — integração oficial",
       icon: "📝",
@@ -1747,7 +1756,7 @@ export default function IntegracoesHubClient({
     },
     {
       id: "aiqfome" as const,
-      category: "channels",
+      category: "pedidos",
       title: "aiqfome",
       subtitle: "Marketplace — integração oficial (API V2)",
       icon: "🟣",
@@ -1765,7 +1774,7 @@ export default function IntegracoesHubClient({
     },
     {
       id: "foody" as const,
-      category: "channels",
+      category: "entrega",
       title: "Foody / Voe Delivery",
       subtitle: "Motoboy terceirizado",
       icon: "🛵",
@@ -1775,7 +1784,7 @@ export default function IntegracoesHubClient({
     },
     {
       id: "wabiz" as const,
-      category: "channels",
+      category: "pedidos",
       title: "Wabiz",
       subtitle: "App de delivery com a marca da sua loja",
       icon: "📱",
@@ -1785,10 +1794,37 @@ export default function IntegracoesHubClient({
     },
   ];
 
-  const filteredIntegrations = INTEGRATIONS.filter(item => {
-    if (activeTab === "all") return true;
-    return item.category === activeTab;
-  });
+  // Seções na ordem em que a loja pensa: o que ENTRA (pedidos de outros apps),
+  // o que RECEBE (Pix e cartão), quem ENTREGA e como DIVULGA. A aba escolhida
+  // mostra só a seção dela; "Todas" mostra as quatro. `grupos` divide a seção
+  // em blocos com título (só os pedidos precisam: marketplace × sistema).
+  const SECOES = [
+    {
+      id: "pedidos" as const, aba: "🛵 Pedidos", titulo: "Aplicativos de pedidos",
+      ajuda: "Os pedidos desses apps entram sozinhos no painel, na cozinha e na impressora.",
+      grupos: [
+        { titulo: "Marketplaces", ids: ["ifood", "99food", "keeta", "aiqfome"] },
+        { titulo: "Cardápio digital e outros sistemas", ids: ["brendi", "cardapioweb", "anotaai", "wabiz", "jotaja"] },
+      ] as { titulo: string; ids: string[] }[] | undefined,
+    },
+    {
+      id: "pagamentos" as const, aba: "💳 Pagamentos", titulo: "Recebimento de pagamentos",
+      ajuda: "O cliente paga no cardápio e o dinheiro cai direto na sua conta.",
+      grupos: undefined,
+    },
+    {
+      id: "entrega" as const, aba: "🏍️ Entrega", titulo: "Entrega",
+      ajuda: "Motoboy terceirizado chamado direto do pedido.",
+      grupos: undefined,
+    },
+    {
+      id: "marketing" as const, aba: "🎯 Marketing", titulo: "Marketing e atendimento",
+      ajuda: "Meça os anúncios e atenda pelo WhatsApp.",
+      grupos: undefined,
+    },
+  ];
+  const integracaoLigada = (i: { badge: { text: string } }) => i.badge.text.startsWith("🟢");
+  const integracaoPedeAtencao = (i: { badge: { text: string } }) => /^(🔴|🟠|🟡)/.test(i.badge.text);
 
   // Canais que JÁ entram direto no FireHub. Com eles ligados, receber o mesmo
   // canal repassado pelo CardápioWeb põe o pedido duas vezes na cozinha; o
@@ -1799,7 +1835,11 @@ export default function IntegracoesHubClient({
   ].filter((c): c is string => typeof c === "string");
 
   return (
-    <div style={{ maxWidth: "1150px", margin: "0 auto", padding: "24px 16px", fontFamily: "inherit" }}>
+    <div style={{ maxWidth: "1150px", margin: "0 auto", padding: "20px 16px", fontFamily: "inherit" }}>
+      {/* O painel todo ganha um fundo próprio (Douglas, 20/11/2026: "não gosto
+          dessas janelas branca com fundo branco"): os cartões brancos aparecem
+          sobre um fundo azul-acinzentado em vez de sumir no branco da página. */}
+      <div style={{ background: "linear-gradient(180deg, #E8EEF7 0%, #DCE5F2 100%)", borderRadius: "28px", padding: "20px", border: "1px solid #CBD7EA" }}>
       {/* Toast alert — um degrau acima do modal: os dois eram zIndex 9999 e o
           modal vem depois no HTML, então no empate o fundo escuro cobria o
           aviso dado com o modal aberto (ex.: a volta do CardápioWeb, que abre
@@ -1811,136 +1851,243 @@ export default function IntegracoesHubClient({
       )}
 
       {/* Header Banner */}
-      <div style={{ background: "linear-gradient(135deg, #0F172A, #1E293B)", borderRadius: "24px", padding: "32px", color: "#fff", marginBottom: "28px", boxShadow: "0 12px 32px rgba(15,23,42,0.15)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "16px" }}>
+      <div style={{ background: "linear-gradient(135deg, #0B1220 0%, #16233B 55%, #0F3D3A 100%)", borderRadius: "22px", padding: "28px", color: "#fff", marginBottom: "26px", boxShadow: "0 14px 34px rgba(11,18,32,0.28)", position: "relative", overflow: "hidden" }}>
+        <div aria-hidden style={{ position: "absolute", right: "-60px", top: "-80px", width: "260px", height: "260px", borderRadius: "50%", background: "radial-gradient(circle, rgba(45,212,191,0.28), transparent 70%)" }} />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "16px", position: "relative" }}>
           <div>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: "rgba(56,189,248,0.12)", border: "1px solid rgba(56,189,248,0.25)", padding: "4px 12px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 800, color: "#A8A29E", marginBottom: "12px" }}>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", background: "rgba(45,212,191,0.16)", border: "1px solid rgba(45,212,191,0.4)", padding: "4px 12px", borderRadius: "20px", fontSize: "0.75rem", fontWeight: 800, color: "#99F6E4", marginBottom: "12px" }}>
               🔌 Central de Integrações
             </div>
-            <h1 style={{ fontSize: "1.85rem", fontWeight: 900, margin: "0 0 8px 0" }}>
-              Conecte Seus Canais & Ferramentas
+            <h1 style={{ fontSize: "1.9rem", fontWeight: 900, margin: "0 0 8px 0", letterSpacing: "-0.01em" }}>
+              Conecte seus canais e ferramentas
             </h1>
-            <p style={{ margin: 0, opacity: 0.8, fontSize: "0.9rem", maxWidth: "650px", lineHeight: 1.5 }}>
-              Clique na integração desejada para configurar credenciais, sincronizar pedidos e ativar rastreamento de tráfego.
+            <p style={{ margin: 0, color: "#CBD5E1", fontSize: "0.92rem", maxWidth: "620px", lineHeight: 1.5 }}>
+              Toque em um cartão para configurar. Os pedidos dos apps entram sozinhos no painel e o dinheiro do pagamento online cai direto na sua conta.
             </p>
           </div>
 
-          <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", padding: "12px 18px", borderRadius: "16px", display: "flex", alignItems: "center", gap: "12px" }}>
-            <ShieldCheck size={26} color="#0F766E" />
+          <div style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.18)", padding: "12px 18px", borderRadius: "16px", display: "flex", alignItems: "center", gap: "12px" }}>
+            <ShieldCheck size={26} color="#5EEAD4" />
             <div>
-              <div style={{ fontSize: "0.72rem", opacity: 0.7 }}>Conta Registrada</div>
-              <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#A8A29E" }}>{userEmail}</div>
+              <div style={{ fontSize: "0.72rem", color: "#94A3B8" }}>Conta registrada</div>
+              <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#F1F5F9" }}>{userEmail}</div>
             </div>
           </div>
         </div>
 
-        {/* Tab Filters */}
-        <div style={{ display: "flex", gap: "8px", marginTop: "24px", flexWrap: "wrap" }}>
-          <button
-            onClick={() => setActiveTab("all")}
-            style={{ padding: "9px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", background: activeTab === "all" ? "#A8A29E" : "rgba(255,255,255,0.08)", color: activeTab === "all" ? "#0F172A" : "#fff", transition: "all 0.2s" }}
-          >
-            Todas as Integrações ({INTEGRATIONS.length})
-          </button>
-          <button
-            onClick={() => setActiveTab("channels")}
-            style={{ padding: "9px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", background: activeTab === "channels" ? "#1C1917" : "rgba(255,255,255,0.08)", color: "#fff", transition: "all 0.2s" }}
-          >
-            🛵 Canais de Venda & Delivery
-          </button>
-          <button
-            onClick={() => setActiveTab("marketing")}
-            style={{ padding: "9px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", background: activeTab === "marketing" ? "#0F766E" : "rgba(255,255,255,0.08)", color: "#fff", transition: "all 0.2s" }}
-          >
-            🎯 Marketing & Tráfego
-          </button>
-          <button
-            onClick={() => setActiveTab("payments")}
-            style={{ padding: "9px 18px", borderRadius: "12px", border: "none", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", background: activeTab === "payments" ? "#64748B" : "rgba(255,255,255,0.08)", color: "#fff", transition: "all 0.2s" }}
-          >
-            💳 Pagamentos & PIX
-          </button>
+        {/* Resumo: quantas estão ligadas e quantas pedem atenção */}
+        <div style={{ display: "flex", gap: "10px", marginTop: "20px", flexWrap: "wrap", position: "relative" }}>
+          <span style={{ background: "rgba(16,185,129,0.18)", border: "1px solid rgba(52,211,153,0.5)", color: "#A7F3D0", padding: "6px 14px", borderRadius: "999px", fontSize: "0.8rem", fontWeight: 800 }}>
+            🟢 {INTEGRATIONS.filter(integracaoLigada).length} ligada{INTEGRATIONS.filter(integracaoLigada).length === 1 ? "" : "s"}
+          </span>
+          {INTEGRATIONS.filter(integracaoPedeAtencao).length > 0 && (
+            <span style={{ background: "rgba(245,158,11,0.2)", border: "1px solid rgba(251,191,36,0.55)", color: "#FDE68A", padding: "6px 14px", borderRadius: "999px", fontSize: "0.8rem", fontWeight: 800 }}>
+              🟡 {INTEGRATIONS.filter(integracaoPedeAtencao).length} pede{INTEGRATIONS.filter(integracaoPedeAtencao).length === 1 ? "" : "m"} atenção
+            </span>
+          )}
+        </div>
+
+        {/* Abas: cada uma é um botão de verdade (borda, sombra e contador); a
+            marcada fica branca e cheia. */}
+        <div role="tablist" style={{ display: "flex", gap: "10px", marginTop: "20px", flexWrap: "wrap", position: "relative" }}>
+          {([{ id: "all" as const, aba: "✨ Todas", n: INTEGRATIONS.length }, ...SECOES.map((sec) => ({ id: sec.id, aba: sec.aba, n: INTEGRATIONS.filter((i) => i.category === sec.id).length }))]).map((t) => {
+            const marcada = activeTab === t.id;
+            return (
+              <button
+                key={t.id}
+                role="tab"
+                aria-selected={marcada}
+                onClick={() => setActiveTab(t.id)}
+                style={{
+                  padding: "10px 18px", borderRadius: "14px", fontWeight: 800, fontSize: "0.86rem", cursor: "pointer", transition: "all 0.15s",
+                  display: "inline-flex", alignItems: "center", gap: "8px",
+                  border: marcada ? "1.5px solid #fff" : "1.5px solid rgba(255,255,255,0.28)",
+                  background: marcada ? "#fff" : "rgba(255,255,255,0.07)",
+                  color: marcada ? "#0B1220" : "#F1F5F9",
+                  boxShadow: marcada ? "0 6px 18px rgba(0,0,0,0.3)" : "none",
+                }}
+                onMouseEnter={(e) => { if (!marcada) e.currentTarget.style.background = "rgba(255,255,255,0.16)"; }}
+                onMouseLeave={(e) => { if (!marcada) e.currentTarget.style.background = "rgba(255,255,255,0.07)"; }}
+              >
+                {t.aba}
+                <span style={{ background: marcada ? "#0F766E" : "rgba(255,255,255,0.2)", color: "#fff", borderRadius: "999px", padding: "1px 8px", fontSize: "0.72rem", fontWeight: 800 }}>{t.n}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Grid of Compact Integration Cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "20px" }}>
-        {filteredIntegrations.map((item) => (
-          <div
-            key={item.id}
-            onClick={() => setOpenModal(item.id)}
-            style={{
-              background: "#fff",
-              borderRadius: "20px",
-              border: "1.5px solid #E2E8F0",
-              padding: "20px",
-              boxShadow: "0 4px 16px rgba(0,0,0,0.03)",
-              cursor: "pointer",
-              transition: "all 0.2s ease-in-out",
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "space-between",
-              position: "relative",
-              overflow: "hidden",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = "translateY(-4px)";
-              e.currentTarget.style.borderColor = "#94A3B8";
-              e.currentTarget.style.boxShadow = "0 12px 28px rgba(0,0,0,0.08)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = "translateY(0)";
-              e.currentTarget.style.borderColor = "#E2E8F0";
-              e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.03)";
-            }}
-          >
-            {/* Top row: Logo + Status Badge */}
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "14px" }}>
-                {/* Integração com logo própria usa a marca; as demais seguem
-                    com o emoji sobre o gradiente. Fundo claro porque as logos
-                    são coloridas e sumiriam sobre o gradiente escuro. */}
-                {(item as { logo?: string }).logo ? (
-                  <div style={{ width: "52px", height: "52px", borderRadius: "16px", background: "#fff", border: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "center", padding: "8px", boxShadow: "0 6px 16px rgba(0,0,0,0.08)" }}>
-                    <img src={(item as { logo?: string }).logo} alt={item.title} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
-                  </div>
-                ) : (
-                  <div style={{ width: "52px", height: "52px", borderRadius: "16px", background: item.gradient, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.6rem", boxShadow: "0 6px 16px rgba(0,0,0,0.12)" }}>
-                    {item.icon}
-                  </div>
+      {/* Seções de cartões: cada uma com título, quantos estão ativos e, se
+          houver, quantos pedem atenção (autorizar de novo, reconectar). */}
+      {SECOES.filter((sec) => activeTab === "all" || activeTab === sec.id).map((sec) => {
+        const itens = INTEGRATIONS.filter((i) => i.category === sec.id);
+        const blocos = sec.grupos
+          ? sec.grupos.map((g) => ({ titulo: g.titulo as string | undefined, itens: itens.filter((i) => g.ids.includes(i.id)) }))
+          : [{ titulo: undefined as string | undefined, itens }];
+        const ativas = itens.filter(integracaoLigada).length;
+        const atencao = itens.filter(integracaoPedeAtencao).length;
+        return (
+          <section key={sec.id} style={{ marginBottom: "34px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px", margin: "0 2px 16px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                <div aria-hidden style={{ width: "42px", height: "42px", borderRadius: "13px", background: "#0B1220", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.25rem", boxShadow: "0 6px 14px rgba(11,18,32,0.22)" }}>
+                  {sec.aba.split(" ")[0]}
+                </div>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: "1.3rem", fontWeight: 900, color: "#0B1220", letterSpacing: "-0.01em" }}>{sec.titulo}</h2>
+                  <p style={{ margin: "2px 0 0", fontSize: "0.84rem", color: "#475569" }}>{sec.ajuda}</p>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center", fontSize: "0.76rem", fontWeight: 800 }}>
+                {atencao > 0 && (
+                  <span style={{ background: "#FFFBEB", border: "1px solid #FCD34D", color: "#92400E", padding: "5px 12px", borderRadius: "999px" }}>
+                    {atencao === 1 ? "1 pede atenção" : `${atencao} pedem atenção`}
+                  </span>
                 )}
-
-                <span style={{ background: item.badge.bg, border: `1px solid ${item.badge.border}`, color: item.badge.color, padding: "4px 10px", borderRadius: "20px", fontSize: "0.72rem", fontWeight: 800, display: "flex", alignItems: "center", gap: "4px" }}>
-                  {item.badge.text}
+                <span style={{ background: "#fff", border: `1px solid ${ativas > 0 ? "#5EEAD4" : "#CBD5E1"}`, color: ativas > 0 ? "#0F766E" : "#475569", padding: "5px 12px", borderRadius: "999px" }}>
+                  {ativas} de {itens.length} ativ{itens.length === 1 ? "o" : "os"}
                 </span>
               </div>
-
-              {/* Title & Subtitle */}
-              <h3 style={{ margin: "0 0 4px 0", fontWeight: 900, fontSize: "1.1rem", color: "#0F172A" }}>
-                {item.title}
-              </h3>
-              <div style={{ fontSize: "0.76rem", fontWeight: 700, color: "#64748B", marginBottom: "10px" }}>
-                {item.subtitle}
+            </div>
+            {/* Pagamento online: os 3 passos do dinheiro, antes do cartão — é a
+                pergunta que todo lojista faz ("e o dinheiro, cai onde?"). */}
+            {sec.id === "pagamentos" && (
+              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px", marginBottom: "14px" }}>
+                {["Cliente paga Pix ou cartão no cardápio", "Dinheiro cai na sua conta Asaas", "Pedido vai para a cozinha já pago"].map((passo, n) => (
+                  <div key={passo} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    {n > 0 && <ArrowRight size={16} color="#64748B" />}
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "8px", background: "#fff", border: "1px solid #CBD7EA", borderRadius: "999px", padding: "6px 14px 6px 6px", fontSize: "0.8rem", fontWeight: 700, color: "#1E293B" }}>
+                      <span style={{ width: "22px", height: "22px", borderRadius: "50%", background: "#0F766E", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: "0.72rem", fontWeight: 900 }}>{n + 1}</span>
+                      {passo}
+                    </span>
+                  </div>
+                ))}
               </div>
+            )}
+            {blocos.map((bloco) => (
+              <div key={bloco.titulo || sec.id} style={{ marginBottom: "20px" }}>
+                {bloco.titulo && (
+                  <h3 style={{ margin: "0 2px 10px", fontSize: "0.76rem", fontWeight: 900, color: "#475569", letterSpacing: "0.08em", textTransform: "uppercase" }}>{bloco.titulo}</h3>
+                )}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "18px" }}>
+                  {/* Quem pede atenção vem primeiro, depois as ligadas, depois o resto. */}
+                  {[...bloco.itens].sort((a, b) => (integracaoPedeAtencao(b) ? 2 : integracaoLigada(b) ? 1 : 0) - (integracaoPedeAtencao(a) ? 2 : integracaoLigada(a) ? 1 : 0)).map((item) => {
+                      // O estado manda na cor da borda e no botão: a loja bate o
+                      // olho e sabe o que está ligado, o que falta e o que quebrou.
+                      const ligada = integracaoLigada(item);
+                      const atencao = integracaoPedeAtencao(item);
+                      const abrirModal = () => setOpenModal(item.abrir ?? (item.id as Exclude<typeof item.id, "pix-online" | "cartao-online">));
+                      const sombra = "0 1px 2px rgba(15,23,42,0.06), 0 8px 22px rgba(15,23,42,0.08)";
+                      const botao = atencao
+                        ? { texto: "Resolver", bg: "#F59E0B", cor: "#0B1220" }
+                        : ligada
+                          ? { texto: "Gerenciar", bg: "#0B1220", cor: "#fff" }
+                          : { texto: "Conectar", bg: "#0F766E", cor: "#fff" };
+                      return (
+                    <div
+                      key={item.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={abrirModal}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrirModal(); } }}
+                      style={{
+                        background: "#fff",
+                        borderRadius: "18px",
+                        border: `1.5px solid ${atencao ? "#FCD34D" : ligada ? "#5EEAD4" : "#D5DEEC"}`,
+                        boxShadow: sombra,
+                        cursor: "pointer",
+                        transition: "transform 0.18s ease, box-shadow 0.18s ease",
+                        display: "flex",
+                        flexDirection: "column",
+                        overflow: "hidden",
+                        outlineOffset: "3px",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = "translateY(-3px)";
+                        e.currentTarget.style.boxShadow = "0 2px 4px rgba(15,23,42,0.06), 0 16px 34px rgba(15,23,42,0.14)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = "translateY(0)";
+                        e.currentTarget.style.boxShadow = sombra;
+                      }}
+                    >
+                      {/* Faixa com a cor da marca: tira o "branco no branco". */}
+                      <div aria-hidden style={{ height: "6px", background: item.gradient }} />
 
-              {/* Description */}
-              <p style={{ margin: 0, fontSize: "0.8rem", color: "#475569", lineHeight: 1.45, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                {item.description}
-              </p>
-            </div>
+                      <div style={{ padding: "18px 18px 16px", display: "flex", flexDirection: "column", gap: "12px", flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                          {/* Logo própria sobre fundo claro (as logos são coloridas);
+                              sem logo, o emoji sobre o gradiente da marca. */}
+                          {(item as { logo?: string }).logo ? (
+                            <div style={{ flexShrink: 0, width: "50px", height: "50px", borderRadius: "14px", background: "#fff", border: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "center", padding: "7px", boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}>
+                              <img src={(item as { logo?: string }).logo} alt={item.title} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                            </div>
+                          ) : (
+                            <div style={{ flexShrink: 0, width: "50px", height: "50px", borderRadius: "14px", background: item.gradient, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: "1.5rem", boxShadow: "0 4px 12px rgba(0,0,0,0.14)" }}>
+                              {item.icon}
+                            </div>
+                          )}
+                          <div style={{ minWidth: 0 }}>
+                            <h3 style={{ margin: 0, fontWeight: 900, fontSize: "1.06rem", color: "#0B1220", lineHeight: 1.2 }}>{item.title}</h3>
+                            <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B", marginTop: "3px" }}>{item.subtitle}</div>
+                          </div>
+                        </div>
 
-            {/* Action Footer */}
-            <div style={{ marginTop: "18px", paddingTop: "14px", borderTop: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: "0.74rem", color: "#94A3B8", fontWeight: 600 }}>Clique para configurar</span>
-              <button
-                type="button"
-                style={{ background: "#F1F5F9", color: "#0F172A", border: "none", padding: "6px 12px", borderRadius: "10px", fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", display: "flex", alignItems: "center", gap: "4px" }}
-              >
-                Configurar <ArrowRight size={14} />
-              </button>
-            </div>
+                        <span style={{ alignSelf: "flex-start", display: "inline-flex", alignItems: "center", gap: "7px", background: item.badge.bg, border: `1px solid ${item.badge.border}`, color: item.badge.color, padding: "4px 11px", borderRadius: "999px", fontSize: "0.74rem", fontWeight: 800 }}>
+                          <span aria-hidden style={{ width: "8px", height: "8px", borderRadius: "50%", background: ligada ? "#10B981" : atencao ? item.badge.color : "#94A3B8" }} />
+                          {item.badge.text.replace(/^\S+\s*/u, "")}
+                        </span>
+
+                        <p style={{ margin: 0, fontSize: "0.82rem", color: "#475569", lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                          {item.description}
+                        </p>
+
+                        {/* Pagamento online: um cartão só, mas Pix e cartão têm
+                            estado próprio — mostra os dois lado a lado. */}
+                        {item.id === "pix-online" && (
+                          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                            {[{ nome: "⚡ Pix", ligado: !!asaas?.pixAtivo }, { nome: "💳 Cartão", ligado: !!asaas?.cartaoAtivo }].map((f) => (
+                              <span key={f.nome} style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "5px 12px", borderRadius: "10px", fontSize: "0.78rem", fontWeight: 800, background: f.ligado ? "#ECFDF5" : "#F1F5F9", color: f.ligado ? "#047857" : "#64748B", border: `1px solid ${f.ligado ? "#A7F3D0" : "#E2E8F0"}` }}>
+                                {f.nome} · {f.ligado ? "ligado" : "desligado"}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        <div style={{ marginTop: "auto", paddingTop: "4px" }}>
+                          <span style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", background: botao.bg, color: botao.cor, padding: "10px 14px", borderRadius: "12px", fontWeight: 800, fontSize: "0.86rem" }}>
+                            {botao.texto} <ArrowRight size={16} />
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                      );
+                  })}
+                </div>
+              </div>
+            ))}
+          </section>
+        );
+      })}
+
+      {/* Faltou alguma? Pede para o time (Douglas, 20/11/2026). Mesmo número
+          do suporte usado no resto do painel; a mensagem já sai com a loja. */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "16px", background: "linear-gradient(135deg, #0B1220 0%, #16233B 60%, #0F3D3A 100%)", borderRadius: "20px", padding: "22px 24px", color: "#fff", boxShadow: "0 12px 28px rgba(11,18,32,0.22)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+          <div aria-hidden style={{ width: "46px", height: "46px", borderRadius: "14px", background: "rgba(45,212,191,0.16)", border: "1px solid rgba(45,212,191,0.4)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "1.4rem" }}>🧩</div>
+          <div>
+            <div style={{ fontWeight: 900, fontSize: "1.05rem" }}>A integração que você queria não está aqui?</div>
+            <div style={{ color: "#CBD5E1", fontSize: "0.86rem", marginTop: "3px" }}>É só pedir para o nosso time. A gente avalia e te dá retorno.</div>
           </div>
-        ))}
+        </div>
+        <a
+          href={`https://wa.me/5522981118514?text=${encodeURIComponent(`Olá! Sou da loja ${storeName || ""} no FireHub e queria pedir uma integração com: `)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ display: "inline-flex", alignItems: "center", gap: "8px", background: "#25D366", color: "#0B1220", padding: "12px 20px", borderRadius: "12px", fontWeight: 900, fontSize: "0.9rem", textDecoration: "none", boxShadow: "0 6px 16px rgba(37,211,102,0.35)" }}
+        >
+          💬 Pedir pelo WhatsApp
+        </a>
       </div>
 
       {/* ================= MODAL DE CONFIGURAÇÃO DEDICADA ================= */}
@@ -2554,6 +2701,20 @@ export default function IntegracoesHubClient({
                   </div>
                 )}
 
+                {/* ── PASSO A PASSO COM DESENHO (Douglas, 20/11/2026) ────────
+                    Aberto para quem ainda vai conectar, autorizar de novo ou
+                    acabou de clicar; recolhido para quem já está recebendo. */}
+                {!showAddIfoodForm && (
+                  <GuiaDeConexao
+                    id="ifood"
+                    conectada={
+                      !!(ifMerchant || initialIfoodConnected) &&
+                      !ifoodIntegrations.some((i) => i.faltaReautorizar || (i.active && i.connected === false)) &&
+                      !userCodeData
+                    }
+                  />
+                )}
+
                 {/* Formulário para adicionar nova integração */}
                 {showAddIfoodForm ? (
                   <div style={{ padding: "16px", borderRadius: 14, border: "1.5px dashed #CBD5E1", background: "#F8FAFC", marginBottom: "16px" }}>
@@ -2623,7 +2784,7 @@ export default function IntegracoesHubClient({
                       {loadingUserCode ? (
                         <><Loader2 size={18} style={{ animation: "spin 1s linear infinite" }} /> Abrindo iFood...</>
                       ) : (
-                        <><Zap size={18} /> 1. Conectar e Autorizar no Portal iFood &rarr;</>
+                        <><Zap size={18} /> Passo 1 · Abrir o iFood para autorizar &rarr;</>
                       )}
                     </button>
 
@@ -2748,7 +2909,7 @@ export default function IntegracoesHubClient({
                       O iFood não informa o nome delas — ele só aparece no primeiro pedido.
                       <br /><br />
                       <strong>Não precisa adivinhar pelo código.</strong> Clique em
-                      &quot;1. Conectar e Autorizar&quot; com a loja que você quer selecionada lá no
+                      &quot;Abrir o iFood para autorizar&quot; com a loja que você quer selecionada lá no
                       iFood e cole o código dela aqui: ela entra sozinha, sem você escolher da
                       lista. Use a lista abaixo só se souber o ID de cor.
                       <br /><br />
@@ -2787,7 +2948,7 @@ export default function IntegracoesHubClient({
                 {/* Campo para colar o Código de Autorização ou Merchant UUID */}
                 <div style={{ padding: "16px", borderRadius: 14, background: "#F0FDFA", border: "1.5px solid #99F6E4", marginBottom: "16px" }}>
                   <div style={{ fontSize: "0.85rem", fontWeight: 800, color: "#0F766E", marginBottom: 4 }}>
-                    🔑 2. Cole o Código de Autorização OU Merchant ID do iFood:
+                    🔑 Passo 4 · Cole aqui o código que o iFood mostrou
                   </div>
                   <div style={{ fontSize: "0.75rem", color: "#0F766E", marginBottom: 10 }}>
                     Cole aqui o código que <strong>o iFood mostrou</strong> na janela
@@ -2924,6 +3085,8 @@ export default function IntegracoesHubClient({
                     <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Integração Oficial 99Food</span>
                   </div>
                 </div>
+
+                <GuiaDeConexao id="99food" conectada={food99Connected} />
 
                 {food99Loading ? (
                   <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
@@ -3190,6 +3353,8 @@ export default function IntegracoesHubClient({
                   </div>
                 </div>
 
+                <GuiaDeConexao id="keeta" conectada={kt.conectada} />
+
                 {kt.carregando ? (
                   <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
                     <div style={{ fontSize: "0.9rem", fontWeight: 700, color: "#475569" }}>Consultando a Keeta…</div>
@@ -3343,6 +3508,8 @@ export default function IntegracoesHubClient({
                     <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Integração oficial do cardápio digital</span>
                   </div>
                 </div>
+
+                <GuiaDeConexao id="cardapioweb" conectada={cw.lojas.length > 0} />
 
                 {/* O que a volta do CardápioWeb disse. Fica aqui no alto até o
                     lojista fechar: o motivo do erro é longo demais para o aviso
@@ -3583,6 +3750,8 @@ export default function IntegracoesHubClient({
                   </div>
                 </div>
 
+                <GuiaDeConexao id="anotaai" conectada={aa.lojas.length > 0} />
+
                 <p style={{ fontSize: "0.84rem", color: "#475569", lineHeight: 1.5, marginBottom: "16px" }}>
                   Os pedidos do seu cardápio e do robô do Anota AI entram aqui no FireHub (painel, cozinha e impressora) e o status
                   volta sozinho para o Anota AI. Tem mais de uma marca lá? Conecte a chave de cada uma.
@@ -3738,6 +3907,8 @@ export default function IntegracoesHubClient({
                     <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Integração oficial (API V2)</span>
                   </div>
                 </div>
+
+                <GuiaDeConexao id="aiqfome" conectada={aq.lojas.length > 0} />
 
                 {aq.retorno && (
                   <div role={aq.retorno.ok ? "status" : "alert"} style={{ display: "flex", alignItems: "flex-start", gap: "10px", background: aq.retorno.ok ? "#F0FDFA" : "#FEF2F2", border: `1px solid ${aq.retorno.ok ? "#99F6E4" : "#FCA5A5"}`, padding: "12px 14px", borderRadius: "12px", marginBottom: "16px" }}>
@@ -3942,6 +4113,8 @@ export default function IntegracoesHubClient({
                   </div>
                 </div>
 
+                <GuiaDeConexao id="brendi" conectada={brConnected} />
+
                 <p style={{ fontSize: "0.84rem", color: "#475569", lineHeight: 1.5, marginBottom: "16px" }}>
                   Gere as credenciais em <strong>app.brendi.com.br &rarr; Integrações &rarr; API Pública</strong> e cole abaixo.
                   A Brendi mostra o Client Secret <strong>uma única vez</strong> — cole aqui na mesma hora em que criar a integração.
@@ -4072,6 +4245,8 @@ export default function IntegracoesHubClient({
                   </div>
                 </div>
 
+                <GuiaDeConexao id="wabiz" conectada={wbConnected} />
+
                 <p style={{ fontSize: "0.84rem", color: "#475569", lineHeight: 1.5, marginBottom: "16px" }}>
                   Peça ao <strong>suporte da Wabiz</strong> o usuário e a senha <strong>da API</strong> da sua loja e cole abaixo.
                   Assim que a Wabiz aceitar o login, os pedidos do app entram no FireHub sozinhos.
@@ -4142,6 +4317,7 @@ export default function IntegracoesHubClient({
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

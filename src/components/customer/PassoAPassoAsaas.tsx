@@ -15,7 +15,7 @@ import { ExternalLink, KeyRound, Copy, MousePointerClick } from "lucide-react";
 export const URL_DAS_CHAVES_NO_ASAAS = "https://www.asaas.com/customerApiAccessToken/index";
 
 /** Etiqueta de "é aqui", apontando para o que clicar. */
-function Destaque({ children }: { children: ReactNode }) {
+export function Destaque({ children }: { children: ReactNode }) {
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#E8360C", color: "#FFF", fontSize: 10.5, fontWeight: 900, padding: "3px 8px", borderRadius: 999, boxShadow: "0 3px 10px rgba(232,54,12,0.35)", whiteSpace: "nowrap" }}>
       {children}
