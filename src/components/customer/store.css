@@ -358,8 +358,11 @@
 }
 
 .product-desc {
-  font-size: 0.78rem;
-  color: #94A3B8;
+  font-size: 0.84rem;
+  line-height: 1.35;
+  /* Denis (Seu Souza, 19/11/2026): "melhorar as letras da descrição". #94A3B8 sobre branco
+     dava contraste 2,6:1, abaixo do mínimo de 4,5:1 para texto; #64748B dá 4,8:1. */
+  color: #64748B;
   margin-top: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
