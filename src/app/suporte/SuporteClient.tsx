@@ -16,6 +16,25 @@ const VERDE = "#075E54";
 const MAX_GRAVACAO_S = 180;
 const MAX_ARQUIVO = 12 * 1024 * 1024;
 
+const ICONES = {
+  microfone: "M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z",
+  enviar: "M2.01 21L23 12 2.01 3 2 10l15 2-15 2z",
+  clipe: "M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-1.38 1.12-2.5 2.5-2.5s2.5 1.12 2.5 2.5v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5c0 1.38 1.12 2.5 2.5 2.5s2.5-1.12 2.5-2.5V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z",
+  lixeira: "M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z",
+  relogio: "M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z",
+};
+function Icone({ nome, tamanho = 24, cor = "currentColor" }: { nome: keyof typeof ICONES; tamanho?: number; cor?: string }) {
+  return <svg viewBox="0 0 24 24" width={tamanho} height={tamanho} fill={cor} aria-hidden="true"><path d={ICONES[nome]} /></svg>;
+}
+/** O "lido" do WhatsApp: os dois tiques azuis. */
+function DuploCheck({ cor }: { cor: string }) {
+  return (
+    <svg viewBox="0 0 16 11" width={16} height={11} fill={cor} aria-hidden="true">
+      <path d="M11.071.653a.457.457 0 0 0-.304-.102.493.493 0 0 0-.381.178l-6.19 7.636-2.405-2.272a.463.463 0 0 0-.336-.146.47.47 0 0 0-.343.146l-.311.31a.445.445 0 0 0-.14.337c0 .136.047.25.14.343l2.996 2.996a.724.724 0 0 0 .501.203.697.697 0 0 0 .546-.266l6.646-8.417a.497.497 0 0 0 .108-.299.441.441 0 0 0-.19-.374L11.07.653zm4.81 0a.457.457 0 0 0-.304-.102.493.493 0 0 0-.381.178l-6.19 7.636-1.152-1.09-.672.84 1.287 1.288a.724.724 0 0 0 .501.203.697.697 0 0 0 .546-.266l6.646-8.417a.497.497 0 0 0 .108-.299.441.441 0 0 0-.19-.374l-.199-.197z" />
+    </svg>
+  );
+}
+
 function hora(iso: string) {
   return new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
@@ -76,7 +95,7 @@ function Balao({ m }: { m: Mensagem }) {
         )}
         <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 3, fontSize: "0.68rem", color: "#667781", marginTop: 2, marginLeft: 24 }}>
           {hora(m.em)}
-          {m.eu && <span style={{ color: m.enviando ? "#8696A0" : "#53BDEB", fontSize: "0.8rem" }}>{m.enviando ? "🕓" : "✓✓"}</span>}
+          {m.eu && (m.enviando ? <Icone nome="relogio" tamanho={13} cor="#8696A0" /> : <DuploCheck cor="#53BDEB" />)}
         </div>
       </div>
     </div>
@@ -326,16 +345,16 @@ export default function SuporteClient({ token }: { token: string | null }) {
           <div style={{ background: "#F0F2F5", padding: "8px 8px", display: "flex", alignItems: "flex-end", gap: 6, flexShrink: 0, paddingBottom: "max(8px, env(safe-area-inset-bottom))" }}>
             {gravando ? (
               <>
-                <button className="fh-icone" onClick={() => pararGravacao(true)} title="Cancelar" aria-label="Cancelar áudio">🗑️</button>
+                <button className="fh-icone" onClick={() => pararGravacao(true)} title="Cancelar" aria-label="Cancelar áudio"><Icone nome="lixeira" /></button>
                 <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10, background: "#fff", borderRadius: 24, padding: "12px 16px", fontSize: "0.95rem" }}>
                   <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#E53935", animation: "fhPisca 1s infinite" }} />
                   Gravando… {mmss}
                 </div>
-                <button className="fh-btn-redondo" onClick={() => pararGravacao(false)} title="Enviar áudio" aria-label="Enviar áudio">➤</button>
+                <button className="fh-btn-redondo" onClick={() => pararGravacao(false)} title="Enviar áudio" aria-label="Enviar áudio"><Icone nome="enviar" /></button>
               </>
             ) : (
               <>
-                <button className="fh-icone" onClick={() => arquivoRef.current?.click()} title="Foto ou arquivo" aria-label="Anexar foto ou arquivo">📎</button>
+                <button className="fh-icone" onClick={() => arquivoRef.current?.click()} title="Foto ou arquivo" aria-label="Anexar foto ou arquivo" style={{ transform: "rotate(45deg)" }}><Icone nome="clipe" /></button>
                 <input ref={arquivoRef} type="file" accept="image/*,application/pdf,audio/*" style={{ display: "none" }}
                   onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void enviarArquivo(f); }} />
                 <textarea
@@ -347,9 +366,9 @@ export default function SuporteClient({ token }: { token: string | null }) {
                   style={{ flex: 1, resize: "none", border: "none", outline: "none", borderRadius: 24, padding: "12px 16px", fontSize: "0.98rem", fontFamily: "inherit", maxHeight: 120, lineHeight: 1.35, background: "#fff" }}
                 />
                 {texto.trim() ? (
-                  <button className="fh-btn-redondo" onClick={enviarTexto} title="Enviar" aria-label="Enviar">➤</button>
+                  <button className="fh-btn-redondo" onClick={enviarTexto} title="Enviar" aria-label="Enviar"><Icone nome="enviar" /></button>
                 ) : (
-                  <button className="fh-btn-redondo" onClick={comecarGravacao} title="Gravar áudio" aria-label="Gravar áudio">🎤</button>
+                  <button className="fh-btn-redondo" onClick={comecarGravacao} title="Gravar áudio" aria-label="Gravar áudio"><Icone nome="microfone" /></button>
                 )}
               </>
             )}
