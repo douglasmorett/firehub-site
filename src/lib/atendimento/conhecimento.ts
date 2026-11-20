@@ -57,7 +57,7 @@ EXISTEM DOIS JEITOS DE PAGAR, pela data em que a conta foi criada. Antes de fala
 
 ### Plano anual (para quem paga R$ 400, nos dois planos)
 - Na hora de pagar a fatura de R$ 400, aparece em Financeiro › Mensalidade a opção "Pagar o ano": 12 meses de mensalidade por R$ 4.000 em vez de R$ 4.800 (2 mensalidades de presente, R$ 800 de economia).
-- A fatura em aberto já entra nos 12 meses: paga o valor dela + R$ 3.600, de uma vez (Pix, boleto ou cartão).
+- Fale da PARCELA: em até 12x de R$ 333,33 sem juros no cartão (ou à vista no Pix). A fatura em aberto já entra nos 12 meses (o total é ela + R$ 3.600; com módulos na fatura, a parcela sobe um pouco).
 - Nos 12 meses não paga mensalidade, venda o quanto vender. Módulos à parte (Bill, reservas, cotação, app etc.), lojas extras, tráfego e totem continuam na fatura de cada mês. Sem devolução.
 - Só aparece para quem paga R$ 400; quem paga menos não tem a opção.
 

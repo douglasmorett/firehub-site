@@ -19,8 +19,8 @@ import { splitDoBoletoNoAsaas, TETO_DE_SPLIT } from "@/lib/parceiro/regras";
 import { marcarSplitRecusado } from "@/lib/embaixador-do-curso";
 import { diaEmBrasilia, MARCA_DA_ATIVACAO, vencimentoDoCiclo } from "@/lib/prazo-da-mensalidade";
 import {
-  aplicarPagamentoDoAnual, CHAVE_DO_PLANO_ANUAL, cicloDaReferenciaDoAnual, lerPlanoAnual, MESES_DO_ANUAL, ofertaDoAnual, PREFIXO_DO_ANUAL,
-  type CobrancaDoAnual, type EstadoDoPlanoAnual,
+  aplicarPagamentoDoAnual, CHAVE_DO_PLANO_ANUAL, cicloDaReferenciaDoAnual, lerPlanoAnual, MESES_DO_ANUAL, ofertaDoAnual, PARCELAS_DO_ANUAL, PREFIXO_DO_ANUAL,
+  type CobrancaDoAnual, type EstadoDoPlanoAnual, type FormaDoAnual,
 } from "@/lib/plano-anual";
 
 async function gravarEstado(lojaId: string, mudar: (e: EstadoDoPlanoAnual) => EstadoDoPlanoAnual | null) {
@@ -54,8 +54,19 @@ async function asaas(chave: string, caminho: string, init?: { metodo?: string; c
 
 export class ErroDoPlanoAnual extends Error {}
 
-/** "Pagar o ano" na fatura em aberto: gera (ou reaproveita) a cobrança do anual e devolve o link. */
-export async function cobrarAnualDaFatura(lojaId: string, yearMonth: string) {
+/** Apaga no Asaas uma cobrança do anual ainda aberta (o parcelamento inteiro, no cartão). */
+async function apagarNoAsaas(chave: string, c: CobrancaDoAnual) {
+  const caminho = c.asaasInstallmentId ? `/installments/${c.asaasInstallmentId}` : `/payments/${c.asaasPaymentId}`;
+  const d = await asaas(chave, caminho, { metodo: "DELETE" }).catch(() => null);
+  if (!d?.ok) console.error(`[Plano anual] Não consegui apagar a cobrança do anual ${c.asaasPaymentId} — apagar no Asaas à mão.`);
+}
+
+/**
+ * "Parcelar em 12x" (cartão, sem juros: a taxa do parcelamento é do FireHub)
+ * ou "Pagar no Pix" na fatura em aberto: gera (ou reaproveita) a cobrança do
+ * anual e devolve o link.
+ */
+export async function cobrarAnualDaFatura(lojaId: string, yearMonth: string, forma: FormaDoAnual) {
   const ciclo = await prisma.franchiseeBillingCycle.findUnique({ where: { franchiseeId_yearMonth: { franchiseeId: lojaId, yearMonth } } });
   if (!ciclo || ciclo.status !== "CLOSED" || ciclo.amountPending <= 0) throw new ErroDoPlanoAnual("Esta fatura não está mais em aberto.");
   const loja = await prisma.user.findUnique({ where: { id: lojaId }, include: { ambassador: true, vendedor: true } });
@@ -70,7 +81,7 @@ export async function cobrarAnualDaFatura(lojaId: string, yearMonth: string) {
   if (!chave) throw new ErroDoPlanoAnual("O pagamento não está configurado no servidor. Fale com a gente no WhatsApp.");
 
   // Dois cliques não viram duas cobranças: a pendente do mesmo ciclo e mesmo valor volta.
-  const pendente = (lerPlanoAnual(loja.onboardingData).cobrancas || []).find((c) => c.cicloId === ciclo.id && c.status === "PENDENTE" && c.valor === oferta.valor);
+  const pendente = (lerPlanoAnual(loja.onboardingData).cobrancas || []).find((c) => c.cicloId === ciclo.id && c.forma === forma && c.status === "PENDENTE" && c.valor === oferta.valor);
   if (pendente) {
     const c = await asaas(chave, `/payments/${pendente.asaasPaymentId}`);
     if (c.ok && c.dados?.status === "PENDING" && !c.dados?.deleted) return { invoiceUrl: pendente.invoiceUrl, reaproveitada: true };
@@ -93,13 +104,15 @@ export async function cobrarAnualDaFatura(lojaId: string, yearMonth: string) {
   const venc = vencimentoDoCiclo(ciclo).dia;
   const corpo: any = {
     customer: cliente,
-    billingType: "UNDEFINED", // Pix, boleto ou cartão, na página do Asaas
-    value: oferta.valor,
+    ...(forma === "cartao"
+      ? { billingType: "CREDIT_CARD", installmentCount: PARCELAS_DO_ANUAL, totalValue: oferta.valor }
+      : { billingType: "PIX", value: oferta.valor }),
     dueDate: venc < hoje ? hoje : venc,
     description: `FireHub — plano anual: ${MESES_DO_ANUAL} meses de mensalidade (${oferta.de} a ${oferta.ate}) pelo preço de 10, mais os itens da fatura de ${yearMonth}`.slice(0, 500),
     externalReference: `${PREFIXO_DO_ANUAL}${ciclo.id}`,
   };
-  // Comissão: a mesma regra da mensalidade (lib/parceiro/regras.ts).
+  // Comissão: a mesma regra da mensalidade (lib/parceiro/regras.ts). Em
+  // porcentagem, vale para cada parcela do cartão.
   const comissao = splitDoBoletoNoAsaas({ ambassadorId: loja.ambassadorId ?? null, vendedorId: loja.vendedorId ?? null, ambassador: loja.ambassador ?? null, vendedor: loja.vendedor ?? null });
   if (comissao.acimaDoTeto) console.error(`[Plano anual] Split de ${comissao.total}% no ciclo ${ciclo.id} acima do teto de ${TETO_DE_SPLIT}% — cobrança SEM split.`);
   else if (comissao.split.length > 0) corpo.split = comissao.split;
@@ -117,11 +130,11 @@ export async function cobrarAnualDaFatura(lojaId: string, yearMonth: string) {
     throw new ErroDoPlanoAnual(r.dados?.errors?.[0]?.description || "O Asaas não gerou a cobrança. Fale com a gente no WhatsApp.");
   }
   const cobranca: CobrancaDoAnual = {
-    cicloId: ciclo.id, yearMonth, asaasPaymentId: r.dados.id, invoiceUrl: r.dados.invoiceUrl,
+    cicloId: ciclo.id, yearMonth, forma, asaasPaymentId: r.dados.id, asaasInstallmentId: r.dados.installment || null, invoiceUrl: r.dados.invoiceUrl,
     valor: oferta.valor, criadaEm: new Date().toISOString(), status: "PENDENTE",
   };
   await gravarEstado(lojaId, (e) => ({ ...e, cobrancas: [...(e.cobrancas || []), cobranca] }));
-  console.log(`[Plano anual] Cobrança ${cobranca.asaasPaymentId} de R$ ${oferta.valor} para a loja ${lojaId} (ciclo ${yearMonth}).`);
+  console.log(`[Plano anual] Cobrança ${forma} ${cobranca.asaasPaymentId} de R$ ${oferta.valor} para a loja ${lojaId} (ciclo ${yearMonth}).`);
   return { invoiceUrl: cobranca.invoiceUrl, reaproveitada: false };
 }
 
@@ -131,7 +144,7 @@ export async function cobrarAnualDaFatura(lojaId: string, yearMonth: string) {
  * Indique e Ganhe) e apaga a cobrança mensal no Asaas.
  */
 export async function registrarPagamentoDoAnual(
-  pagamento: { id?: string; externalReference?: string | null; status?: string; value?: number | null; netValue?: number | null; paymentDate?: string | null; clientPaymentDate?: string | null; confirmedDate?: string | null; invoiceUrl?: string | null },
+  pagamento: { id?: string; installment?: string | null; externalReference?: string | null; status?: string; value?: number | null; netValue?: number | null; paymentDate?: string | null; clientPaymentDate?: string | null; confirmedDate?: string | null; invoiceUrl?: string | null },
   evento?: string | null,
 ) {
   const cicloId = cicloDaReferenciaDoAnual(pagamento.externalReference);
@@ -140,14 +153,15 @@ export async function registrarPagamentoDoAnual(
   if (!ciclo) return "SEM_COBRANCA" as const;
   const jaPagoPorOutra = ciclo.status === "PAID" && !!ciclo.paidAt;
 
-  const feito: { resultado: ReturnType<typeof aplicarPagamentoDoAnual>["resultado"]; apagar: CobrancaDoAnual[] } = { resultado: "SEM_MUDANCA", apagar: [] };
+  const feito: { resultado: ReturnType<typeof aplicarPagamentoDoAnual>["resultado"]; apagar: CobrancaDoAnual[]; valor: number | null } = { resultado: "SEM_MUDANCA", apagar: [], valor: null };
   await gravarEstado(ciclo.franchiseeId, (e) => {
     const r = aplicarPagamentoDoAnual(e, pagamento, evento, { agora: new Date(), cicloJaPagoPorOutra: jaPagoPorOutra });
     feito.resultado = r.resultado;
-    if (r.resultado === "PAGO") feito.apagar = (e.cobrancas || []).filter((c) => c.status === "PENDENTE" && c.asaasPaymentId !== pagamento.id);
+    feito.valor = r.cobranca?.valor ?? null;
+    if (r.resultado === "PAGO") feito.apagar = (e.cobrancas || []).filter((c) => c.status === "PENDENTE" && c !== r.cobranca);
     return r.estado;
   });
-  const { resultado, apagar } = feito;
+  const { resultado, apagar, valor } = feito;
 
   const chave = getAsaasKey();
   if (resultado === "PAGO") {
@@ -155,7 +169,8 @@ export async function registrarPagamentoDoAnual(
       console.error(`[Plano anual] Loja ${ciclo.franchiseeId} pagou o anual (${pagamento.id}) com a fatura ${ciclo.yearMonth} JÁ paga pela mensal — o anual começa no mês seguinte. Conferir à mão os itens da fatura cobrados duas vezes.`);
     } else {
       const { registrarCobrancaDaMensalidade } = await import("@/lib/pagamento-da-mensalidade");
-      await registrarCobrancaDaMensalidade({ ...pagamento, id: pagamento.id, externalReference: `billing:${ciclo.id}` }, evento);
+      // No cartão o evento é de UMA parcela: o ciclo grava o valor do anual inteiro.
+      await registrarCobrancaDaMensalidade({ ...pagamento, id: pagamento.id, externalReference: `billing:${ciclo.id}`, ...(valor ? { value: valor, netValue: null } : {}) }, evento);
       await prisma.franchiseeBillingCycle.update({
         where: { id: ciclo.id },
         data: { notes: `${ciclo.notes ? `${ciclo.notes} | ` : ""}Pago no plano anual (${pagamento.id}): ${MESES_DO_ANUAL} meses a partir de ${ciclo.yearMonth}.` },
@@ -165,11 +180,7 @@ export async function registrarPagamentoDoAnual(
         if (!d?.ok) console.error(`[Plano anual] Não consegui apagar a cobrança mensal ${ciclo.asaasPaymentId} (ciclo ${ciclo.id}) — apagar no Asaas à mão.`);
       }
     }
-    for (const c of apagar) {
-      if (!chave) break;
-      const d = await asaas(chave, `/payments/${c.asaasPaymentId}`, { metodo: "DELETE" }).catch(() => null);
-      if (!d?.ok) console.error(`[Plano anual] Não consegui apagar a cobrança ${c.asaasPaymentId} — apagar no Asaas à mão.`);
-    }
+    for (const c of apagar) if (chave) await apagarNoAsaas(chave, c);
     console.log(`[Plano anual] Loja ${ciclo.franchiseeId} PAGOU o anual (${pagamento.id}).`);
   }
   if (resultado === "ESTORNADO") console.warn(`[Plano anual] Anual da loja ${ciclo.franchiseeId} ESTORNADO (${pagamento.id}): a mensalidade volta a ser cobrada a partir do próximo fechamento.`);
@@ -183,15 +194,10 @@ export async function registrarPagamentoDoAnual(
 export async function cancelarAnualPendente(lojaId: string, cicloId: string, pagoPor: string) {
   try {
     const estado = lerPlanoAnual((await prisma.user.findUnique({ where: { id: lojaId }, select: { onboardingData: true } }))?.onboardingData);
-    const pendentes = (estado.cobrancas || []).filter((c) => c.cicloId === cicloId && c.status === "PENDENTE" && c.asaasPaymentId !== pagoPor);
+    const pendentes = (estado.cobrancas || []).filter((c) => c.cicloId === cicloId && c.status === "PENDENTE" && c.asaasPaymentId !== pagoPor && c.asaasInstallmentId !== pagoPor);
     if (pendentes.length === 0) return;
     const chave = getAsaasKey();
-    for (const c of pendentes) {
-      if (chave) {
-        const d = await asaas(chave, `/payments/${c.asaasPaymentId}`, { metodo: "DELETE" }).catch(() => null);
-        if (!d?.ok) console.error(`[Plano anual] Não consegui apagar a cobrança do anual ${c.asaasPaymentId} — apagar no Asaas à mão.`);
-      }
-    }
+    for (const c of pendentes) if (chave) await apagarNoAsaas(chave, c);
     const ids = new Set(pendentes.map((c) => c.asaasPaymentId));
     await gravarEstado(lojaId, (e) => ({ ...e, cobrancas: (e.cobrancas || []).map((c) => ids.has(c.asaasPaymentId) && c.status === "PENDENTE" ? { ...c, status: "CANCELADA" } : c) }));
   } catch (e: any) {

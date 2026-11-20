@@ -16,6 +16,10 @@
  * anual da Black November (não fazem parte do plano). Quem pagou o anual não
  * recebe outra oferta enquanto ele valer.
  *
+ * A oferta mostra a PARCELA, não o valor cheio (Douglas, 20/11): "parcele em
+ * até 12x sem juros" no cartão (a taxa do parcelamento é do FireHub), ou à
+ * vista no Pix.
+ *
  * ── QUEM VÊ ────────────────────────────────────────────────────────────────
  *
  * Fatura com a mensalidade em R$ 400 — o teto do plano de 2% e a faixa de
@@ -40,11 +44,23 @@ export const MESES_DO_ANUAL = 12;
 export const MESES_PAGOS = 10;
 export const VALOR_DO_ANUAL = MENSALIDADE_CHEIA * MESES_PAGOS; // 4.000
 export const ECONOMIA_DO_ANUAL = MENSALIDADE_CHEIA * (MESES_DO_ANUAL - MESES_PAGOS); // 800
+/** Cartão em até 12x sem juros. */
+export const PARCELAS_DO_ANUAL = 12;
+
+export type FormaDoAnual = "cartao" | "pix";
+
+/** Valor de cada parcela no cartão, cortado no centavo (o Asaas acerta a diferença na última). */
+export function valorDaParcela(valor: number): number {
+  return Math.floor((valor / PARCELAS_DO_ANUAL) * 100) / 100;
+}
 
 export type CobrancaDoAnual = {
   cicloId: string;
   yearMonth: string;
+  forma: FormaDoAnual;
   asaasPaymentId: string;
+  /** Cartão parcelado: o parcelamento do Asaas (cada parcela é um payment). */
+  asaasInstallmentId?: string | null;
   invoiceUrl: string;
   valor: number;
   criadaEm: string;
@@ -99,7 +115,7 @@ export function valorDoAnualNaFatura(valorDaFatura: number): number {
   return parseFloat((valorDaFatura + VALOR_DO_ANUAL - MENSALIDADE_CHEIA).toFixed(2));
 }
 
-export type OfertaDoAnual = { valor: number; economia: number; de: string; ate: string };
+export type OfertaDoAnual = { valor: number; parcela: number; parcelas: number; economia: number; de: string; ate: string };
 
 /**
  * A fatura em aberto mostra a oferta? Mensalidade (amountDue do ciclo) de
@@ -116,7 +132,8 @@ export function ofertaDoAnual(f: {
   if (f.isenta || f.ativacao) return null;
   if (f.mensalidade < MENSALIDADE_CHEIA) return null;
   if (temAnualValendo(f.onboardingData, f.yearMonth)) return null;
-  return { valor: valorDoAnualNaFatura(f.valorDaFatura), economia: ECONOMIA_DO_ANUAL, de: f.yearMonth, ate: somarMeses(f.yearMonth, MESES_DO_ANUAL - 1) };
+  const valor = valorDoAnualNaFatura(f.valorDaFatura);
+  return { valor, parcela: valorDaParcela(valor), parcelas: PARCELAS_DO_ANUAL, economia: ECONOMIA_DO_ANUAL, de: f.yearMonth, ate: somarMeses(f.yearMonth, MESES_DO_ANUAL - 1) };
 }
 
 export function cicloDaReferenciaDoAnual(ref: string | null | undefined): string | null {
@@ -131,12 +148,13 @@ export function cicloDaReferenciaDoAnual(ref: string | null | undefined): string
  */
 export function aplicarPagamentoDoAnual(
   estado: EstadoDoPlanoAnual,
-  pagamento: { id?: string | null; status?: string | null },
+  pagamento: { id?: string | null; installment?: string | null; status?: string | null },
   evento: string | null | undefined,
   ctx: { agora: Date; cicloJaPagoPorOutra?: boolean },
 ): { estado: EstadoDoPlanoAnual | null; resultado: "PAGO" | "ESTORNADO" | "SEM_MUDANCA" | "SEM_COBRANCA"; cobranca?: CobrancaDoAnual } {
   const cobrancas = estado.cobrancas || [];
-  const minha = cobrancas.find((c) => c.asaasPaymentId === pagamento.id);
+  // No cartão em 12x chega um evento por parcela, cada uma com o seu id.
+  const minha = cobrancas.find((c) => c.asaasPaymentId === pagamento.id || (!!pagamento.installment && c.asaasInstallmentId === pagamento.installment));
   if (!minha) return { estado: null, resultado: "SEM_COBRANCA" };
 
   if (pagamentoConfirmado(evento, pagamento.status)) {

@@ -13,7 +13,7 @@ function igual(nome: string, veio: unknown, esperado: unknown) {
 const fatura = { yearMonth: "2026-11", mensalidade: 400, valorDaFatura: 400, isenta: false, onboardingData: {} };
 
 // Quem vê
-igual("mensalidade 400: oferece", ofertaDoAnual(fatura), { valor: 4000, economia: 800, de: "2026-11", ate: "2027-10" });
+igual("mensalidade 400: oferece 12x de 333,33", ofertaDoAnual(fatura), { valor: 4000, parcela: 333.33, parcelas: 12, economia: 800, de: "2026-11", ate: "2027-10" });
 igual("mensalidade 285: não oferece", ofertaDoAnual({ ...fatura, mensalidade: 285, valorDaFatura: 285 }), null);
 igual("pré-pago R$ 200: não oferece", ofertaDoAnual({ ...fatura, mensalidade: 200, valorDaFatura: 200 }), null);
 igual("ativação do pré-pago: não oferece", ofertaDoAnual({ ...fatura, ativacao: true }), null);
@@ -25,7 +25,7 @@ igual("fatura com Bill e loja extra (400 + 49,90 + 100) → 4.149,90", valorDoAn
 igual("fatura com crédito de indicação (300) → 3.900", valorDoAnualNaFatura(300), 3900);
 
 // Pagamento
-const pendente: EstadoDoPlanoAnual = { cobrancas: [{ cicloId: "c1", yearMonth: "2026-11", asaasPaymentId: "pay_a", invoiceUrl: "u", valor: 4000, criadaEm: "2026-12-02T12:00:00Z", status: "PENDENTE" }] };
+const pendente: EstadoDoPlanoAnual = { cobrancas: [{ cicloId: "c1", yearMonth: "2026-11", forma: "pix", asaasPaymentId: "pay_a", invoiceUrl: "u", valor: 4000, criadaEm: "2026-12-02T12:00:00Z", status: "PENDENTE" }] };
 const agora = new Date("2026-12-03T15:00:00Z");
 const pago = aplicarPagamentoDoAnual(pendente, { id: "pay_a", status: "RECEIVED" }, "PAYMENT_RECEIVED", { agora });
 igual("pagou: resultado", pago.resultado, "PAGO");

@@ -14,7 +14,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { FIREHUB_PLAN, MES_DOS_2_POR_CENTO } from "@/lib/firehub-billing";
 import { PRE_PAGO } from "@/lib/modelo-de-cobranca";
-import { MENSALIDADE_CHEIA, MESES_DO_ANUAL, VALOR_DO_ANUAL } from "@/lib/plano-anual";
 import type { VisaoDoCiclo } from "@/lib/billing";
 import { diasAte } from "@/lib/prazo-da-mensalidade";
 import { nomeDoMes } from "@/lib/financeiro/dre";
@@ -140,7 +139,9 @@ export default function AbaMensalidade({ ciclo, tz }: { ciclo: VisaoDoCiclo | nu
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem", marginBottom: "1rem" }}>
           <div>
             <span style={{ background: "#FFF7E6", color: "#92400E", padding: "4px 12px", borderRadius: 20, fontSize: "0.78rem", fontWeight: 900 }}>
-              {ciclo.emTeste
+              {ciclo.planoAnualAte
+                ? `✅ Plano anual pago até ${mesPorExtenso(ciclo.planoAnualAte)}`
+                : ciclo.emTeste
                 ? (testeAte && testeAte > agora
                   ? `🧪 Em teste até ${dataCurta(testeAte)}${cobraDesde ? " · as vendas a partir daí entram na cobrança" : " · sem cobrança neste mês"}`
                   : "🧪 Período de teste — sem cobrança neste mês")
@@ -149,10 +150,16 @@ export default function AbaMensalidade({ ciclo, tz }: { ciclo: VisaoDoCiclo | nu
             <h2 style={{ fontSize: "1.45rem", fontWeight: 900, margin: "8px 0 2px", color: "#F8FAFC" }}>
               Mensalidade de {mesPorExtenso(ciclo.yearMonth)}
             </h2>
+            {ciclo.planoAnualAte ? (
+            <p style={{ margin: 0, fontSize: "0.82rem", color: "#94A3B8" }}>
+              Sua mensalidade já está paga no plano anual: venda o quanto vender, não tem mensalidade até {mesPorExtenso(ciclo.planoAnualAte)}. Aqui entram só os módulos e taxas à parte.
+            </p>
+            ) : (
             <p style={{ margin: 0, fontSize: "0.82rem", color: "#94A3B8" }}>
               Plano: {pct2}% sobre o valor cheio das vendas (antes de cupons) · mínimo {fmtR(FIREHUB_PLAN.MIN_MONTHLY)} · teto {fmtR(FIREHUB_PLAN.MAX_MONTHLY)} por mês
               {!ciclo.emTeste && cobraDesde && testeAte && cobraDesde.getTime() === testeAte.getTime() && <> · teste terminou em {dataCurta(cobraDesde)}: só as vendas a partir daí contam</>}
             </p>
+            )}
           </div>
           <div style={{ textAlign: "right", background: "#1E293B", padding: "12px 18px", borderRadius: 14, border: "1px solid #334155" }}>
             <div style={{ fontSize: "0.72rem", color: "#94A3B8", fontWeight: 700 }}>PREVISÃO DO BOLETO ATÉ AGORA</div>
@@ -163,13 +170,13 @@ export default function AbaMensalidade({ ciclo, tz }: { ciclo: VisaoDoCiclo | nu
         {/* A conta, linha a linha — cada parte do boleto com o seu número. */}
         <div style={{ background: "#0B1220", borderRadius: 14, padding: "4px 16px 8px" }}>
           {linha(
-            "Vendas na base de cálculo",
+            ciclo.planoAnualAte ? "Vendas no mês" : "Vendas na base de cálculo",
             fmtR(ciclo.totalSales),
             ciclo.emTeste
               ? "nada ainda: as vendas passam a contar quando o teste terminar"
               : `valor cheio (antes de cupons)${cobraDesde && testeAte && cobraDesde.getTime() === testeAte.getTime() ? ` desde ${dataCurta(cobraDesde)}` : " do mês"}`,
           )}
-          {!ciclo.emTeste && ciclo.totalSales > 0 && (
+          {!ciclo.emTeste && !ciclo.planoAnualAte && ciclo.totalSales > 0 && (
             a1 > 0
               ? linha(
                   <>Porcentagem: {fmtR(a1)} a 1% (01 a 03/10) + {fmtR(a2)} a {pct2}%</>,
@@ -357,44 +364,58 @@ function FaturasEmAberto({ faturas }: { faturas: VisaoDoCiclo["faturasEmAberto"]
  * quem paga a mensalidade de R$ 400: a fatura de agora já entra no ano.
  */
 function OfertaDoAnual({ fatura }: { fatura: VisaoDoCiclo["faturasEmAberto"][number] }) {
-  const [enviando, setEnviando] = useState(false);
+  const [enviando, setEnviando] = useState<"cartao" | "pix" | null>(null);
   const [erro, setErro] = useState("");
   const a = fatura.anual!;
   const curto = (ym: string) => { const [y, m] = ym.split("-").map(Number); return `${MESES[m - 1]?.slice(0, 3)}/${y}`; };
 
-  async function pagarOAno() {
-    setEnviando(true);
+  async function pagarOAno(forma: "cartao" | "pix") {
+    setEnviando(forma);
     setErro("");
     try {
-      const r = await fetch("/api/billing/anual", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ yearMonth: fatura.yearMonth }) });
+      const r = await fetch("/api/billing/anual", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ yearMonth: fatura.yearMonth, forma }) });
       const d = await r.json().catch(() => ({}));
       if (d.url) { window.location.href = d.url; return; }
       setErro(d.error || "Não deu para gerar a cobrança agora. Tente de novo ou fale com o suporte.");
     } catch {
       setErro("Sem conexão. Tente de novo em instantes.");
     }
-    setEnviando(false);
+    setEnviando(null);
   }
 
   return (
-    <div style={{ flexBasis: "100%", background: "#fff", border: "1.5px dashed #16A34A", borderRadius: 14, padding: "14px 16px", display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center", justifyContent: "space-between" }}>
+    <div style={{ flexBasis: "100%", background: "linear-gradient(135deg, #F0FDF4 0%, #fff 70%)", border: "2px solid #16A34A", borderRadius: 14, padding: "16px 18px", display: "flex", flexWrap: "wrap", gap: 16, alignItems: "center", justifyContent: "space-between" }}>
       <div style={{ flex: "1 1 320px" }}>
-        <div style={{ fontSize: "0.78rem", fontWeight: 900, color: "#15803D", letterSpacing: 0.5 }}>PAGUE O ANO E GANHE 2 MESES</div>
-        <div style={{ fontSize: "1.02rem", fontWeight: 900, color: "#0F172A", marginTop: 2 }}>
-          {MESES_DO_ANUAL} meses de mensalidade por {fmtR(VALOR_DO_ANUAL)} em vez de {fmtR(MENSALIDADE_CHEIA * MESES_DO_ANUAL)}: economia de {fmtR(a.economia)}
+        <span style={{ background: "#16A34A", color: "#fff", padding: "3px 10px", borderRadius: 20, fontSize: "0.72rem", fontWeight: 900, letterSpacing: 0.4 }}>
+          PLANO ANUAL · 2 MESES DE PRESENTE
+        </span>
+        <div style={{ fontSize: "0.9rem", fontWeight: 800, color: "#0F172A", marginTop: 8 }}>Parcele o ano em até</div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontSize: "2rem", fontWeight: 900, color: "#15803D", lineHeight: 1.1 }}>{a.parcelas}x de {fmtR(a.parcela)}</span>
+          <span style={{ fontSize: "0.95rem", fontWeight: 900, color: "#15803D" }}>sem juros</span>
         </div>
-        <div style={{ fontSize: "0.82rem", color: "#475569", marginTop: 4, lineHeight: 1.5 }}>
-          {fatura.prePago ? "Esta renovação já entra" : "Esta fatura já entra"}: o plano cobre a mensalidade de <strong>{curto(a.de)}</strong> a <strong>{curto(a.ate)}</strong>, venda o quanto vender.
-          Você paga esta fatura ({fmtR(fatura.valor)}) + {fmtR(VALOR_DO_ANUAL - MENSALIDADE_CHEIA)} de uma vez. Módulos e taxas à parte continuam na fatura de cada mês. Sem devolução.
+        <div style={{ fontSize: "0.86rem", color: "#334155", marginTop: 6, lineHeight: 1.5 }}>
+          Você usa 12 meses e paga 10: <strong>economiza {fmtR(a.economia)}</strong>. Cobre a mensalidade de {curto(a.de)} a {curto(a.ate)}, venda o quanto vender, e {fatura.prePago ? "esta renovação" : "esta fatura"} já entra.
+        </div>
+        <div style={{ fontSize: "0.74rem", color: "#64748B", marginTop: 6 }}>
+          No cartão de crédito. Módulos e taxas à parte seguem na fatura de cada mês. Sem devolução.
         </div>
         {erro && <div style={{ color: "#B91C1C", fontSize: "0.82rem", marginTop: 6 }}>{erro}</div>}
       </div>
-      <button type="button" onClick={pagarOAno} disabled={enviando} style={{
-        background: "#16A34A", color: "#fff", border: "none", padding: "12px 20px", borderRadius: 12, fontSize: "0.92rem", fontWeight: 900,
-        cursor: enviando ? "wait" : "pointer", fontFamily: "inherit", whiteSpace: "nowrap", opacity: enviando ? 0.7 : 1,
-      }}>
-        {enviando ? "Gerando…" : `Pagar o ano · ${fmtR(a.valor)}`}
-      </button>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "stretch" }}>
+        <button type="button" onClick={() => pagarOAno("cartao")} disabled={!!enviando} style={{
+          background: "#16A34A", color: "#fff", border: "none", padding: "14px 22px", borderRadius: 12, fontSize: "0.98rem", fontWeight: 900,
+          cursor: enviando ? "wait" : "pointer", fontFamily: "inherit", whiteSpace: "nowrap", opacity: enviando ? 0.7 : 1, boxShadow: "0 6px 16px rgba(22,163,74,.3)",
+        }}>
+          {enviando === "cartao" ? "Gerando…" : `Quero parcelar em ${a.parcelas}x`}
+        </button>
+        <button type="button" onClick={() => pagarOAno("pix")} disabled={!!enviando} style={{
+          background: "transparent", color: "#15803D", border: "none", padding: "2px 6px", fontSize: "0.8rem", fontWeight: 700,
+          cursor: enviando ? "wait" : "pointer", fontFamily: "inherit", textDecoration: "underline",
+        }}>
+          {enviando === "pix" ? "Gerando…" : `ou à vista no Pix (${fmtR(a.valor)})`}
+        </button>
+      </div>
     </div>
   );
 }
