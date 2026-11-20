@@ -5,7 +5,7 @@
  * Roda sem banco: DATABASE_URL=postgresql://x@localhost:1/x npx tsx scripts/teste-isencao-escolhida.ts
  */
 import assert from "node:assert/strict";
-import { lojaIsenta } from "../src/lib/billing";
+import { lojaIsenta, pagaDesde, inicioDaCobranca } from "../src/lib/billing";
 
 let ok = 0;
 const caso = (nome: string, f: () => void) => { f(); ok++; console.log("ok -", nome); };
@@ -32,6 +32,19 @@ caso("conta da casa pela lista de e-mails é isenta", () => {
 });
 caso("sem loja não é isenta", () => {
   assert.equal(lojaIsenta(null), false);
+});
+caso("Hakim Centro paga desde 15/11/2026, mesmo sendo franqueada Hakim e conta da casa (Douglas, 20/11)", () => {
+  const hakimCentro = { id: "cmpx96phr0000ujf0sb0qk5vr", email: "contatohakim@gmail.com", planPercent: 0, isFranqueadoHakim: true };
+  assert.equal(lojaIsenta(hakimCentro), false);
+  // As vendas de novembro só entram a partir do dia 15 (00:00 em Brasília); dezembro conta inteiro.
+  const nov = { inicio: new Date("2026-11-01T03:00:00.000Z"), fim: new Date("2026-12-01T03:00:00.000Z") };
+  assert.equal(inicioDaCobranca(nov.inicio, nov.fim, pagaDesde(hakimCentro.id))?.toISOString(), "2026-11-15T03:00:00.000Z");
+  const dez = { inicio: new Date("2026-12-01T03:00:00.000Z"), fim: new Date("2027-01-01T03:00:00.000Z") };
+  assert.equal(inicioDaCobranca(dez.inicio, dez.fim, pagaDesde(hakimCentro.id))?.toISOString(), dez.inicio.toISOString());
+});
+caso("outra loja Hakim continua isenta", () => {
+  assert.equal(lojaIsenta({ id: "outra", email: "loja@x.com", planPercent: 2, isFranqueadoHakim: true }), true);
+  assert.equal(pagaDesde("outra"), null);
 });
 
 console.log(`\n${ok} ok`);

@@ -225,6 +225,30 @@ export function isExemptAccount(email?: string | null): boolean {
 }
 
 /**
+ * Loja da casa que passou a PAGAR a mensalidade a partir de uma data.
+ *
+ * Douglas, 20/11/2026: "Hakim Centro já era pra estar cobrando desde o dia 15".
+ * Ela continua franqueada Hakim (a marca liga KDS, compras, equipe…) e o e-mail
+ * continua na lista da casa; só a mensalidade deixa de ser perdoada. A data vale
+ * como o fim de um teste: venda feita antes dela não entra no mês
+ * (inicioDaCobranca), e dali em diante vale a regra de todo cliente.
+ */
+const PAGA_DESDE: Record<string, string> = {
+  cmpx96phr0000ujf0sb0qk5vr: "2026-11-15T03:00:00.000Z", // Hakim Centro: 15/11/2026, 00:00 em Brasília
+};
+
+export function pagaDesde(lojaId?: string | null): Date | null {
+  const quando = lojaId ? PAGA_DESDE[lojaId] : undefined;
+  return quando ? new Date(quando) : null;
+}
+
+/** O "fim do teste" que a cobrança usa: a data em que a loja da casa passou a pagar, ou o teste dela. */
+function fimDoTesteNaCobranca(loja?: { id?: string | null; trialEndsAt?: Date | string | null } | null): Date | null {
+  const teste = loja?.trialEndsAt;
+  return pagaDesde(loja?.id) ?? (teste ? new Date(teste) : null);
+}
+
+/**
  * Loja que não paga mensalidade: a lista acima, as lojas Hakim e quem o dono
  * ISENTOU (`planPercent` 0, pelo botão "Isentar" da lista de lojistas no admin
  * — `definirIsencao`).
@@ -236,11 +260,13 @@ export function isExemptAccount(email?: string | null): boolean {
  * eram isentas só por isso ficaram com `planPercent` 0 na virada.
  */
 export function lojaIsenta(loja?: {
+  id?: string | null;
   email?: string | null;
   planPercent?: number | null;
   isFranqueadoHakim?: boolean | null;
 } | null): boolean {
   if (!loja) return false;
+  if (pagaDesde(loja.id)) return false; // loja da casa que passou a pagar (PAGA_DESDE)
   return isExemptAccount(loja.email)
     || loja.planPercent === 0
     || loja.isFranqueadoHakim === true;
@@ -248,6 +274,7 @@ export function lojaIsenta(loja?: {
 
 /** O pedaço do `select` do User que `lojaIsenta` precisa. */
 const CAMPOS_DA_ISENCAO = {
+  id: true,
   email: true,
   planPercent: true,
   isFranqueadoHakim: true,
@@ -458,7 +485,7 @@ export async function recalcularCiclo(franchiseeId: string, yearMonth?: string) 
 
   // Só as vendas DEPOIS do período de teste entram na base (ver
   // inicioDaCobranca). Teste cobrindo o mês inteiro = base zero.
-  const inicio = inicioDaCobranca(monthStart, monthEnd, user?.trialEndsAt);
+  const inicio = inicioDaCobranca(monthStart, monthEnd, fimDoTesteNaCobranca(user));
   const agg = inicio
     ? await prisma.customerOrder.aggregate({
         where: {
@@ -735,7 +762,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   // dia depois. O ciclo e sempre de um mes que ja passou: comparar com "agora"
   // cobra justamente quem passou o mes faturado inteiro em teste e so perdeu o
   // beneficio no intervalo entre o fim do mes e a execucao do fechamento.
-  const trialAte = cycle.franchisee?.trialEndsAt;
+  const trialAte = fimDoTesteNaCobranca(cycle.franchisee);
   const inicio = inicioDaCobranca(monthStart, monthEnd, trialAte);
   const emTeste = inicio === null;
   const isentoPorTeste = emTeste;
@@ -1252,7 +1279,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
   const { monthStart, monthEnd } = intervaloDoMes(yearMonth, tz);
   // Só as vendas depois do período de teste (inicioDaCobranca) — a mesma
   // janela do recálculo e do fechamento, para o painel bater com o boleto.
-  const inicio = inicioDaCobranca(monthStart, monthEnd, user?.trialEndsAt);
+  const inicio = inicioDaCobranca(monthStart, monthEnd, fimDoTesteNaCobranca(user));
   const aggVendas = inicio
     ? await prisma.customerOrder.aggregate({
         where: {
@@ -1426,7 +1453,7 @@ export async function previsaoDoFechamento(franchiseeId: string, yearMonth: stri
 
   const tz = user?.storeTimezone || "America/Sao_Paulo";
   const { monthStart, monthEnd } = intervaloDoMes(yearMonth, tz);
-  const inicio = inicioDaCobranca(monthStart, monthEnd, user?.trialEndsAt);
+  const inicio = inicioDaCobranca(monthStart, monthEnd, fimDoTesteNaCobranca(user));
   const { cobrancaDoAssessorNoMes } = await import("@/lib/assessor/assinatura");
   const { cobrancaDoAppNoMes } = await import("@/lib/app-da-loja/plano");
   const { cobrancaDoMultimarcasNoMes } = await import("@/lib/multimarcas/assinatura");
@@ -1472,12 +1499,12 @@ export async function previsaoDoFechamento(franchiseeId: string, yearMonth: stri
 export async function pedidosDoCicloAtual(franchiseeId: string) {
   const user = await prisma.user.findUnique({
     where: { id: franchiseeId },
-    select: { storeTimezone: true, trialEndsAt: true },
+    select: { id: true, storeTimezone: true, trialEndsAt: true },
   });
   const tz = user?.storeTimezone || "America/Sao_Paulo";
   const yearMonth = getCurrentYearMonth(0, tz);
   const { monthStart, monthEnd } = intervaloDoMes(yearMonth, tz);
-  const inicio = inicioDaCobranca(monthStart, monthEnd, user?.trialEndsAt);
+  const inicio = inicioDaCobranca(monthStart, monthEnd, fimDoTesteNaCobranca(user));
   if (!inicio) return { yearMonth, desde: null as string | null, pedidos: [] };
 
   const pedidos = await prisma.customerOrder.findMany({

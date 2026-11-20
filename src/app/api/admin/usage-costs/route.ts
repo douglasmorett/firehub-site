@@ -4,7 +4,7 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getAllUsageSummaries } from '@/lib/usage-tracker';
 import { rateioInfra, CUSTO_INFRA_MENSAL_BRL, SERVICOS_PAGOS } from '@/lib/custos-plataforma';
-import { getCurrentYearMonth } from '@/lib/billing';
+import { getCurrentYearMonth, pagaDesde } from '@/lib/billing';
 
 export async function GET(req: NextRequest) {
   try {
@@ -134,10 +134,11 @@ export async function GET(req: NextRequest) {
         // Teste que termina DENTRO deste mês: a partir daí as vendas entram na
         // base (lib/billing.ts, inicioDaCobranca). "Não paga este mês" só vale
         // quando o teste atravessa o mês inteiro.
-        cobraDesde:
-          franchisee.trialEndsAt && franchisee.trialEndsAt >= inicioMes && franchisee.trialEndsAt < fimMes
-            ? franchisee.trialEndsAt.toISOString()
-            : null,
+        cobraDesde: (() => {
+          // A loja da casa que passou a pagar no meio do mês (lib/billing.ts, PAGA_DESDE) também.
+          const desde = pagaDesde(franchisee.id) ?? franchisee.trialEndsAt;
+          return desde && desde >= inicioMes && desde < fimMes ? desde.toISOString() : null;
+        })(),
         // OPEN = acumulando (boleto no fechamento); CLOSED = boleto emitido;
         // PAID = quitado. Sem isto a tabela não distingue "ainda vai fechar"
         // de "boleto em aberto".
