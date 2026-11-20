@@ -42,7 +42,8 @@ async function estado(contatoId: string) {
   return {
     entrou: true,
     nome: contato?.nome || null,
-    atendente: config.nomeDoAtendente || "Suporte FireHub",
+    // Sempre "Suporte FireHub": o nome do robô do WhatsApp não aparece aqui (Douglas, 20/11/2026).
+    atendente: "Suporte FireHub",
     // "digitando…" só quando o robô vai mesmo responder a última mensagem do cliente.
     digitando: roboAtende && !!ultima && ultima.direcao === "ENTRADA" && Date.now() - ultima.criadoEm.getTime() < 3 * 60_000,
     mensagens: mensagens.map((m) => ({

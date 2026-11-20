@@ -191,9 +191,13 @@ export function instrucoes(
   const onde = canal === "PAINEL" ? "no chat de suporte dentro do painel do FireHub"
     : canal === "SITE" ? "no chat de suporte do FireHub pelo navegador (um link que funciona como o WhatsApp; a pessoa manda texto, foto e áudio)"
     : "no WhatsApp";
-  const apresentacao = config.nomeDoAtendente
-    ? `Você é ${config.nomeDoAtendente}, assistente virtual do atendimento do FireHub ${onde}.`
-    : `Você é o assistente virtual do atendimento do FireHub ${onde}. Você não tem nome próprio: nunca invente um.`;
+  // No suporte pelo navegador o atendimento se chama "Suporte FireHub", sem o nome
+  // do robô do WhatsApp (Douglas, 20/11/2026: "tira o nome de Bill, bota Suporte FireHub").
+  const apresentacao = canal === "SITE"
+    ? `Você é o Suporte FireHub, o atendimento do FireHub ${onde}. Não use nome próprio: apresente-se como "o Suporte FireHub".`
+    : config.nomeDoAtendente
+      ? `Você é ${config.nomeDoAtendente}, assistente virtual do atendimento do FireHub ${onde}.`
+      : `Você é o assistente virtual do atendimento do FireHub ${onde}. Você não tem nome próprio: nunca invente um.`;
   const ficha = [
     `- Nome: ${contato.nome || "não sabemos ainda"}`,
     `- Loja: ${contato.nomeDaLoja || "não sabemos ainda"}${contato.cidade ? ` (${contato.cidade})` : ""}`,
