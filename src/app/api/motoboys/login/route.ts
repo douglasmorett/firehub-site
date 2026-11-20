@@ -83,7 +83,17 @@ export async function POST(req: NextRequest) {
     const slugName = cleanSlug.replace(/-/g, " ");
 
     // MULTI-TENANT: Busca a loja EXCLUSIVAMENTE pelo slug — sem fallbacks
+    const SELECAO_DA_LOJA = { id: true, name: true, storeName: true, slug: true, storeAddress: true, city: true } as const;
+    // O endereço EXATO vem primeiro. A busca por pedaço do nome (abaixo) só
+    // roda se ele não achar ninguém: com as duas no mesmo findFirst, uma loja
+    // de nome parecido e sem slug ("Hakim Centro" duplicada, sem motoboys)
+    // podia ser a escolhida e o login recusava todo entregador da loja certa
+    // (19/11/2026, link /loja/hakim-centro/motoboy e /equipe).
     let storeUser = await prisma.user.findFirst({
+      where: { OR: [{ slug: cleanSlug }, { slugsAntigos: { array_contains: cleanSlug } }] },
+      select: SELECAO_DA_LOJA,
+    });
+    if (!storeUser) storeUser = await prisma.user.findFirst({
       where: {
         OR: [
           { slug: cleanSlug },
