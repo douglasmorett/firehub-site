@@ -295,5 +295,92 @@ confere("sem 'apenas produtos', o filtro continua só no item (2 Cocas avulsas)"
 const totalDoCombo1 = itensVendidos([{ franchiseeId: P17, canal: "SITE", items: [item17("c1", { c1s: { Calabresa: 1, "Bacon c/ Ovos": 1 } })] }] as any, conta17, cfg());
 confere("o total dos itens não muda com a fração (1 combo, R$ 80)", totalDoCombo1.total, { quantidade: 1, valor: 80 });
 
+{ // bloco próprio: os nomes (SABORES, L2…) não colidem com os das seções de cima
+// ── PIZZAS POR SABOR ─────────────────────────────────────────────────────────
+// Danilo (NIK), 20/11/2026: as pizzas de 19/11 somavam 33, mas "Opções › Sabores
+// de Pizza" só 24. Cada canal grava o sabor de um jeito; o total por sabor tem que
+// fechar com o número de pizzas (meia = 0,5).
+console.log("\n7) Pizzas por sabor: cada formato, e o total fecha com as pizzas");
+const L2 = "nik2";
+const SABORES = ["Calabresa", "Portuguesa", "Moda do Chefe", "Muçarela", "Toscana", "Costela com Catupiry", "Lombinho", "Frango Catupiry", "4 Queijos", "Brasiliense", "Nutella com Ninho"];
+const PRODUTOS2 = SABORES.map((n, i) => ({ id: `sab${i}`, franchiseeId: L2, name: `Pizza ${n}`, category: "Sabores de Pizza", price: 0, cost: 0, active: true, apenasEmCombo: true }));
+const mapas2 = montarMapasDoRelatorio(PRODUTOS2 as any);
+const conta2: ContextoDaConta = { mapasDe: (id) => mapas2(id), grupos: new Map(), vendaveisDe: () => new Map() };
+const piz = (nome: string, canal: string, sel: unknown, quantity = 1, categoria = "Pizzas Tradicionais") => ({
+  franchiseeId: L2, canal, items: [{ quantity, price: 50, productName: nome, menuProductId: `p-${nome}`, menuProduct: { id: `p-${nome}`, name: nome, category: categoria, active: true }, comboSelections: sel === null ? null : JSON.stringify(sel) }],
+});
+const porSabor = (pedidos: any[]) => itensVendidos(pedidos, conta2, cfg({ porCategoria: true })).pizzasPorSabor;
+const mapaDe = (r: { sabores: NoDoRelatorio[] }) => Object.fromEntries(r.sabores.map((x) => [x.nome, x.quantidade]));
+
+confere("sabor único: o nome do produto é o sabor", mapaDe(porSabor([piz("Pizza Calabresa", "WABIZ", null)])), { "Pizza Calabresa": 1 });
+confere("2 pizzas do mesmo sabor", porSabor([piz("Pizza Calabresa", "WABIZ", null, 2)]).total, 2);
+confere("Wabiz: meia no NOME (1/2 A + 1/2 B), e a bebida 'Pizza X: Coca' não vira sabor de novo",
+  mapaDe(porSabor([piz("1/2 Pizza Calabresa + 1/2 Pizza Moda do Chefe", "WABIZ", [
+    { id: "x", name: "Pizza Calabresa: Coca Cola Zero 1l", quantity: 1, price: 4.99 }, { id: "y", name: "Pizza Moda do Chefe: Não quero Refrigerante", quantity: 1, price: 0 },
+  ])])), { "Pizza Calabresa": 0.5, "Pizza Moda do Chefe": 0.5 });
+confere("balcão: o 1º sabor é o nome do produto e o 2º vem como opção = meia de cada",
+  mapaDe(porSabor([piz("Pizza Calabresa", "PDV", [{ name: "Pizza Moda do Chefe", quantity: 1 }, { name: "Borda de Catupiry", quantity: 1 }])])),
+  { "Pizza Calabresa": 0.5, "Pizza Moda do Chefe": 0.5 });
+confere("iFood: promoção '2 SABORES' com '1/2 Pizza X' = 0,5 de cada; o nome da promoção não é sabor",
+  mapaDe(porSabor([piz("GRANDE 2 SABORES (8 PEDAÇOS)", "IFOOD", [
+    { name: "Massa Tradicional + Borda Tradicional", quantity: 1, price: 0 }, { name: "1/2 Pizza Toscana", quantity: 1, price: 45 }, { name: "1/2 Pizza Frango Catupiry", quantity: 1, price: 45 },
+  ])])), { "Pizza Frango Catupiry": 0.5, "Pizza Toscana": 0.5 });
+confere("iFood: '1/2 Calabresa + 1/2 Calabresa' na mesma pizza = Calabresa 1",
+  mapaDe(porSabor([piz("PIZZA TRADICIONAL POR R$59,90 2 SABORES (8 PEDAÇOS)", "IFOOD", [{ name: "1/2 Pizza Calabresa", quantity: 1, price: 30 }, { name: "1/2 Pizza Calabresa", quantity: 1, price: 30 }])])),
+  { "Pizza Calabresa": 1 });
+confere("iFood: 'Lombinho Especial' é o sabor 'Pizza Lombinho' do cadastro",
+  mapaDe(porSabor([piz("GRANDE 2 SABORES (8 PEDAÇOS)", "IFOOD", [{ name: "1/2 Pizza Lombinho Especial", quantity: 1, price: 49 }, { name: "1/2 Pizza Frango Catupiry", quantity: 1, price: 49 }])])),
+  { "Pizza Frango Catupiry": 0.5, "Pizza Lombinho": 0.5 });
+confere("esfiha de pizza e pizza fora de categoria de pizza não entram",
+  porSabor([piz("Esfiha Pizza", "PDV", null, 3, "Esfihas Tradicionais"), piz("Esfiha de Pizza", "IFOOD", null, 1, "Esfihas")]).total, 0);
+confere("o filtro de categoria vale: só Bebidas, nenhuma pizza", itensVendidos([piz("Pizza Calabresa", "PDV", null)] as any, conta2, cfg({ categorias: new Set(["Bebidas"]) })).pizzasPorSabor.total, 0);
+const sitePorSabor = padrao.pizzasPorSabor;
+confere("site: 'Pizza Grande' + sabores do grupo fracionado = 0,5 de cada (o item do iFood está em categoria que não é de pizza)",
+  [sitePorSabor.total, mapaDe(sitePorSabor)], [1, { Calabresa: 0.5, Portuguesa: 0.5 }]);
+confere("os números de Itens e do total não mudaram com isso", [padrao.total, acha(padrao.opcoes, "Portuguesa")?.quantidade], [{ quantidade: 5, valor: 198.8 }, 1]);
+
+// O CASO REAL: NIK, 19/11/2026, 33 pizzas, 119 vendas. Os formatos como estão no banco.
+const W = "WABIZ", B = "PDV", I = "IFOOD";
+const bebida = (s: string) => [{ name: `${s}: Não quero Refrigerante`, quantity: 1, price: 0 }];
+const caso: [string, string, unknown, number][] = [
+  ["Pizza Calabresa", W, null, 1], ["Pizza Churrasco com Creme de Alho", W, null, 1],
+  ["PIZZA TRADICIONAL POR R$59,90 2 SABORES (8 PEDAÇOS)", I, [{ name: "Massa Tradicional + Borda de Doce de Leite", quantity: 1, price: 14 }, { name: "1/2 Pizza Portuguesa", quantity: 1, price: 29.95 }, { name: "1/2 Pizza Brasiliense", quantity: 1, price: 29.95 }], 1],
+  ["GRANDE 2 SABORES (8 PEDAÇOS)", I, [{ name: "Massa Tradicional + Borda Tradicional", quantity: 1, price: 0 }, { name: "1/2 Pizza Toscana", quantity: 1, price: 45.45 }, { name: "1/2 Pizza Frango Catupiry", quantity: 1, price: 45.45 }], 1],
+  ["Pizza Toscana", B, [{ name: "Pizza Costela com Catupiry", quantity: 1 }, { name: "Borda de Catupiry", quantity: 1 }], 1],
+  ["Pizza Muçarela", W, null, 1],
+  ["1/2 Pizza Frango Especial + 1/2 Pizza Calabresa", W, null, 1],
+  ["1/2 Pizza Calabacon Cremoso + 1/2 Pizza Costela com Catupiry", W, null, 1],
+  ["1/2 Pizza Frango Especial + 1/2 Pizza Calabacon Cremoso", W, null, 1],
+  ["Pizza Calabresa", B, [{ name: "Pizza Moda do Chefe", quantity: 1 }], 1],
+  ["Pizza Kit Kat", B, [{ name: "Pizza Nutella com Ninho", quantity: 1 }], 1],
+  ["Pizza Calabresa", W, null, 1],
+  ["Pizza Calabresa", B, [{ name: "Pizza Moda do Chefe", quantity: 1 }], 1],
+  ["Pizza Portuguesa", W, bebida("x"), 2],
+  ["1/2 Pizza Muçarela + 1/2 Pizza Portuguesa", W, [...bebida("Pizza Muçarela"), ...bebida("Pizza Portuguesa")], 1],
+  ["1/2 Pizza Lombinho + 1/2 Pizza Moda do Chefe", W, [...bebida("Pizza Lombinho"), ...bebida("Pizza Moda do Chefe")], 1],
+  ["PIZZA TRADICIONAL POR R$59,90 2 SABORES (8 PEDAÇOS)", I, [{ name: "Massa Tradicional + Borda Chocolate", quantity: 1, price: 15 }, { name: "1/2 Pizza Moda do Chefe", quantity: 1, price: 29.95 }, { name: "1/2 Pizza Muçarela", quantity: 1, price: 29.95 }], 1],
+  ["Pizza Frango Catupiry", B, [{ name: "Pizza Toscana", quantity: 1 }], 1],
+  ["Pizza Calabacon Cremoso", B, [{ name: "Pizza Costela com Catupiry", quantity: 1 }], 1],
+  ["GRANDE 2 SABORES (8 PEDAÇOS)", I, [{ name: "Massa Tradicional + Borda Tradicional", quantity: 1, price: 0 }, { name: "1/2 Pizza Lombinho Especial", quantity: 1, price: 49.45 }, { name: "1/2 Pizza Frango Catupiry", quantity: 1, price: 49.45 }], 1],
+  ["Pizza Costela com Catupiry", B, [{ name: "Pizza 4 Queijos", quantity: 1 }], 1],
+  ["PIZZA TRADICIONAL POR R$59,90 2 SABORES (8 PEDAÇOS)", I, [{ name: "Massa Tradicional + Borda Tradicional", quantity: 1, price: 0 }, { name: "1/2 Pizza Calabresa", quantity: 1, price: 29.95 }, { name: "1/2 Pizza Calabresa", quantity: 1, price: 29.95 }], 1],
+  ["1/2 Pizza Lombinho + 1/2 Pizza Muçarela", W, [{ id: "c", name: "Coca Cola 1,5l", quantity: 1, price: 0 }], 1],
+  ["Pizza Moda da Nik", W, null, 1], ["Pizza Toscana", W, null, 1],
+  ["1/2 Pizza Calabresa + 1/2 Pizza Moda do Chefe", W, [...bebida("Pizza Calabresa"), ...bebida("Pizza Moda do Chefe")], 1],
+  ["1/2 Pizza Moda do Chefe + 1/2 Pizza Portuguesa", W, [...bebida("Pizza Moda do Chefe"), ...bebida("Pizza Portuguesa")], 1],
+  ["1/2 Pizza Calabresa + 1/2 Pizza Moda do Chefe", W, [...bebida("Pizza Calabresa"), ...bebida("Pizza Moda do Chefe")], 1],
+  ["Pizza Banana Nevada", W, null, 1], ["Pizza Brasiliense", W, bebida("x"), 1], ["Pizza Moda da Nik", W, null, 1],
+  ["1/2 Pizza Calabresa + 1/2 Pizza Portuguesa", W, [...bebida("Pizza Calabresa"), ...bebida("Pizza Portuguesa")], 1],
+];
+const real = porSabor(caso.map(([n, c, sel, q]) => piz(n, c, sel, q)));
+confere("NIK 19/11: 33 pizzas no total", real.total, 33);
+confere("NIK 19/11: a soma dos sabores fecha com as 33 pizzas", Math.round(real.sabores.reduce((t, x) => t + x.quantidade, 0) * 1000) / 1000, 33);
+confere("NIK 19/11: o total por sabor", mapaDe(real), {
+  "Pizza Calabresa": 6, "Pizza Portuguesa": 4, "Pizza Moda do Chefe": 3.5, "Pizza Muçarela": 2.5, "Pizza Toscana": 2.5, "Pizza Costela com Catupiry": 2,
+  "Pizza Moda da Nik": 2, "Pizza Brasiliense": 1.5, "Pizza Calabacon Cremoso": 1.5, "Pizza Frango Catupiry": 1.5, "Pizza Lombinho": 1.5,
+  "Pizza Banana Nevada": 1, "Pizza Churrasco com Creme de Alho": 1, "Pizza Frango Especial": 1, "Pizza 4 Queijos": 0.5, "Pizza Kit Kat": 0.5, "Pizza Nutella com Ninho": 0.5,
+});
+}
+
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);

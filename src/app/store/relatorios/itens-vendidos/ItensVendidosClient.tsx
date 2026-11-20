@@ -31,6 +31,8 @@ type Resposta = {
   opcoes: NoDaArvore[] | null;
   total: { quantidade: number; valor: number };
   gruposDeOpcao: { chave: string; nome: string; quantidade: number }[];
+  /** Total de pizzas por sabor: a soma dos sabores fecha com o número de pizzas (meia = 0,5). */
+  pizzasPorSabor?: { total: number; sabores: NoDaArvore[] };
   /** "Agrupar apenas produtos": das unidades do total, as escolhidas dentro de outro item. */
   dentroDeOutros?: number;
 };
@@ -61,6 +63,7 @@ export default function ItensVendidosClient({ inicio }: { inicio: InicioDosFiltr
   useEffect(() => { setAbertos(new Set()); }, [porCategoria, opcoesPorProduto, apenasProdutos, juntarNome]);
 
   const itens = useMemo(() => filtrarArvore(dados?.itens || [], busca), [dados, busca]);
+  const listaDePizzas = useMemo(() => (dados?.pizzasPorSabor && dados.pizzasPorSabor.total > 0 ? filtrarArvore(dados.pizzasPorSabor.sabores, busca) : null), [dados, busca]);
   const listaDeOpcoes = useMemo(() => (dados?.opcoes ? filtrarArvore(dados.opcoes, busca) : null), [dados, busca]);
   const todasAbertas = useMemo(() => [...chavesAbriveis(itens), ...(listaDeOpcoes ? chavesAbriveis(listaDeOpcoes) : [])], [itens, listaDeOpcoes]);
 
@@ -176,12 +179,25 @@ export default function ItensVendidosClient({ inicio }: { inicio: InicioDosFiltr
       </div>
 
       {dados && (
-        <div style={{ display: "grid", gridTemplateColumns: listaDeOpcoes ? "repeat(auto-fit, minmax(380px, 1fr))" : "1fr", gap: "1rem", alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: listaDeOpcoes || listaDePizzas ? "repeat(auto-fit, minmax(380px, 1fr))" : "1fr", gap: "1rem", alignItems: "start" }}>
           <TabelaEmArvore titulo={tituloDaTabela} nos={itens} total={dados.total} abertos={abertos} alternar={alternar}
             textoVazio={busca ? `Nada com “${busca}”.` : "Nenhum item vendido no período e filtros escolhidos."} rotuloPct={pctPorValor ? "% valor" : "%"} />
           {listaDeOpcoes && (
             <TabelaEmArvore titulo="Opções" nos={listaDeOpcoes} abertos={abertos} alternar={alternar} cor={PALETA.brasa}
               textoVazio="Nenhuma opção escolhida." rotuloPct={pctPorValor ? "% valor" : "%"} />
+          )}
+          {/* O total de pizzas por sabor (Danilo, NIK, 20/11/2026): a tabela de Opções só vê o
+              sabor que veio como opção e não fecha com o número de pizzas; esta fecha. */}
+          {listaDePizzas && dados.pizzasPorSabor && (
+            <div>
+              <TabelaEmArvore titulo={`🍕 Pizzas por sabor — ${fmtQtd(dados.pizzasPorSabor.total)} pizza${dados.pizzasPorSabor.total === 1 ? "" : "s"}`}
+                nos={listaDePizzas} total={{ quantidade: dados.pizzasPorSabor.total, valor: null }} abertos={abertos} alternar={alternar} cor={PALETA.ok}
+                textoVazio={`Nada com “${busca}”.`} rotuloPct="%" />
+              <p style={{ fontSize: "0.76rem", color: PALETA.areiaTinta, margin: "0.4rem 0 0", lineHeight: 1.45 }}>
+                Cada pizza vendida vale 1, dividida entre os sabores dela: meia pizza conta 0,5 de cada sabor. A soma fecha com o total de pizzas dos itens
+                (sabor único, meia a meia e promoções de 2 sabores entram juntos).
+              </p>
+            </div>
           )}
         </div>
       )}

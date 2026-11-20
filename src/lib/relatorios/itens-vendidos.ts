@@ -158,6 +158,16 @@ export type ResultadoDosItens = {
   total: { quantidade: number; valor: number };
   /** Os grupos de opção vistos no período — as caixinhas da "Filtragem de opções". */
   gruposDeOpcao: { chave: string; nome: string; quantidade: number }[];
+  /**
+   * O TOTAL DE PIZZAS POR SABOR (Danilo, NIK, 20/11/2026: as pizzas somavam 33
+   * e a tabela "Opções › Sabores de Pizza" só 24 — "está faltando 9"). Aquela
+   * tabela só vê o sabor que veio como OPÇÃO; a pizza de sabor único e a meia
+   * que o Wabiz manda no NOME ("1/2 A + 1/2 B") ficavam de fora. Aqui cada
+   * pizza vendida vale 1, repartida entre os sabores dela (meia = 0,5), então
+   * a soma dos sabores é igual ao número de pizzas. `total` = 0 quando não
+   * saiu pizza no período.
+   */
+  pizzasPorSabor: { total: number; sabores: NoDoRelatorio[] };
   /** Quantas vendas de itens entraram (linhas de pedido). */
   linhas: number;
   /**
@@ -316,6 +326,69 @@ export function escolhasDoItemComGrupo(
   });
 }
 
+// ── PIZZAS POR SABOR ────────────────────────────────────────────────────────
+//
+// Cada canal grava o sabor de um jeito (NIK, 19/11/2026, 33 pizzas):
+//  - Wabiz: a meia vem no NOME do produto, "1/2 Pizza A + 1/2 Pizza B";
+//  - iFood/99: promoção "2 SABORES" com os sabores como opção "1/2 Pizza X";
+//  - site: produto genérico ("Pizza Grande") e os sabores no grupo fracionado;
+//  - balcão: o 1º sabor é o NOME do produto e o 2º vem como opção, sem fração
+//    ("Pizza Calabresa" + "Pizza Moda do Chefe" = meia de cada);
+//  - sabor único: o NOME do produto é o sabor.
+// Pizza vendida = 1, repartida entre os sabores que se acham (meia = 0,5).
+
+/** A categoria é de pizza (não esfiha, rodízio, mini nem combo). */
+export function categoriaDePizza(categoria: string | null | undefined): boolean {
+  const c = semAcento(categoria);
+  return /\bpizzas?\b/.test(c) && !/esfi|rodizio|\bmini\b|combo|borda/.test(c);
+}
+
+const META_NO_NOME = /^\s*\d+\s*\/\s*\d+\s+/;
+/** Nome de produto que NÃO é um sabor: tamanho, promoção, "2 sabores". */
+const NOME_GENERICO = /\b(grande|media|pequena|broto|gigante|familia|sabores?|tamanho|tradicional|combo)\b|\bpor r\$/;
+
+/** O nome do sabor como o cadastro o escreve ("Lombinho Especial" do iFood = "Pizza Lombinho"). */
+function nomeDoSabor(bruto: string, complementos: MapasDaLoja["complementos"]): string {
+  const limpo = bruto.replace(META_NO_NOME, "").trim();
+  const c = complementosDaOpcao(limpo, complementos).find((x) => x.id && /sabor/i.test(x.categoria));
+  return c ? c.nome : limpo;
+}
+
+/**
+ * Os sabores de UMA pizza vendida, já com a parte de cada um (soma = `qtd`).
+ * `escolhas` são as do item (`escolhasDoItemComGrupo`), com a fração aplicada.
+ */
+export function saboresDaPizza(
+  nome: string,
+  qtd: number,
+  escolhas: EscolhaLida[],
+  complementos: MapasDaLoja["complementos"],
+): { nome: string; quantidade: number }[] {
+  let sabores: { nome: string; peso: number }[] = [];
+
+  // 1. A meia no nome (Wabiz): só o nome vale; as opções são bebida e borda.
+  const pedacos = nome.split("+").map((x) => x.trim());
+  if (pedacos.length >= 2 && pedacos.every((x) => META_NO_NOME.test(x))) {
+    sabores = pedacos.map((x) => ({ nome: nomeDoSabor(x, complementos), peso: 1 }));
+  } else {
+    // 2. Sabor como opção. "Pizza X: Coca" é a bebida daquela metade (Wabiz), não o sabor.
+    const dasOpcoes = escolhas
+      .filter((e) => !e.nome.includes(":") && complementosDaOpcao(e.nome, complementos).some((c) => /sabor/i.test(c.categoria)))
+      .map((e) => ({ nome: nomeDoSabor(e.nome, complementos), peso: e.quantidadeInteira, fracionada: Math.abs(e.quantidade - e.quantidadeInteira) > 1e-9 }));
+    if (dasOpcoes.length === 0) {
+      sabores = [{ nome: nomeDoSabor(nome, complementos), peso: 1 }];
+    } else {
+      sabores = dasOpcoes.map((o) => ({ nome: o.nome, peso: o.peso }));
+      // Sabor já fracionado (grupo de sabores, "1/2 X") ou nome de tamanho/promoção:
+      // o produto não é um sabor. Senão (balcão) o nome é o 1º sabor.
+      const produtoEhSabor = !dasOpcoes.some((o) => o.fracionada) && !NOME_GENERICO.test(semAcento(nome));
+      if (produtoEhSabor) sabores.unshift({ nome: nomeDoSabor(nome, complementos), peso: qtd });
+    }
+  }
+  const soma = sabores.reduce((t, x) => t + x.peso, 0) || 1;
+  return sabores.map((x) => ({ nome: x.nome, quantidade: (x.peso / soma) * qtd }));
+}
+
 // ── A CONTA ─────────────────────────────────────────────────────────────────
 
 const SEM_GRUPO = "grupo:outras";
@@ -402,6 +475,9 @@ export function itensVendidos(pedidos: PedidoParaItens[], conta: ContextoDaConta
   const tabelaOpcoes = new Map<string, Acumulado>();
   const gruposVistos = new Map<string, { chave: string; nome: string; quantidade: number }>();
   let totalQtd = 0, totalValor = 0, linhas = 0, dentroDeOutros = 0;
+  // Pizzas por sabor (chave do nome do sabor → sabor).
+  const pizzaSabores = new Map<string, { nome: string; quantidade: number }>();
+  let pizzasTotal = 0;
 
   for (const pedido of pedidos) {
     const mapas = conta.mapasDe(pedido.franchiseeId);
@@ -439,6 +515,16 @@ export function itensVendidos(pedidos: PedidoParaItens[], conta: ContextoDaConta
         gruposDoProduto: conta.gruposDoItem?.(pedido.franchiseeId, item),
         ehPizza: produtoDePizza(nome, categoria),
       });
+      // A pizza vendida vale 1, repartida entre os sabores (não mexe nas tabelas de cima).
+      if (itemEntra && categoriaDePizza(categoria)) {
+        pizzasTotal += qtd;
+        for (const sb of saboresDaPizza(nome, qtd, escolhas, mapas.complementos)) {
+          const chave = chaveDoNome(sb.nome) || sb.nome.toLowerCase();
+          const atual = pizzaSabores.get(chave) || { nome: sb.nome, quantidade: 0 };
+          atual.quantidade += sb.quantidade;
+          pizzaSabores.set(chave, atual);
+        }
+      }
       for (const e of escolhas) {
         // Casa com o cadastro: borda, sabor, adicional. Uma opção pode juntar
         // duas coisas ("Massa Tradicional + Borda Catupiry"); cada uma vira linha.
@@ -518,6 +604,19 @@ export function itensVendidos(pedidos: PedidoParaItens[], conta: ContextoDaConta
     gruposDeOpcao: [...gruposVistos.values()]
       .map((g) => ({ ...g, quantidade: Math.round(g.quantidade * 1000) / 1000 }))
       .sort((a, b) => b.quantidade - a.quantidade),
+    pizzasPorSabor: {
+      total: Math.round(pizzasTotal * 1000) / 1000,
+      sabores: [...pizzaSabores.entries()]
+        .sort((a, b) => b[1].quantidade - a[1].quantidade || a[1].nome.localeCompare(b[1].nome, "pt-BR"))
+        .map(([chave, x]): NoDoRelatorio => ({
+          chave: `sabor:${chave}`,
+          nome: x.nome,
+          tipo: "opcao",
+          quantidade: Math.round(x.quantidade * 1000) / 1000,
+          valor: null,
+          pct: pizzasTotal > 0 ? Math.round((x.quantidade / pizzasTotal) * 100000) / 1000 : 0,
+        })),
+    },
     linhas,
     dentroDeOutros: Math.round(dentroDeOutros * 1000) / 1000,
   };
