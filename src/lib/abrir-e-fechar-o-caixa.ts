@@ -391,7 +391,14 @@ export async function fecharCaixa(user: QuemMexeNoCaixa, body: any, operador: st
         // (19/09/2026): tudo que estava na rua é dado por entregue junto, e a
         // tela avisa QUANTOS são antes de o operador confirmar — ver
         // GET /api/cash-session, campo `saiuParaEntrega`.
-        ...(inicioDoTurnoDaLoja ? { createdAt: { gte: inicioDoTurnoDaLoja } } : { createdAt: { lt: threeHoursAgo } }),
+        // Do turno OU de antes dele: o pedido preso de um dia anterior (que nenhum
+        // fechamento pegou) também é dado por entregue. Só o `gte` do turno deixava
+        // 24 pedidos de set–nov da Hakim Centro para sempre em SAIU_ENTREGA, e o
+        // aviso "N pedidos em entrega" aparecia a cada fechamento, dizendo que seriam
+        // finalizados sem nunca serem (Edu, 20/11/2026).
+        ...(inicioDoTurnoDaLoja
+          ? { OR: [{ createdAt: { gte: inicioDoTurnoDaLoja } }, { createdAt: { lt: threeHoursAgo } }] }
+          : { createdAt: { lt: threeHoursAgo } }),
         // ── PEDIDO DE MESA NÃO ESTÁ "NA RUA" ─────────────────────────────
         //
         // O KDS dá a mesa por pronta como dá a retirada — SAIU_ENTREGA —, e
