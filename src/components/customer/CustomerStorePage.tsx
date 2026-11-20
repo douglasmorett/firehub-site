@@ -1004,6 +1004,11 @@ export default function CustomerStorePage({
       g[cat] = [];
     });
     filtered.forEach(p => {
+      // "Só no destaque": o produto aparece na fileira de Destaques e não se repete
+      // na lista da categoria (Seu Souza, 19/11/2026: a promoção da Pizza G a R$ 38
+      // era para ficar só no destaque; o produto precisa de uma categoria, mas não
+      // de uma linha nela).
+      if (String((p as any).tags || "").includes("Só no destaque")) return;
       const cat = (p.category || "").trim();
       if (!cat) return;
       if (!g[cat]) g[cat] = [];
