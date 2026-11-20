@@ -15,12 +15,16 @@ export const metadata: Metadata = {
 const passos = [
   { t: "Baixe e abra", d: "Clique no botão acima e abra o arquivo FireAccess.exe que baixou." },
   {
+    t: "Se o navegador barrar o download",
+    d: "No Edge ou no Chrome, no aviso do download, clique nos três pontinhos › Manter › Mostrar mais › Manter mesmo assim. O arquivo é do FireHub e só funciona com a sua permissão.",
+  },
+  {
     t: "Se o Windows avisar",
     d: "Na tela “O Windows protegeu o computador”, clique em Mais informações e depois em Executar assim mesmo. Se perguntar “Deseja permitir que este aplicativo faça alterações?”, clique em Sim: assim o atendente consegue instalar a impressora e o Assistente.",
   },
   {
-    t: "Passe o código e permita",
-    d: "Mande para o atendente o código de 6 números que aparece e clique em Permitir suporte FireHub. Fique perto do computador.",
+    t: "Clique em Permitir",
+    d: "Clique em Permitir suporte FireHub e avise o atendente. Ele já vê o seu computador, não precisa passar o código. Fique perto do computador.",
   },
 ];
 

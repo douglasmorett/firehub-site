@@ -184,7 +184,7 @@ function mandarComando(s, comando, prazoMs) {
 }
 
 // ── HTTP do atendente e do Douglas ─────────────────────────────────────────
-const TIPOS = new Set(["tela", "clicar", "mover", "arrastar", "digitar", "tecla", "rolar", "executar", "enviar"]);
+const TIPOS = new Set(["tela", "clicar", "mover", "arrastar", "digitar", "tecla", "rolar", "executar", "enviar", "lote", "navegador"]);
 
 function autorizado(req) {
   const h = req.headers.authorization || "";
@@ -220,7 +220,20 @@ const resumo = (s) => ({
 // Aceita com ou sem o prefixo do proxy (firehubfood.com.br/fireaccess-relay/...).
 const semPrefixo = (p) => p.replace(/^\/fireaccess-relay(?=\/|$)/, "") || "/";
 
-const server = http.createServer(async (req, res) => {
+// As sessões só existem na memória: um erro solto que derrubasse o processo derrubava todo atendimento
+// em andamento (20/11, sessão do Victor caiu com 502 e o log recomeçou do zero). Erro de uma requisição
+// responde 500 e fica no log; o relay continua de pé.
+process.on("unhandledRejection", (e) => console.error("FireAccess relay: promessa sem tratamento:", e?.stack || e));
+process.on("uncaughtException", (e) => console.error("FireAccess relay: erro não tratado:", e?.stack || e));
+
+const server = http.createServer((req, res) => {
+  atender(req, res).catch((e) => {
+    console.error("FireAccess relay: falha atendendo", req.method, req.url, e?.stack || e);
+    try { if (!res.headersSent) json(res, 500, { erro: "falha no relay" }); else res.end(); } catch {}
+  });
+});
+
+async function atender(req, res) {
   const url = new URL(req.url, "http://x");
   const rota = semPrefixo(url.pathname);
 
@@ -271,6 +284,8 @@ const server = http.createServer(async (req, res) => {
 
   const prazo = corpo.tipo === "executar" ? (Math.min(Math.max(Number(corpo.tempo) || 60, 1), 85) + 10) * 1000
     : corpo.tipo === "enviar" ? 120_000
+    : corpo.tipo === "lote" ? Math.min(PRAZO_DO_COMANDO_MS + (Array.isArray(corpo.passos) ? corpo.passos.length : 0) * 2_000 + 10_000, 120_000)
+    : corpo.tipo === "navegador" ? 45_000
     : PRAZO_DO_COMANDO_MS + Math.min(Number(corpo.esperar) || 0, 10_000);
   const r = await mandarComando(s, corpo, prazo);
 
@@ -286,7 +301,7 @@ const server = http.createServer(async (req, res) => {
   const { jpeg, id, tipo, ...resto } = r;
   registrar(s, { quem, comando: noRegistro, resultado: resto.ok ?? true, ...(resto.saida != null ? { saida: String(resto.saida).slice(0, 4000) } : {}), tela });
   return json(res, 200, r);
-});
+}
 
 server.on("upgrade", (req, socket, head) => {
   if (semPrefixo(new URL(req.url, "http://x").pathname) !== "/agente") return socket.destroy();

@@ -13,6 +13,7 @@ const path = require("path");
 const { spawn, spawnSync } = require("child_process");
 const WebSocket = require("ws");
 const entrada = require("./entrada");
+const navegador = require("./navegador");
 
 const RELAY = process.env.FIREACCESS_URL
   || (process.argv.find((a) => a.startsWith("--relay=")) || "").slice(8)
@@ -53,7 +54,7 @@ function abrirJanela() {
 
 function abrirFaixa() {
   const area = screen.getPrimaryDisplay().workArea;
-  const largura = 380, altura = 34;
+  const largura = 460, altura = 34;
   faixa = new BrowserWindow({
     width: largura, height: altura, x: Math.round(area.x + (area.width - largura) / 2), y: area.y,
     frame: false, resizable: false, movable: false, minimizable: false, maximizable: false,
@@ -85,7 +86,7 @@ function conectar() {
     try { m = JSON.parse(raw); } catch { return; }
     if (m.tipo === "codigo") {
       codigo = m.codigo;
-      mostrar({ codigo: m.codigo, podePermitir: true, msg: "Passe este código para o atendente e clique em Permitir." });
+      mostrar({ codigo: m.codigo, podePermitir: true, msg: "Clique em Permitir para o atendente do FireHub ver e mexer no seu computador." });
     } else if (m.tipo === "retomada") {
       retomarAte = 0;
       mostrar({ faixa: "● Suporte FireHub conectado" });
@@ -171,21 +172,54 @@ async function transmitir() {
 }
 
 // ── Comandos ─────────────────────────────────────────────────────────────
+// O que o atendente está fazendo aparece na faixa por um instante: o cliente vê que não está parado.
+const ROTULO = {
+  clicar: "clicando", mover: "mexendo o mouse", arrastar: "arrastando", rolar: "rolando a tela",
+  digitar: "digitando", tecla: "usando o teclado", executar: "trabalhando no computador",
+  enviar: "enviando um arquivo", lote: "trabalhando", navegador: "usando o navegador",
+};
+let faixaVolta = null;
+function avisarNaFaixa(tipo) {
+  if (!ROTULO[tipo] || !faixa) return;
+  clearTimeout(faixaVolta);
+  mostrar({ faixa: `● Suporte FireHub: ${ROTULO[tipo]}…` });
+  faixaVolta = setTimeout(() => mostrar({ faixa: "● Suporte FireHub conectado" }), 2500);
+}
+
+async function acao(c) {
+  switch (c.tipo) {
+    case "mover": return entrada.mandar({ f: "mover", x: px(c.x), y: px(c.y) });
+    case "clicar": return entrada.mandar({ f: "clicar", x: px(c.x), y: px(c.y), direito: c.botao === "direito", duplo: !!c.duplo });
+    case "arrastar": return entrada.mandar({ f: "arrastar", x1: px(c.x1), y1: px(c.y1), x2: px(c.x2), y2: px(c.y2) });
+    case "rolar": return entrada.mandar({ f: "rolar", quanto: Number(c.quanto) || -3, ...(c.x != null ? { x: px(c.x), y: px(c.y) } : {}) });
+    case "digitar": return entrada.mandar({ f: "digitar", b64: Buffer.from(String(c.texto ?? ""), "utf8").toString("base64") });
+    case "tecla": return entrada.mandar({ f: "combo", vks: entrada.codigosDoCombo(c.combo) });
+    default: throw new Error(`comando desconhecido: ${c.tipo}`);
+  }
+}
+
 async function executar(c) {
+  avisarNaFaixa(c.tipo);
   switch (c.tipo) {
     case "tela": return capturar();
     case "executar": return rodarPowerShell(String(c.script || ""), Number(c.tempo) || 60);
     case "enviar": return receberArquivo(c);
-    case "mover": await entrada.mandar({ f: "mover", x: px(c.x), y: px(c.y) }); break;
-    case "clicar": await entrada.mandar({ f: "clicar", x: px(c.x), y: px(c.y), direito: c.botao === "direito", duplo: !!c.duplo }); break;
-    case "arrastar": await entrada.mandar({ f: "arrastar", x1: px(c.x1), y1: px(c.y1), x2: px(c.x2), y2: px(c.y2) }); break;
-    case "rolar": await entrada.mandar({ f: "rolar", quanto: Number(c.quanto) || -3, ...(c.x != null ? { x: px(c.x), y: px(c.y) } : {}) }); break;
-    case "digitar": await entrada.mandar({ f: "digitar", b64: Buffer.from(String(c.texto ?? ""), "utf8").toString("base64") }); break;
-    case "tecla": await entrada.mandar({ f: "combo", vks: entrada.codigosDoCombo(c.combo) }); break;
-    default: throw new Error(`comando desconhecido: ${c.tipo}`);
+    case "navegador": return navegador.comando(c);
+    case "lote": {
+      // Vários passos numa ida só (clicar, digitar, tecla, rolar…): a tela volta uma vez, no fim.
+      const passos = Array.isArray(c.passos) ? c.passos.slice(0, 50) : [];
+      if (!passos.length) throw new Error("lote sem passos");
+      for (const [i, p] of passos.entries()) {
+        if (p?.tipo === "esperar") { await esperar(Math.min(Number(p.ms) || 300, 10_000)); continue; }
+        try { await acao(p); } catch (e) { throw new Error(`passo ${i + 1} (${p?.tipo}): ${e.message}`); }
+        await esperar(Number(p.esperar) >= 0 ? Math.min(Number(p.esperar), 10_000) : 150);
+      }
+      break;
+    }
+    default: await acao(c);
   }
   await esperar(Number(c.esperar) >= 0 ? Math.min(Number(c.esperar), 10_000) : 500); // deixa a tela reagir
-  return { ok: true, ...(await capturar()) };
+  return { ok: true, ...(c.semTela ? {} : await capturar()) };
 }
 
 // PowerShell no PC do cliente, com a mesma permissão do FireAccess (administrador, se ele for).
@@ -244,6 +278,7 @@ function encerrar() {
   permitido = false;
   aoVivo = false;
   entrada.parar();
+  navegador.parar();
   try { enviar({ tipo: "encerrado" }); ws?.close(1000, "encerrada pelo cliente"); } catch {}
   setTimeout(() => app.quit(), 300); // deixa o aviso sair antes de fechar
 }
@@ -251,4 +286,4 @@ ipcMain.on("encerrar", encerrar);
 
 app.whenReady().then(() => { abrirJanela(); conectar(); });
 app.on("window-all-closed", encerrar);
-app.on("before-quit", () => { permitido = false; entrada.parar(); });
+app.on("before-quit", () => { permitido = false; entrada.parar(); navegador.parar(); });

@@ -16,6 +16,21 @@
 //   node fireaccess.mjs enviar   <codigo> <arquivo-local>  vai para Downloads\FireHub do cliente
 //   node fireaccess.mjs encerrar <codigo>
 //
+// Mais rápido (v0.3):
+//   node fireaccess.mjs lote     <codigo> '<json>' | @arquivo.json   vários passos numa ida, uma tela no fim
+//        ex.: '[{"tipo":"clicar","x":40,"y":748},{"tipo":"digitar","texto":"impressoras"},{"tipo":"tecla","combo":"enter"}]'
+//   node fireaccess.mjs nav      <codigo> abrir <link> | ir <link> | texto | abas | js "<expr>" | clicar "<seletor ou texto>"
+//                                          | preencher "<seletor ou texto>" "<valor>" | foto | fechar   [--aba=N]
+//        Navegador do suporte (Chrome/Edge com perfil próprio), controlado por dentro como no PC do Douglas.
+//        Senha não: "preencher" recusa campo de senha (quem digita é o cliente).
+//   Janelas do Windows pelo nome (sem foto, sem pixel), com o mesmo poder de administrador:
+//   node fireaccess.mjs janelas   <codigo>                          janelas abertas
+//   node fireaccess.mjs controles <codigo> "<parte do título>"       botões, campos e itens da janela
+//   node fireaccess.mjs apertar   <codigo> "<parte do título>" "<nome do botão/item>"
+//   node fireaccess.mjs escrever  <codigo> "<parte do título>" "<nome do campo>" "<texto>"   (recusa campo de senha)
+//   node fireaccess.mjs impressoras <codigo>                        impressoras, portas, padrão e fila
+//   node fireaccess.mjs testar-impressora <codigo> "<impressora>"   página de teste do Windows
+//
 // x/y são da imagem salva pelo último "tela" (largura até 1366).
 // --esperar=<ms> em clicar/digitar/tecla/rolar troca a espera antes da tela de depois (padrão 500).
 import fs from "node:fs";
@@ -62,6 +77,51 @@ $ass = Get-Process | Where-Object { $_.ProcessName -match 'assistente|firehub' }
 "Processos FireHub abertos: $(if ($ass) { $ass -join ', ' } else { 'nenhum' })"
 `;
 
+// UI Automation do Windows: lê janela e botão pelo nome, como o DOM de uma página.
+const UIA = `Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+$A = [Windows.Automation.AutomationElement]; $T = [Windows.Automation.TreeScope]; $C = [Windows.Automation.Condition]::TrueCondition
+function Janela($parte) {
+  $w = $A::RootElement.FindAll($T::Children, $C) | Where-Object { $_.Current.Name -like "*$parte*" } | Select-Object -First 1
+  if (-not $w) { throw "nenhuma janela com '$parte' no título" }; $w
+}
+function Controle($w, $nome) {
+  $todos = $w.FindAll($T::Descendants, $C)
+  $e = $todos | Where-Object { $_.Current.Name -eq $nome } | Select-Object -First 1
+  if (-not $e) { $e = $todos | Where-Object { $_.Current.Name -like "*$nome*" } | Select-Object -First 1 }
+  if (-not $e) { throw "não achei '$nome' na janela '$($w.Current.Name)'" }; $e
+}
+`;
+const UIA_JANELAS = UIA + `$A::RootElement.FindAll($T::Children, $C) | ForEach-Object { if ($_.Current.Name) { "$($_.Current.Name)   [$($_.Current.ClassName)]" } }`;
+const uiaControles = (parte) => UIA + `$w = Janela ${ps(parte)}; "Janela: $($w.Current.Name)"
+$w.FindAll($T::Descendants, $C) | Select-Object -First 400 | ForEach-Object {
+  $c = $_.Current; if ($c.Name -or $c.AutomationId) {
+    $tipo = $c.ControlType.ProgrammaticName.Replace('ControlType.', '')
+    "$tipo  '$($c.Name)'$(if ($c.AutomationId) {"  id=$($c.AutomationId)"})$(if (-not $c.IsEnabled) {'  (desativado)'})$(if ($c.IsPassword) {'  (SENHA)'})"
+  } }`;
+const uiaApertar = (parte, nome) => UIA + `$w = Janela ${ps(parte)}; $e = Controle $w ${ps(nome)}
+$p = $null
+if ($e.TryGetCurrentPattern([Windows.Automation.InvokePattern]::Pattern, [ref]$p)) { $p.Invoke(); "apertado: $($e.Current.Name)" }
+elseif ($e.TryGetCurrentPattern([Windows.Automation.SelectionItemPattern]::Pattern, [ref]$p)) { $p.Select(); "selecionado: $($e.Current.Name)" }
+elseif ($e.TryGetCurrentPattern([Windows.Automation.TogglePattern]::Pattern, [ref]$p)) { $p.Toggle(); "marcado/desmarcado: $($e.Current.Name)" }
+elseif ($e.TryGetCurrentPattern([Windows.Automation.ExpandCollapsePattern]::Pattern, [ref]$p)) { $p.Expand(); "aberto: $($e.Current.Name)" }
+else { $e.SetFocus(); "sem ação direta; foco posto em: $($e.Current.Name) (use tecla enter ou espaco)" }`;
+const uiaEscrever = (parte, nome, texto) => UIA + `$w = Janela ${ps(parte)}; $e = Controle $w ${ps(nome)}
+if ($e.Current.IsPassword) { throw "campo de senha: quem digita é o cliente" }
+$p = $null
+if ($e.TryGetCurrentPattern([Windows.Automation.ValuePattern]::Pattern, [ref]$p)) { $p.SetValue(${ps(texto)}); "escrito em: $($e.Current.Name)" }
+else { throw "o campo '$($e.Current.Name)' não aceita texto direto (use clicar + digitar)" }`;
+const IMPRESSORAS = `$padrao = (Get-CimInstance Win32_Printer | Where-Object Default).Name
+Get-Printer | ForEach-Object {
+  $fila = @(Get-PrintJob -PrinterName $_.Name -ErrorAction SilentlyContinue).Count
+  "$(if ($_.Name -eq $padrao) {'* '} else {'  '})$($_.Name)  [porta $($_.PortName) | driver $($_.DriverName) | $($_.PrinterStatus) | fila $fila]"
+}
+"Portas TCP/IP:"; Get-PrinterPort | Where-Object { $_.PrinterHostAddress } | ForEach-Object { "  $($_.Name) -> $($_.PrinterHostAddress)" }
+"(* = padrão)"`;
+const testarImpressora = (nome) => `$p = Get-CimInstance Win32_Printer | Where-Object { $_.Name -eq ${ps(nome)} }
+if (-not $p) { throw "impressora não encontrada: " + ${ps(nome)} }
+$r = Invoke-CimMethod -InputObject $p -MethodName PrintTestPage
+"página de teste enviada (retorno $($r.ReturnValue); 0 = ok)"`;
+
 const args = process.argv.slice(2);
 const opcoes = Object.fromEntries(args.filter((a) => a.startsWith("--")).map((a) => a.slice(2).split("=")));
 const [acao, codigo, ...resto] = args.filter((a) => !a.startsWith("--"));
@@ -99,6 +159,28 @@ try {
         comando = { tipo: "executar", tempo: 20, script: `Start-Process -FilePath ${ps(resto[0])}${lista.length ? ` -ArgumentList ${lista.map(ps).join(",")}` : ""}; "aberto"` };
         break;
       }
+      case "janelas": comando = { tipo: "executar", script: UIA_JANELAS, tempo: 30 }; break;
+      case "controles": comando = { tipo: "executar", script: uiaControles(resto[0] || ""), tempo: 45 }; break;
+      case "apertar": comando = { tipo: "executar", script: uiaApertar(resto[0] || "", resto[1] || ""), tempo: 30 }; break;
+      case "escrever": comando = { tipo: "executar", script: uiaEscrever(resto[0] || "", resto[1] || "", resto.slice(2).join(" ")), tempo: 30 }; break;
+      case "impressoras": comando = { tipo: "executar", script: IMPRESSORAS, tempo: 30 }; break;
+      case "testar-impressora": comando = { tipo: "executar", script: testarImpressora(resto.join(" ")), tempo: 30 }; break;
+      case "lote": {
+        const fonte = resto.join(" ");
+        const passos = JSON.parse(fonte.startsWith("@") ? fs.readFileSync(fonte.slice(1), "utf8") : fonte);
+        comando = { tipo: "lote", passos, ...esperar };
+        break;
+      }
+      case "nav": {
+        const [qual, ...mais] = resto;
+        const aba = opcoes.aba != null ? { aba: n(opcoes.aba) } : {};
+        comando = { tipo: "navegador", acao: qual, ...aba, ...esperar };
+        if (qual === "abrir" || qual === "ir") comando.url = mais[0];
+        else if (qual === "js") comando.js = mais.join(" ");
+        else if (qual === "clicar") comando.alvo = mais.join(" ");
+        else if (qual === "preencher") { comando.alvo = mais[0]; comando.valor = mais.slice(1).join(" "); }
+        break;
+      }
       case "enviar": {
         const arquivo = resto.join(" ");
         const dado = fs.readFileSync(arquivo);
@@ -109,11 +191,15 @@ try {
       default: throw new Error("ação desconhecida (veja o topo do arquivo)");
     }
     const r = await api(`/sessoes/${codigo}/comando`, comando);
+    if (r.abas) for (const t of r.abas) console.log(`[${t.i}] ${t.titulo}  ${t.url}`);
+    if (r.texto != null) console.log(`# ${r.titulo}\n${r.url}\n\n${r.texto}`);
+    if (r.valor !== undefined) console.log(typeof r.valor === "string" ? r.valor : JSON.stringify(r.valor, null, 2));
+    if (r.aberto) console.log(`aberto: ${r.aberto}${r.novo ? " (navegador do suporte iniciado)" : " (aba nova)"}`);
     if (r.saida != null) {
       process.stdout.write(String(r.saida).replace(/\s+$/, "") + "\n");
       if (!r.ok) { console.error(`(saiu com código ${r.codigoSaida})`); process.exitCode = 1; }
     } else if (r.caminho) console.log(`salvo no PC do cliente: ${r.caminho} (${r.bytes} bytes)`);
-    else if (r.ok) console.log("ok");
+    else if (r.ok && r.abas == null && r.texto == null && r.valor === undefined && !r.aberto) console.log(r.url ? `ok (${r.url})` : "ok");
     salvar(codigo, r);
   }
 } catch (e) {

@@ -135,3 +135,15 @@ Douglas, 20/11: "melhore tudo que puder" e "certificar que você vai ter autonom
 - `impressora-se-ensina-nao-se-acessa` e "não oferecer acesso remoto" passam a ser **"oferecer o FireAccess"**.
 - `ensinar-com-video-nao-fazer` continua valendo para loja já implantada em tarefa do dia a dia. O FireAccess serve para instalação, integração e travamento.
 - Até lá, as regras atuais valem. Não prometer acesso a ninguém antes da fase 3.
+
+## v0.3 (20/11/2026) — mais rápido, como o Claude usa o navegador do Douglas
+
+Primeiro teste real (Victor, notebook Windows): funcionou, mas levou 26 min até a primeira tela (Edge e Windows barrando o download) e cada ação dependia de foto. Douglas: "mexer no PC igual é você comigo aqui", "controle de tudo, mexer em impressora".
+- **Modo navegador (`nav`):** o agente abre um Chrome/Edge separado (perfil `%LOCALAPPDATA%\FireHub\fireaccess-navegador`, porta de depuração só em 127.0.0.1) e o atendente lê o texto da página e clica por seletor ou texto, sem foto. Medido no teste local: abrir 1,5 s, ler a página inteira 0,1 s. `preencher` recusa campo de senha (regra 4); login quem faz é o cliente, uma vez, e fica no perfil do FireAccess.
+- **Janelas do Windows pelo nome (UI Automation):** `janelas`, `controles`, `apertar`, `escrever` (recusa campo de senha). Testado: apertar "Sete" na Calculadora sem mexer no mouse. Serve para diálogo de impressora, instalador, Configurações. A janela do próprio FireAccess (Electron) não aparece para o UI Automation: ninguém aperta Permitir por script.
+- **`impressoras` e `testar-impressora`:** lista com porta, driver, status, fila e padrão; página de teste do Windows.
+- **`lote`:** vários passos de mouse/teclado numa ida, uma foto no fim.
+- **Faixa mostra o que o suporte está fazendo** ("Suporte FireHub: clicando…", "usando o navegador…") e volta para "conectado". O cliente vê que não está parado, sem animar a seta (Douglas preferiu assim).
+- **Código:** o cliente não precisa mais passar o código (o Victor estranhou que entramos sem ele). A janela diz só "Clique em Permitir"; a página `/fireaccess` e a mensagem pronta também. O código continua aparecendo para identificar a sessão quando houver várias.
+- **Relay:** aceita `lote` e `navegador` (prazo próprio). Precisa do **Deploy manual** do app `fireaccess-relay` no Coolify antes de soltar o .exe 0.3.
+- **Pendente:** o 502 que derrubou a sessão do Victor às 15:01 (relay reiniciou? sessões vivem só na memória). Assinatura do .exe para acabar com o aviso de download: decisão do Douglas (custo).
