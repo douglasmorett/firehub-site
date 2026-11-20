@@ -115,6 +115,11 @@ const COMPARE = [
   ["Cardápio digital sem taxa", true, true, false],
   ["Delivery, Mesas e Balcão", true, true, false],
   ["Chatbot WhatsApp com IA", true, true, false],
+  ["Robô que faz reserva de mesa no WhatsApp", true, false, false],
+  ["Assessor por áudio que pausa o item no iFood, na 99 e no site", true, false, false],
+  ["Cotação automática com os fornecedores pelo WhatsApp", true, false, false],
+  ["Prazo do iFood ajustado sozinho pela fila da cozinha 🏆", true, false, false],
+  ["Loja continua vendendo se a internet cair (Modo Contingência)", true, false, false],
   ["Alerta de bebida na comanda (zero esquecimento) 🏆", true, false, false],
   ["Controle financeiro completo", true, true, false],
   ["Leitura de boletos e notas por IA", true, false, false],
@@ -342,6 +347,33 @@ function Destaque({ id, tema, selo, novo, titulo, texto, cards, acao, visual, in
         </div>
       </div>
     </section>
+  );
+}
+
+/**
+ * A conversa com o Bill pausando um item, como ela acontece: pausa no FireHub e
+ * pergunta dos apps; com o "sim", iFood e 99 (lib/assessor/cardapio.ts e
+ * pausa-nos-apps.ts). Desenho, não print.
+ */
+function ConversaDoBill() {
+  const bolha = (eu: boolean, conteudo: ReactNode, k: number) => (
+    <div key={k} data-revela style={{ "--atraso": `${200 + k * 260}ms`, alignSelf: eu ? "flex-end" : "flex-start", maxWidth: "82%", background: eu ? "#DCF8C6" : "#FFF", color: "#111827", borderRadius: eu ? "14px 14px 4px 14px" : "14px 14px 14px 4px", padding: "9px 12px", fontSize: ".86rem", lineHeight: 1.45, boxShadow: "0 1px 2px rgba(0,0,0,.12)" } as CSSProperties}>{conteudo}</div>
+  );
+  return (
+    <div style={{ background: "#ECE5DD", borderRadius: 22, padding: 16, boxShadow: "0 24px 50px rgba(0,0,0,.45)", border: "6px solid #111827", maxWidth: 360, margin: "0 auto", width: "100%" }} aria-label="Exemplo de conversa com o Bill pausando um item">
+      <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#075E54", color: "#FFF", margin: "-16px -16px 12px", padding: "10px 14px", borderRadius: "16px 16px 0 0" }}>
+        <span style={{ width: 32, height: 32, borderRadius: 999, background: "#8B5CF6", display: "grid", placeItems: "center" }}>🎙️</span>
+        <div><div style={{ fontWeight: 800, fontSize: ".9rem" }}>Bill, seu assessor</div><div style={{ fontSize: ".7rem", opacity: .8 }}>no WhatsApp da sua loja</div></div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {[
+          bolha(true, <span>🎙️ <b>0:03</b> · “Acabou o X-Bacon”</span>, 0),
+          bolha(false, <>Pausei o <b>X-Bacon</b> no seu site, no robô e no balcão. ⏸️<br />Posso pausar no <b>iFood</b> e na <b>99</b> também?</>, 1),
+          bolha(true, "Pode", 2),
+          bolha(false, <>Pronto ✅ Pausado no iFood e na 99. Quando voltar, é só me avisar.</>, 3),
+        ]}
+      </div>
+    </div>
   );
 }
 
@@ -759,6 +791,75 @@ export default function Home() {
         visual={<Moldura src="/images/chatbot_ui.webp" alt="FireHub Chatbot Humanizado" borda="1px solid rgba(0,0,0,0.05)" sombra="0 20px 40px rgba(0,0,0,0.1)" fundo="#FFF" />}
       />
 
+      {/* NOVO: BILL, SEU ASSESSOR — fatos em lib/assessor/* (cardapio.ts pausa no
+          FireHub e pergunta dos apps; pausa-nos-apps.ts faz iFood e 99; a Keeta
+          não tem pausa por item). R$ 49,90/mês, 7 dias grátis (assinatura.ts). */}
+      <Destaque
+        tema={{
+          fundo: "linear-gradient(135deg, #1E1B4B 0%, #312E81 100%)", brilho: "rgba(167,139,250,0.28)", brilhoPos: { top: -120, right: -120 },
+          seloFundo: "rgba(167,139,250,0.18)", seloBorda: "rgba(167,139,250,0.45)", seloCor: "#C4B5FD",
+          titulo: "#FFF", texto: "#C7D2FE",
+          cardFundo: "rgba(255,255,255,0.06)", cardBorda: "rgba(255,255,255,0.12)", cardTitulo: "#FFF", cardTexto: "#C7D2FE",
+          nota: "#C7D2FE",
+        }}
+        novo
+        selo="🎙️ BILL, SEU ASSESSOR"
+        titulo={<>Acabou um item? <span style={{ color: "#C4B5FD" }}>Um áudio</span> e ele sai do iFood, da 99 e do seu site</>}
+        texto={<>Fale com o Bill no painel ou no <strong style={{ color: "#FFF" }}>WhatsApp da sua própria loja</strong>, por áudio ou por texto. Ele pausa o item no seu site, no robô e no balcão e, com o seu ok, no iFood e na 99. Sem abrir três aplicativos no meio da correria.</>}
+        cards={[
+          { t: "⏸️ Pausa e reativa", d: "“Acabou o X-Bacon” — some do site, do robô, do iFood e da 99" },
+          { t: "📸 Foto da nota", d: "Manda a foto e ele lança tudo no estoque e no financeiro" },
+          { t: "🧾 Boleto e despesa", d: "Foto do boleto vira conta a pagar; comprovante vira despesa" },
+          { t: "📊 Pergunte o que quiser", d: "Quanto vendi hoje? O que está acabando? Ele responde na hora" },
+        ]}
+        acao={<>
+          <a href={TRIAL} className="btn-primary" style={{ padding: "14px 28px", fontSize: "1rem", background: "linear-gradient(135deg,#8B5CF6,#6D28D9)", boxShadow: "0 6px 24px rgba(109,40,217,.35)" }}>🎙️ Quero o Bill na minha loja</a>
+          <span className="nota" style={{ color: "#C7D2FE" }}>Módulo à parte · + R$ 49,90/mês · 7 dias grátis</span>
+        </>}
+        visual={<ConversaDoBill />}
+      />
+
+      {/* NOVO: MÓDULOS QUE TRABALHAM NO WHATSAPP — reservas (lib/reservas/robo.ts)
+          e cotação com fornecedores (lib/cotacao/*). Pagos à parte, 7 dias grátis;
+          sem preço na página (regra do material de venda). */}
+      <section className="sec sec-alt" id="modulos">
+        <div className="w">
+          <div className="sec-title" data-revela>
+            <h2>O robô também <em>reserva mesa e cota com seus fornecedores</em></h2>
+            <p>Módulos que trabalham sozinhos no WhatsApp da sua loja. Ligue quando quiser, com 7 dias grátis.</p>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", gap: 20, maxWidth: 1000, margin: "0 auto" }}>
+            {[
+              {
+                icone: "📅", titulo: "Reservas de mesa pelo robô", cor: "#0EA5E9",
+                texto: "O cliente pede a mesa no WhatsApp e o robô confere a vaga de verdade, grava a reserva e manda a confirmação.",
+                itens: ["Lotou? Ele oferece os horários livres mais perto", "O cliente cancela ou muda pelo próprio WhatsApp", "Você define dias, horários, mesas e limite de pessoas", "Painel do dia, da semana e do mês, com chegou / não veio"],
+              },
+              {
+                icone: "🧮", titulo: "Cotação automática com fornecedores", cor: "#F59E0B",
+                texto: "Nos dias que você escolher, a loja pede a tabela de preços a cada fornecedor pelo WhatsApp e monta o comparativo sozinha.",
+                itens: ["Lê a resposta em texto, foto, PDF ou áudio", "Planilha produto × fornecedor com o mais barato marcado", "Mostra o que subiu e o que caiu desde a última cotação", "Monta o pedido por fornecedor e manda pelo WhatsApp"],
+              },
+            ].map((m, i) => (
+              <div key={m.titulo} data-revela style={{ "--atraso": `${i * 120}ms`, background: "#FFF", borderRadius: 20, padding: "26px 24px", border: "1px solid #E5E7EB", boxShadow: "0 10px 30px rgba(15,23,42,.06)", borderTop: `5px solid ${m.cor}` } as CSSProperties}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                  <span style={{ fontSize: "1.8rem" }}>{m.icone}</span>
+                  <h3 style={{ fontSize: "1.15rem", fontWeight: 900, color: "#0F172A" }}>{m.titulo}</h3>
+                  <span style={{ marginLeft: "auto", background: "#FEF2F2", color: "#DC2626", fontSize: ".66rem", fontWeight: 900, padding: "3px 8px", borderRadius: 999 }}>NOVO</span>
+                </div>
+                <p style={{ color: "#475569", fontSize: ".92rem", lineHeight: 1.6, marginBottom: 14 }}>{m.texto}</p>
+                <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+                  {m.itens.map((t) => (
+                    <li key={t} style={{ display: "flex", gap: 8, fontSize: ".88rem", color: "#334155" }}><span style={{ color: m.cor, fontWeight: 900 }}>✓</span>{t}</li>
+                  ))}
+                </ul>
+                <p style={{ marginTop: 16, fontSize: ".76rem", color: "#94A3B8", fontWeight: 700 }}>Módulo à parte · 7 dias grátis</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* NOVO: DISPAROS PELA API OFICIAL — fatos em lib/disparo-oficial/regras.ts
           (R$ 0,46 por entregue com o custo da Meta de out/2026, recarga mínima
           R$ 50) e components/ApresentacaoDisparoOficial.tsx. O disparo pelo QR
@@ -1101,7 +1202,7 @@ export default function Home() {
                 <a href={TRIAL} className="btn-primary btn-pulse" style={{width:"100%",justifyContent:"center",padding:16}}>🔥 Testar Grátis Agora</a>
               </div>
               <p className="pricing-note">Sem cartão de crédito · Cancele quando quiser · Sem multa</p>
-              <p className="pricing-note" style={{marginTop:6}}>À parte: Tráfego Pago (R$ 50 por semana de campanha ativa) e Disparos pela API oficial (R$ 0,46 por mensagem entregue).</p>
+              <p className="pricing-note" style={{marginTop:6}}>À parte: Bill, seu assessor (R$ 49,90/mês), Reservas e Cotação automática (com 7 dias grátis), Tráfego Pago (R$ 50 por semana de campanha ativa) e Disparos pela API oficial (R$ 0,46 por mensagem entregue).</p>
             </div>
           </div>
         </div>
@@ -1184,6 +1285,7 @@ export default function Home() {
             <div className="footer-col">
               <h3>Links</h3>
               <a href="#funcionalidades">Funcionalidades</a>
+              <a href="#modulos">Reservas e Cotação</a>
               <a href="#trafego-pago">Tráfego Pago</a>
               <a href="#contingencia">Modo Contingência</a>
               <a href="#disparos">Disparos pela API Oficial</a>
