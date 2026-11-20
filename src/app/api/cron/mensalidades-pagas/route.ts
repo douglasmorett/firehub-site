@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     const { conferirAnuaisNoAsaas } = await import("@/lib/plano-anual-no-banco");
     const planosAnuaisPagos = await conferirAnuaisNoAsaas().catch((e) => { console.error(`[Plano anual] Conferência falhou: ${e?.message}`); return 0; });
     if (planosAnuaisPagos > 0) console.log(`[Plano anual] Conferência: ${planosAnuaisPagos} anuais pagos agora.`);
-    // Plano pré-pago (contas desde 23/11/2026): emite a ativação e a renovação
+    // Plano pré-pago (contas desde 21/11/2026): emite a ativação e a renovação
     // que entraram na janela de 5 dias antes do vencimento (lib/pre-pago/cobranca.ts).
     const { emitirCobrancasPrePagas } = await import("@/lib/pre-pago/cobranca");
     const prePago = await emitirCobrancasPrePagas().catch((e) => { console.error(`[Pré-pago] Varredura falhou: ${e?.message}`); return { emitidas: 0, erros: 1, log: [] as string[] }; });

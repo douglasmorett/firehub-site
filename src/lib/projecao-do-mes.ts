@@ -165,7 +165,7 @@ export async function montarProjecao(agora = new Date()) {
 
     const inicio = inicioDaCobranca(monthStart, monthEnd, l.trialEndsAt);
     const pPercentual = projetarMes({ mes, contaAntesDaVirada: s.antes, contaDepois: s.depois, porDia, inicioDaCobranca: inicio, agora, fimDoMes: monthEnd });
-    // Plano pré-pago (contas desde 23/11/2026): R$ 200 na ativação (o teste acaba
+    // Plano pré-pago (contas desde 21/11/2026): R$ 200 na ativação (o teste acaba
     // neste mês) ou a renovação pelo ritmo de um mês cheio (lib/modelo-de-cobranca.ts).
     const prePago = modeloDaLoja(l.createdAt, l.accountGroup?.createdAt) === "PRE_PAGO";
     const ativaNoMes = !!l.trialEndsAt && new Date(l.trialEndsAt) >= monthStart;

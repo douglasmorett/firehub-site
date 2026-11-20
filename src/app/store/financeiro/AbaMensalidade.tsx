@@ -80,7 +80,7 @@ export default function AbaMensalidade({ ciclo, tz }: { ciclo: VisaoDoCiclo | nu
     );
   }
 
-  // Plano pré-pago (conta criada a partir de 23/11/2026): outra regra, outra tela.
+  // Plano pré-pago (conta criada a partir de 21/11/2026): outra regra, outra tela.
   if (ciclo.prePago) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>

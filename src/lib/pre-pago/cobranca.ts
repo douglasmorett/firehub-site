@@ -1,5 +1,5 @@
 /**
- * A COBRANÇA DO PLANO PRÉ-PAGO (contas criadas a partir de 23/11/2026,
+ * A COBRANÇA DO PLANO PRÉ-PAGO (contas criadas a partir de 21/11/2026,
  * lib/modelo-de-cobranca.ts) — ativação no fim do teste e renovação na mesma
  * data todo mês.
  *

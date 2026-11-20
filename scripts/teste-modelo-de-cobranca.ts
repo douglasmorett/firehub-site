@@ -14,10 +14,10 @@ function igual(nome: string, veio: unknown, esperado: unknown) {
 }
 const br = (d: Date) => d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
 
-// Modelo pela data de criação (23/11/2026 00:00 de Brasília)
-igual("virada é 23/11 00:00 Brasília", br(VIRADA_DO_PRE_PAGO), "23/11/2026, 00:00:00");
-igual("criada 22/11 23:59 Brasília = percentual", modeloDaLoja("2026-11-23T02:59:59Z"), "PERCENTUAL");
-igual("criada 23/11 00:00 Brasília = pré-pago", modeloDaLoja("2026-11-23T03:00:00Z"), "PRE_PAGO");
+// Modelo pela data de criação (21/11/2026 00:00 de Brasília)
+igual("virada é 21/11 00:00 Brasília", br(VIRADA_DO_PRE_PAGO), "21/11/2026, 00:00:00");
+igual("criada 20/11 23:59 Brasília = percentual", modeloDaLoja("2026-11-21T02:59:59Z"), "PERCENTUAL");
+igual("criada 21/11 00:00 Brasília = pré-pago", modeloDaLoja("2026-11-21T03:00:00Z"), "PRE_PAGO");
 igual("criada em outubro = percentual", modeloDaLoja(new Date("2026-10-10T12:00:00Z")), "PERCENTUAL");
 igual("sem data = percentual", modeloDaLoja(null), "PERCENTUAL");
 igual("loja extra nova de conta antiga segue a principal", modeloDaLoja("2026-12-01T12:00:00Z", "2026-09-01T12:00:00Z"), "PERCENTUAL");

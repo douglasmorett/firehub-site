@@ -304,7 +304,7 @@ export default function CadastroPage() {
             {[
               `🔥 ${trialDays} dias grátis, sem cartão`,
               Date.now() < VIRADA_DO_PRE_PAGO.getTime()
-                ? "💰 Cadastre até domingo (22/11) e fique no plano de 2%"
+                ? "💰 Cadastre até hoje (20/11) e fique no plano de 2%"
                 : "💰 Depois, R$ 200/mês (R$ 400 acima de R$ 10 mil em vendas)",
               "📱 Cardápio digital + WhatsApp IA",
               "📊 Relatórios e controle completo",
@@ -469,12 +469,12 @@ export default function CadastroPage() {
                   {/* O plano das contas novas (lib/modelo-de-cobranca.ts), dito
                       ANTES do aceite: "tem que estar bem explicado" (Douglas, 20/11/2026). */}
                   {Date.now() < VIRADA_DO_PRE_PAGO.getTime() ? (
-                  // Até domingo, 22/11/2026, quem se cadastra ainda entra no plano de 2%.
+                  // Até 20/11/2026, quem se cadastra ainda entra no plano de 2%.
                   <div style={{ background: "#F0FDF4", border: "1.5px solid #86EFAC", borderRadius: 12, padding: "12px 14px", fontSize: ".8rem", color: "#14532D", lineHeight: 1.55 }}>
                     <div style={{ fontWeight: 800, marginBottom: 6, color: "#166534" }}>💰 Como você vai pagar</div>
                     <div>• <b>{trialDays} dias grátis</b>, sem cartão.</div>
-                    <div>• Cadastrando até domingo (22/11) você entra no plano atual: <b>2% das vendas do mês</b>, mínimo R$ 100 e máximo R$ 400.</div>
-                    <div>• Boleto no começo do mês seguinte. A partir de 23/11, contas novas entram no plano pré-pago (R$ 200 / R$ 400).</div>
+                    <div>• Cadastrando até hoje (20/11) você entra no plano atual: <b>2% das vendas do mês</b>, mínimo R$ 100 e máximo R$ 400.</div>
+                    <div>• Boleto no começo do mês seguinte. A partir de 21/11, contas novas entram no plano pré-pago (R$ 200 / R$ 400).</div>
                   </div>
                   ) : (
                   <div style={{ background: "#FFF7ED", border: "1.5px solid #FDBA74", borderRadius: 12, padding: "12px 14px", fontSize: ".8rem", color: "#7C2D12", lineHeight: 1.55 }}>

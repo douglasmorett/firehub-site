@@ -8,7 +8,7 @@
  * - Quem já usa fica como está (PERCENTUAL): 2% das vendas do mês, mínimo
  *   R$ 100, teto R$ 400, boleto no dia 1 com vencimento no dia 5
  *   (lib/firehub-billing.ts, lib/billing.ts).
- * - Conta criada a partir de 23/11/2026 (PRE_PAGO): "paga pra usar, não usa pra
+ * - Conta criada a partir de 21/11/2026 (PRE_PAGO): "paga pra usar, não usa pra
  *   pagar". Acabou o teste, paga R$ 200 e libera o mês. A renovação é na MESMA
  *   DATA do mês seguinte ("não é todo dia 31 para pagar até o dia 5") e o valor
  *   sai do que a loja vendeu no ciclo que terminou: até R$ 10 mil, R$ 200;
@@ -18,8 +18,8 @@
  * sai da data de criação da principal.
  */
 
-/** 23/11/2026 00:00 em Brasília. Conta criada daqui em diante é pré-paga. */
-export const VIRADA_DO_PRE_PAGO = new Date("2026-11-23T03:00:00.000Z");
+/** 21/11/2026 00:00 em Brasília. Conta criada daqui em diante é pré-paga. */
+export const VIRADA_DO_PRE_PAGO = new Date("2026-11-21T03:00:00.000Z");
 
 export const PRE_PAGO = {
   /** Venda do ciclo ATÉ este valor paga o degrau de baixo. */

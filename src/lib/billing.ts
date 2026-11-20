@@ -746,7 +746,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   // PAID que ainda pode ser refeito é só o "nada a cobrar", que não tem boleto.
   if (cycle.status === "PAID" && cycle.asaasPaymentId) return { charged: false, message: "Ciclo já pago no Asaas" };
 
-  // Plano pré-pago (conta criada a partir de 23/11/2026, lib/modelo-de-cobranca.ts):
+  // Plano pré-pago (conta criada a partir de 21/11/2026, lib/modelo-de-cobranca.ts):
   // não tem boleto de fim de mês — paga antes de usar, na data dele. O ciclo
   // fecha como "nada a cobrar" para não ficar aberto nem gerar boleto.
   const principalCriadaEm = cycle.franchisee?.accountGroupId
@@ -1336,7 +1336,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
     };
   }
 
-  // Plano pré-pago (conta criada a partir de 23/11/2026): não existe o mês com
+  // Plano pré-pago (conta criada a partir de 21/11/2026): não existe o mês com
   // boleto no dia 1. A tela mostra a regra dele e o ritmo de venda.
   if (user && modeloDaLoja(user.createdAt, user.accountGroup?.createdAt) === "PRE_PAGO") {
     const prePago = await prePagoNaTela(franchiseeId, user.createdAt, user.trialEndsAt ? new Date(user.trialEndsAt) : null, tz);

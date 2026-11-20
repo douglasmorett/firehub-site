@@ -76,8 +76,8 @@ export async function estadoDaLojaParaSuporte(userId: string, opcoes: { aoVivo?:
       terminaEm: new Date(fimDoTeste).toISOString().slice(0, 10),
     },
     planoDeCobranca: modeloDaLoja(u.createdAt, u.accountGroup?.createdAt) === "PRE_PAGO"
-      ? "pré-pago, conta criada a partir de 23/11/2026: R$ 200 (vendendo até R$ 10 mil no mês) ou R$ 400 (acima), pago ao fim do teste e renovado na mesma data todo mês"
-      : "2% das vendas do mês, mínimo R$ 100 e máximo R$ 400, boleto no dia 1 com vencimento no dia 5 (conta criada até 22/11/2026)",
+      ? "pré-pago, conta criada a partir de 21/11/2026: R$ 200 (vendendo até R$ 10 mil no mês) ou R$ 400 (acima), pago ao fim do teste e renovado na mesma data todo mês"
+      : "2% das vendas do mês, mínimo R$ 100 e máximo R$ 400, boleto no dia 1 com vencimento no dia 5 (conta criada até 20/11/2026)",
     robo: {
       conectado: robo ? robo.conectada : typeof config.connected === "boolean" ? config.connected : null,
       ligado: config.active !== false,
