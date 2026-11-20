@@ -1,0 +1,41 @@
+{
+  "name": "fireaccess-agente",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FireAccess — suporte do FireHub no computador do lojista",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win portable"
+  },
+  "dependencies": {
+    "ws": "^8.21.1"
+  },
+  "devDependencies": {
+    "electron": "^28.3.3",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.firehub.fireaccess",
+    "productName": "FireAccess",
+    "files": [
+      "main.js",
+      "preload.js",
+      "entrada.js",
+      "entrada.ps1",
+      "janela.html",
+      "faixa.html",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "portable": {
+      "artifactName": "FireAccess.exe"
+    },
+    "electronVersion": "28.3.3"
+  }
+}

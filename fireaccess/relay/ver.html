@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FireAccess</title>
+<style>
+  :root { --fundo:#111; --texto:#eee; --cinza:#888; --vermelho:#e5372b; --borda:#333; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--fundo); color:var(--texto); font:14px system-ui, sans-serif; }
+  header { display:flex; gap:12px; align-items:center; padding:10px 16px; border-bottom:1px solid var(--borda); flex-wrap:wrap; }
+  header b { color:var(--vermelho); }
+  select, input, button { font:inherit; background:#222; color:var(--texto); border:1px solid var(--borda); border-radius:6px; padding:6px 10px; }
+  button { cursor:pointer; }
+  button.perigo { border-color:var(--vermelho); color:var(--vermelho); }
+  #tela { display:block; max-width:100%; margin:0 auto; cursor:crosshair; }
+  #vazio { color:var(--cinza); text-align:center; padding:60px 16px; }
+  #barra { display:flex; gap:8px; padding:8px 16px; flex-wrap:wrap; align-items:center; }
+  #barra input { flex:1; min-width:200px; }
+  label { color:var(--cinza); display:flex; gap:6px; align-items:center; }
+</style>
+</head>
+<body>
+<header>
+  <b>FireAccess</b>
+  <select id="sessoes"><option value="">— nenhuma sessão —</option></select>
+  <label><input type="checkbox" id="assumir"> assumir (meus cliques vão para o PC do cliente)</label>
+  <span id="estado" style="color:var(--cinza)"></span>
+</header>
+<div id="barra" hidden>
+  <input id="texto" placeholder="Digitar no PC do cliente (Enter envia)">
+  <button data-tecla="enter">Enter</button>
+  <button data-tecla="tab">Tab</button>
+  <button data-tecla="esc">Esc</button>
+  <button data-tecla="win">Iniciar</button>
+  <button class="perigo" id="encerrar">Encerrar sessão</button>
+</div>
+<img id="tela" alt="" hidden>
+<div id="vazio">Quando o cliente abrir o FireAccess e clicar em Permitir, a sessão aparece aqui.</div>
+<script>
+const $ = (id) => document.getElementById(id);
+let token = sessionStorage.getItem("fa-token") || "";
+if (!token) { token = prompt("Token do FireAccess") || ""; sessionStorage.setItem("fa-token", token); }
+// No ar o relay fica em firehubfood.com.br/fireaccess-relay (o proxy tira o prefixo); local, na raiz.
+const BASE = location.pathname.replace(/\/+$/, "").replace(/\/fireaccess$/, "");
+const api = (p, corpo) => fetch(BASE + p, {
+  method: corpo ? "POST" : "GET",
+  headers: { authorization: "Bearer " + token, "content-type": "application/json" },
+  body: corpo ? JSON.stringify(corpo) : undefined,
+}).then(async (r) => { const j = await r.json(); if (!r.ok) throw new Error(j.erro || r.status); return j; });
+
+let atual = "";
+async function listar() {
+  try {
+    const lista = await api("/sessoes");
+    const sel = $("sessoes"), antes = sel.value;
+    sel.innerHTML = '<option value="">— escolher sessão —</option>' + lista.map((s) =>
+      `<option value="${s.codigo}" ${s.permitido ? "" : "disabled"}>${s.codigo} · ${s.maquina?.nome || "?"} ${s.permitido ? "" : "(esperando Permitir)"}</option>`).join("");
+    sel.value = lista.some((s) => s.codigo === antes && s.permitido) ? antes : "";
+    if (sel.value !== atual) trocar(sel.value);
+  } catch (e) { $("estado").textContent = "erro: " + e.message; }
+}
+function trocar(c) {
+  atual = c;
+  $("tela").hidden = !c; $("barra").hidden = !c; $("vazio").hidden = !!c;
+}
+$("sessoes").onchange = (e) => trocar(e.target.value);
+
+let tamanho = { largura: 1, altura: 1 };
+async function quadro() {
+  if (atual) {
+    try {
+      const r = await api(`/sessoes/${atual}/comando?ao_vivo=1&quem=douglas`, { tipo: "tela" });
+      tamanho = r;
+      $("tela").src = "data:image/jpeg;base64," + r.jpeg;
+      $("estado").textContent = "ao vivo";
+    } catch (e) { $("estado").textContent = "erro: " + e.message; }
+  }
+  setTimeout(quadro, atual ? 100 : 1000);
+}
+const acao = (c) => atual && api(`/sessoes/${atual}/comando?quem=douglas`, c).catch((e) => alert(e.message));
+
+$("tela").onclick = (e) => {
+  if (!$("assumir").checked) return;
+  const r = e.target.getBoundingClientRect();
+  acao({ tipo: "clicar", x: Math.round((e.clientX - r.left) * tamanho.largura / r.width), y: Math.round((e.clientY - r.top) * tamanho.altura / r.height) });
+};
+$("texto").onkeydown = (e) => {
+  if (e.key !== "Enter" || !$("assumir").checked) return;
+  acao({ tipo: "digitar", texto: e.target.value }); e.target.value = "";
+};
+document.querySelectorAll("[data-tecla]").forEach((b) => b.onclick = () => $("assumir").checked && acao({ tipo: "tecla", combo: b.dataset.tecla }));
+$("encerrar").onclick = () => atual && confirm("Encerrar a sessão do cliente?") && api(`/sessoes/${atual}/encerrar`, {}).then(listar);
+
+listar(); setInterval(listar, 3000); quadro();
+</script>
+</body>
+</html>

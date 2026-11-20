@@ -41,3 +41,7 @@ npm-debug.log*
 # dia derrubar o build por um arquivo que passou a ser lido em tempo de compilação.
 CLAUDE.md
 AGENTS.md
+
+# FireAccess (acesso remoto do suporte): o relay é outro app no Coolify (base fireaccess/relay)
+# e o agente é compilado à parte; só o .exe pronto vai em public/downloads.
+fireaccess

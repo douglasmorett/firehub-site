@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>FireAccess — Suporte FireHub</title>
+<style>
+  body { margin:0; font:15px "Segoe UI", sans-serif; background:#fff; color:#222; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; text-align:center; padding:0 24px; box-sizing:border-box; }
+  h1 { font-size:20px; margin:0 0 6px; color:#e5372b; }
+  p { margin:6px 0; color:#555; }
+  #codigo { font-size:40px; font-weight:700; letter-spacing:6px; margin:14px 0; color:#111; }
+  button { font:inherit; font-weight:600; background:#e5372b; color:#fff; border:0; border-radius:8px; padding:12px 22px; cursor:pointer; margin-top:10px; }
+  button:disabled { background:#bbb; cursor:default; }
+  small { color:#888; margin-top:14px; display:block; line-height:1.4; }
+</style>
+</head>
+<body>
+  <h1>Suporte FireHub</h1>
+  <p id="msg">Conectando…</p>
+  <div id="codigo">——————</div>
+  <button id="permitir" disabled>Permitir suporte FireHub</button>
+  <small>Ao permitir, o atendente do FireHub vê sua tela e mexe no mouse e no teclado.<br>
+  Uma faixa vermelha fica no topo enquanto isso. Para cortar o acesso, clique em Encerrar ou feche este programa.<br>
+  Senhas quem digita é você.<br>
+  Ao clicar em Permitir, você autoriza o acesso a esta tela durante o atendimento. As ações ficam registradas por 30 dias.</small>
+<script>
+  const $ = (id) => document.getElementById(id);
+  $("permitir").onclick = () => { $("permitir").disabled = true; fa.permitir(); };
+  fa.aoEstado((e) => {
+    if (e.codigo) $("codigo").textContent = e.codigo;
+    if (e.msg) $("msg").textContent = e.msg;
+    $("permitir").disabled = !e.podePermitir;
+  });
+</script>
+</body>
+</html>
