@@ -10,7 +10,8 @@
 </style>
 </head>
 <body>
-  <span>● Suporte FireHub conectado</span>
+  <span id="texto">● Suporte FireHub conectado</span>
   <button onclick="fa.encerrar()">Encerrar</button>
+<script>fa.aoEstado((e) => { if (e.faixa) document.getElementById("texto").textContent = e.faixa; });</script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 {
   "name": "fireaccess-agente",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "FireAccess — suporte do FireHub no computador do lojista",
   "main": "main.js",
@@ -34,8 +34,13 @@
       "icon": "build/icon.ico"
     },
     "portable": {
-      "artifactName": "FireAccess.exe"
+      "artifactName": "FireAccess.exe",
+      "requestExecutionLevel": "highest"
     },
+    "electronLanguages": [
+      "pt-BR"
+    ],
+    "compression": "maximum",
     "electronVersion": "28.3.3"
   }
 }

@@ -61,7 +61,11 @@ Um agente nosso é pequeno: captura a tela, recebe clique e tecla e fala com um 
 
 ## Limites conhecidos (falar antes ao lojista)
 
-- **Janela "Deseja permitir que este app faça alterações?" (UAC):** o Windows a mostra numa tela protegida, e nenhum acesso remoto sem serviço clica nela. Quem clica em **Sim** é o cliente. O Claude avisa na hora: "vai aparecer uma janela, clica em Sim".
+- **Janela "Deseja permitir que este app faça alterações?" (UAC):** o Windows a mostra numa tela protegida, e nenhum acesso remoto sem serviço clica nela.
+  - Desde a v0.2 o FireAccess já abre como administrador (o cliente diz **Sim** uma vez, na abertura). O que o atendente abre por `abrir`/`executar` nasce administrador e **não mostra UAC**.
+  - Instalador: rodar por `abrir <codigo> "C:\...\setup.exe"`, nunca por duplo clique no Explorer (o Explorer não é administrador e o UAC volta).
+  - Se ainda assim aparecer (cliente não é administrador, selo "SEM administrador"), quem clica em **Sim** é o cliente: "vai aparecer uma janela, clica em Sim".
+- **Segunda tela:** o FireAccess vê só a tela principal (o `info` lista as telas). Janela que abriu na outra tela: `tecla <codigo> win+shift+left` traz para a principal.
 - **Antivírus e SmartScreen:** um programa que controla mouse e teclado sem assinatura digital tende a ser bloqueado. Sem assinatura, o cliente passa pelo aviso do Windows, como já faz com o Assistente. O atendente ensina o caminho (ver Decisões).
 - **Só Windows** no começo. Mac fica para depois, se aparecer demanda.
 
@@ -105,7 +109,7 @@ O Douglas definiu que é **ferramenta interna da equipe, não produto**: o AnyDe
   - Volume `/dados`.
   - Variável `FIREACCESS_TOKEN`, só de runtime. A cópia local fica em `~/.fireaccess-token`.
 - **Página do Douglas:** `https://firehubfood.com.br/fireaccess-relay/`.
-- **CLI:** `FIREACCESS_URL=https://firehubfood.com.br/fireaccess-relay FIREACCESS_TOKEN=$(cat ~/.fireaccess-token) node fireaccess/cli/fireaccess.mjs sessoes`.
+- **CLI:** `node fireaccess/cli/fireaccess.mjs sessoes` (já usa o relay no ar e `~/.fireaccess-token`).
 - **Lojista:** `https://firehubfood.com.br/fireaccess` (página `src/app/fireaccess`) → `/downloads/FireAccess.exe`.
 - **Gerar o .exe de novo:** em `fireaccess/agente`, `npm install --omit=dev`, depois `env -u ELECTRON_RUN_AS_NODE <firehub-print-assistant>/node_modules/.bin/electron-builder --win portable` e copiar `dist/FireAccess.exe` para `public/downloads/`.
 
@@ -113,6 +117,18 @@ O Douglas definiu que é **ferramenta interna da equipe, não produto**: o AnyDe
 > Consigo fazer isso direto no seu computador. Baixa este programa: https://firehubfood.com.br/fireaccess
 > Se o Windows avisar "O Windows protegeu o computador", clica em Mais informações › Executar assim mesmo.
 > Abre, me passa o código de 6 números que aparece e clica em Permitir suporte FireHub. Fica do lado do computador. Senha quem digita é você.
+
+## v0.2 (20/11/2026) — autonomia total
+
+Douglas, 20/11: "melhore tudo que puder" e "certificar que você vai ter autonomia total de mexer em tudo".
+- **Administrador:** o .exe pede elevação na abertura (`requestExecutionLevel: highest`). Sem conta de administrador, abre normal e a sessão mostra "SEM administrador".
+- **`executar`:** PowerShell no PC do cliente, devolve a saída (até 85 s; instalador demorado vai por `Start-Process` sem `-Wait`). `abrir` e `info` da CLI usam ele.
+- **`enviar`:** manda um arquivo local (até 30 MB) para `Downloads\FireHub` do cliente. Maior que isso: baixar no PC dele com `executar` + `Invoke-WebRequest`.
+- **Queda de internet:** a sessão espera o agente voltar por 90 s (segredo combinado no Permitir). A faixa mostra "reconectando…". Relay reiniciado = sessão acaba e o agente fecha.
+- **Ao vivo:** o agente transmite sozinho (1280 px, ~40–60 KB, até ~5 quadros/s) só enquanto alguém está olhando; a página do Douglas busca o quadro novo (long-poll) e ocupa a janela. Clique direito, duplo e roda do mouse funcionam no "assumir".
+- **CLI:** usa o relay no ar e `~/.fireaccess-token` sem configurar nada; `sessoes` mostra administrador, versão e queda.
+- **Registro:** `executar` grava o script e a saída (até 4 KB); `enviar` grava nome, tamanho e sha256; queda e volta também entram.
+- Compatível com o .exe 0.1 (sem ao vivo nem retomada nele).
 
 ## Regras atuais que mudam quando a fase 3 estiver no ar
 

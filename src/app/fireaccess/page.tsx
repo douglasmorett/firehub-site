@@ -9,13 +9,14 @@ export const metadata: Metadata = {
 /**
  * /fireaccess — onde o lojista baixa o FireAccess (acesso remoto do suporte).
  * O link é mandado pelo atendimento; o projeto fica em fireaccess/ (PLANO.md).
- * O .exe não é assinado: o passo 2 ensina a passar pelo aviso do Windows.
+ * O .exe não é assinado: o passo 2 ensina a passar pelo aviso do Windows e a dizer Sim
+ * no "Deseja permitir alterações?" (o FireAccess roda como administrador para instalar coisas).
  */
 const passos = [
   { t: "Baixe e abra", d: "Clique no botão acima e abra o arquivo FireAccess.exe que baixou." },
   {
     t: "Se o Windows avisar",
-    d: "Na tela “O Windows protegeu o computador”, clique em Mais informações e depois em Executar assim mesmo.",
+    d: "Na tela “O Windows protegeu o computador”, clique em Mais informações e depois em Executar assim mesmo. Se perguntar “Deseja permitir que este aplicativo faça alterações?”, clique em Sim: assim o atendente consegue instalar a impressora e o Assistente.",
   },
   {
     t: "Passe o código e permita",
