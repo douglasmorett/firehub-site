@@ -132,7 +132,8 @@ export function valorDoMultimarcasNoMes(
  * Douglas com o dono (18/10/2026: Lucas, Frangoso - Trindade — a mensalidade
  * dela segue à parte, combinada fora do sistema). Pelo slug do cardápio.
  */
-const LOJAS_COM_MULTIMARCAS_LIBERADO = new Set(["frangoso-trindade"]);
+// "deliverou": o Lucas trocou o link da loja de frangoso-trindade para deliverou (20/11/2026); a liberação é pelo slug.
+const LOJAS_COM_MULTIMARCAS_LIBERADO = new Set(["frangoso-trindade", "deliverou"]);
 
 /** A loja não paga: mesma regra (e mesmos campos) da mensalidade, ou combinado particular. */
 export async function multimarcasIsento(franchiseeId: string): Promise<boolean> {
