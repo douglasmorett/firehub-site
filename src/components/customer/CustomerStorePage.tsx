@@ -5944,12 +5944,14 @@ export default function CustomerStorePage({
           dela quando a oferta tem perguntas. */}
       {ofertasDoUpsell && franchisee.upsell && (
         <div role="dialog" aria-modal="true" aria-label={franchisee.upsell.chamada} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.6)", zIndex: 9990, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }} onClick={() => setOfertasDoUpsell(null)}>
-          <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "20px", padding: "20px", maxWidth: "460px", width: "100%", maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
+          {/* Quantos itens é a loja que escolhe: com mais de 4, a janela alarga e
+              põe duas colunas no computador; no celular fica uma, rolando. */}
+          <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "20px", padding: "20px", maxWidth: ofertasDoUpsell.length > 4 ? "760px" : "460px", width: "100%", maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 25px 60px rgba(0,0,0,0.3)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", marginBottom: "14px" }}>
               <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 900, color: "#0F172A" }}>{franchisee.upsell.chamada}</h3>
               <button type="button" aria-label="Fechar" onClick={() => setOfertasDoUpsell(null)} style={{ background: "#F1F5F9", border: "none", borderRadius: "50%", width: 32, height: 32, flexShrink: 0, cursor: "pointer", fontWeight: 800 }}>✕</button>
             </div>
-            <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px" }}>
+            <div style={{ flex: 1, overflowY: "auto", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 300px), 1fr))", alignContent: "start", gap: "10px" }}>
               {ofertasDoUpsell.map(o => {
                 const ja = naSacolaPeloUpsell(o.produto.id);
                 return (

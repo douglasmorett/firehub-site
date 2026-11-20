@@ -10,6 +10,7 @@ import CopiamosSeuCardapio from "@/components/customer/CopiamosSeuCardapio";
 import ConviteDoMultimarcas from "@/components/customer/ConviteDoMultimarcas";
 import { multimarcasEstaLigado } from "@/lib/multimarcas/assinatura";
 import { comEstoqueAnotado, estoqueDaLojaOuVazio } from "@/lib/estoque-restante";
+import { lerUpsellConfig } from "@/lib/upsell-config";
 
 export const dynamic = "force-dynamic";
 
@@ -112,6 +113,17 @@ export default async function StoreCardapioPage() {
     ? (await prisma.user.findUnique({ where: { id: targetFranchiseeId }, select: { slug: true } }).catch(() => null))?.slug ?? null
     : null;
 
+  // O botão do upsell da sacola fica na barra do cardápio (MenuProductManager).
+  const upsell = adminSemLoja
+    ? null
+    : await prisma.user
+        .findUnique({ where: { id: targetFranchiseeId }, select: { upsellConfig: true } as any })
+        .then((loja) => {
+          const c = lerUpsellConfig((loja as any)?.upsellConfig);
+          return { ligado: c.ativo && c.itens.length > 0, itens: c.itens.length };
+        })
+        .catch(() => ({ ligado: false, itens: 0 }));
+
   return (
     <div className="container" style={{ marginTop: "1.5rem" }}>
       <div
@@ -133,26 +145,6 @@ export default async function StoreCardapioPage() {
           </p>
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        {/* Os produtos que o site oferece ao "Continuar pedido" (lib/upsell-config.ts). */}
-        <a
-          href="/store/cardapio/upsell"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "10px 20px",
-            borderRadius: 12,
-            background: "linear-gradient(135deg,#0F766E,#115E59)",
-            color: "#fff",
-            fontWeight: 700,
-            fontSize: "0.88rem",
-            textDecoration: "none",
-            whiteSpace: "nowrap",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
-          }}
-        >
-          🛒 Upsell
-        </a>
         <a
           href="/store/cardapio/custos"
           style={{
@@ -228,7 +220,7 @@ export default async function StoreCardapioPage() {
         </div>
       ) : null}
 
-      <MenuProductManager products={products} availableItems={availableItems} categories={categories} />
+      <MenuProductManager products={products} availableItems={availableItems} categories={categories} upsell={upsell} />
     </div>
   );
 }

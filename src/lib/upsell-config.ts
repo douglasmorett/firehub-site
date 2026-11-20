@@ -1,6 +1,8 @@
 /**
- * O UPSELL DA SACOLA: até 5 produtos do próprio cardápio que o site oferece
+ * O UPSELL DA SACOLA: os produtos do próprio cardápio que o site oferece
  * quando o cliente clica em "Continuar pedido" (pedido do Douglas, 14/11/2026).
+ * Quantos aparecem é escolha da loja (20/11/2026: era no máximo 5); o teto de
+ * 20 só segura a janela, que se ajeita ao número de itens.
  *
  * Não aparece a cada item adicionado — "fica aparecendo toda hora, é chato".
  * É uma janela só, na passagem da sacola para a finalização, uma vez por
@@ -23,7 +25,7 @@
  * que o modal do produto mostra, com a base riscada.
  */
 
-export const MAXIMO_DE_ITENS_NO_UPSELL = 5;
+export const MAXIMO_DE_ITENS_NO_UPSELL = 20;
 export const CHAMADA_PADRAO_DO_UPSELL = "Que tal levar também?";
 /** Teto do desconto: oferta de upsell não é brinde. */
 export const DESCONTO_MAXIMO_DO_UPSELL = 90;
@@ -46,7 +48,7 @@ export const UPSELL_CONFIG_PADRAO: UpsellConfig = { ativo: false, chamada: CHAMA
 /**
  * Lê o que está gravado (ou o corpo do POST), venha como vier. Ilegível vira
  * desligado; % fora da faixa vira inteiro de 0 a 90; produto repetido e o que
- * passar de 5 saem.
+ * passar do teto saem.
  */
 export function lerUpsellConfig(bruto: unknown): UpsellConfig {
   if (!bruto || typeof bruto !== "object" || Array.isArray(bruto)) return { ...UPSELL_CONFIG_PADRAO, itens: [] };

@@ -20,7 +20,7 @@ confere("string → desligado", lerUpsellConfig('{"ativo":true}').ativo, false);
 confere("ativo só com true", lerUpsellConfig({ ativo: "sim" }).ativo, false);
 confere("chamada vazia → padrão", lerUpsellConfig({ chamada: "  " }).chamada, CHAMADA_PADRAO_DO_UPSELL);
 confere(
-  "no máximo 5, sem repetido, % inteiro de 0 a 90",
+  "sem repetido, % inteiro de 0 a 90",
   lerUpsellConfig({
     ativo: true,
     itens: [
@@ -29,7 +29,12 @@ confere(
       { produtoId: "" },
     ],
   }).itens,
-  [{ produtoId: "a", desconto: 10 }, { produtoId: "b", desconto: 0 }, { produtoId: "c", desconto: 90 }, { produtoId: "d", desconto: 0 }, { produtoId: "e", desconto: 0 }],
+  [{ produtoId: "a", desconto: 10 }, { produtoId: "b", desconto: 0 }, { produtoId: "c", desconto: 90 }, { produtoId: "d", desconto: 0 }, { produtoId: "e", desconto: 0 }, { produtoId: "f", desconto: 5 }],
+);
+confere(
+  "a loja escolhe quantos (mais de 5 vale); o que passar de 20 sai",
+  lerUpsellConfig({ ativo: true, itens: Array.from({ length: 25 }, (_, i) => ({ produtoId: `p${i}`, desconto: 0 })) }).itens.length,
+  20,
 );
 
 // ── Conta do preço ───────────────────────────────────────────────────────

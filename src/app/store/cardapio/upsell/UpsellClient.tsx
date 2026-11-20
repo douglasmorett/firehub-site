@@ -8,6 +8,7 @@ import {
   precoNoUpsell,
   type UpsellConfig,
 } from "@/lib/upsell-config";
+import ExplicacaoDoUpsell from "./ExplicacaoDoUpsell";
 
 type Product = { id: string; name: string; price: number; imageUrl: string | null; category: string; temOpcoes: boolean };
 
@@ -70,7 +71,7 @@ export default function UpsellClient({ products, inicial }: { products: Product[
           <div>
             <h1 style={{ fontWeight: 900, fontSize: "1.5rem", color: "#0F172A", margin: 0 }}>🛒 Upsell da sacola</h1>
             <p style={{ fontSize: "0.82rem", color: "#64748B", margin: "4px 0 0", maxWidth: 560 }}>
-              Até {MAXIMO_DE_ITENS_NO_UPSELL} produtos oferecidos quando o cliente clica em <strong>Continuar pedido</strong> no site.
+              Os produtos que você escolher aparecem quando o cliente clica em <strong>Continuar pedido</strong> no site.
               Aparece uma vez por compra, só com o que ainda não está na sacola.
             </p>
           </div>
@@ -88,6 +89,8 @@ export default function UpsellClient({ products, inicial }: { products: Product[
             {salvando ? "Salvando..." : "Salvar"}
           </button>
         </div>
+
+        <ExplicacaoDoUpsell jaConfigurado={inicial.itens.length > 0} />
 
         {status && (
           <div role={status.ok ? "status" : "alert"} style={{ ...cartao, padding: "12px 16px", borderLeft: `4px solid ${status.ok ? "#0F766E" : "#C92E09"}`, background: status.ok ? "#F0FDFA" : "#FEF2F2", fontSize: "0.85rem", fontWeight: 600, color: "#0F172A" }}>
@@ -128,7 +131,7 @@ export default function UpsellClient({ products, inicial }: { products: Product[
         <div style={cartao}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "10px" }}>
             <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A" }}>Itens oferecidos</span>
-            <span style={{ fontSize: "0.78rem", fontWeight: 700, color: cheio ? "#B45309" : "#64748B" }}>{itens.length} de {MAXIMO_DE_ITENS_NO_UPSELL}</span>
+            <span style={{ fontSize: "0.78rem", fontWeight: 700, color: cheio ? "#B45309" : "#64748B" }}>{itens.length} {itens.length === 1 ? "item" : "itens"}{cheio ? ` (máximo ${MAXIMO_DE_ITENS_NO_UPSELL})` : ""}</span>
           </div>
           {itens.length === 0 && (
             <p style={{ fontSize: "0.82rem", color: "#94A3B8", margin: "6px 0" }}>Nenhum item ainda. Escolha abaixo os produtos que combinam com o pedido (bebida, sobremesa, porção).</p>
@@ -183,7 +186,7 @@ export default function UpsellClient({ products, inicial }: { products: Product[
         </div>
 
         {/* Escolher produtos */}
-        <div style={cartao}>
+        <div id="escolher-itens" style={{ ...cartao, scrollMarginTop: 16 }}>
           <div style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", marginBottom: "10px" }}>Adicionar produto</div>
           <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "#fff", borderRadius: "10px", border: "1.5px solid #E2E8F0", padding: "8px 12px", marginBottom: "8px" }}>
             <Search size={15} color="#94A3B8" />

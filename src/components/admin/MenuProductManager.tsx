@@ -339,10 +339,13 @@ export default function MenuProductManager({
   products,
   availableItems,
   categories: initialCategories = [],
+  upsell,
 }: {
   products: any[];
   availableItems: any[];
   categories?: { id: string; name: string; emoji: string; color: string; sortOrder: number }[];
+  /** O upsell da sacola da loja (lib/upsell-config.ts); nulo = sem botão (admin sem loja). */
+  upsell?: { ligado: boolean; itens: number } | null;
 }) {
   const router = useRouter();
   const [showForm, setShowForm] = useState(false);
@@ -2345,6 +2348,16 @@ export default function MenuProductManager({
         </div>
 
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+          {/* Upsell da sacola (/store/cardapio/upsell). Desligado, ele pulsa para
+              chamar a atenção (no topo da tela ninguém o via — Douglas, 20/11/2026). */}
+          {upsell && (
+            <Link href="/store/cardapio/upsell" className="btn"
+              style={{ fontSize: "0.85rem", fontWeight: 800, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "6px", background: "linear-gradient(135deg,#0F766E,#115E59)", color: "#fff", border: "none", animation: upsell.ligado ? undefined : "fhUpsellPulsa 1.8s ease-in-out infinite" }}
+              title="Ofereça bebida, sobremesa ou porção quando o cliente fecha a sacola">
+              🛒 {upsell.ligado ? `Upsell ligado · ${upsell.itens} ${upsell.itens === 1 ? "item" : "itens"}` : "Upsell: aumente o ticket"}
+            </Link>
+          )}
+          <style>{`@keyframes fhUpsellPulsa{0%,100%{box-shadow:0 0 0 0 rgba(15,118,110,.55);transform:scale(1)}50%{box-shadow:0 0 0 10px rgba(15,118,110,0);transform:scale(1.05)}}@media (prefers-reduced-motion:reduce){[style*="fhUpsellPulsa"]{animation:none!important}}`}</style>
           <button
             onClick={() => { setNewCatName(""); setNewCatEmoji("🍽️"); setCategoriaAvulsa(true); }}
             className="btn btn-outline"
