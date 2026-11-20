@@ -2089,6 +2089,31 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     });
   };
 
+  /**
+   * "Imprimir selecionados" (Fellipe, 20/11/2026: "consegue colocar pra imprimir
+   * todos os pedidos selecionados?"; Douglas: "quando selecionar ter o botão").
+   * Imprime o cupom completo de cada pedido marcado, um depois do outro e do mais
+   * antigo para o mais novo — a mesma via do botão Imprimir do cartão
+   * (`handlePrint` manual, todas as impressoras). Acréscimo cujo pedido principal
+   * também está marcado fica de fora: o papel do principal já leva os itens dele.
+   */
+  const [bulkImprimindo, setBulkImprimindo] = useState(false);
+  const handleBulkPrint = async () => {
+    if (selectedOrderIds.size === 0 || bulkImprimindo) return;
+    const marcados = orders.filter((o: any) => selectedOrderIds.has(o.id));
+    const lista = marcados
+      .filter((o: any) => !(o.parentOrderId && selectedOrderIds.has(o.parentOrderId)))
+      .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    if (lista.length === 0) return;
+    setBulkImprimindo(true);
+    showToast(`🖨️ Imprimindo ${lista.length} pedido${lista.length === 1 ? "" : "s"}...`);
+    for (const o of lista) {
+      await handlePrint(o, "completo", true, false, "*");
+      await new Promise((r) => setTimeout(r, 600));
+    }
+    setBulkImprimindo(false);
+  };
+
   const handleBulkStatusUpdate = async () => {
     if (!bulkTargetStatus || selectedOrderIds.size === 0) return;
     if (bulkTargetStatus === "CANCELADO" && !motivoValido(bulkMotivo)) {
@@ -7680,6 +7705,20 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 {bulkUpdating ? "Atualizando..." : "Mudar todos selecionados →"}
               </button>
               </div>
+
+              <button
+                onClick={handleBulkPrint}
+                disabled={bulkImprimindo}
+                title="Imprime o cupom completo de cada pedido marcado, do mais antigo para o mais novo"
+                style={{
+                  background: "#0F766E", color: "#fff", border: "none", padding: "8px 18px",
+                  borderRadius: "8px", fontWeight: 700, fontSize: "0.85rem",
+                  cursor: bulkImprimindo ? "not-allowed" : "pointer", opacity: bulkImprimindo ? 0.7 : 1,
+                  display: "flex", alignItems: "center", gap: "0.4rem"
+                }}
+              >
+                {bulkImprimindo ? "Imprimindo..." : "🖨️ Imprimir selecionados"}
+              </button>
 
               {motoboys.length > 0 && (() => {
                 const { cabem, fora } = selecionadosParaEntregador();
