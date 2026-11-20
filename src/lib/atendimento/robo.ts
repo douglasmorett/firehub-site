@@ -361,6 +361,11 @@ async function responder(contatoId: string) {
   // depende do WhatsApp: existe justamente para quando o número cai (20/11/2026).
   // Liga junto com o robô do painel; a equipe responde pela mesma tela do atendimento.
   const canal: Canal = ultima.canal === "PAINEL" ? "PAINEL" : ultima.canal === "SITE" ? "SITE" : "WHATSAPP";
+  // O suporte pelo navegador é atendido por gente, como o WhatsApp aberto na
+  // tela (Douglas, 20/11/2026: "não é um robô conectado… é você ou eu
+  // respondendo lá"): o robô não responde ali. Quem atende usa a tela de
+  // Atendimento do admin (resposta pelo canal SITE).
+  if (canal === "SITE") return;
   if (canal === "WHATSAPP" ? (!config.roboLigado || config.conexao.conectado === false || !contato.jid) : !config.roboNoPainel) return;
   // Esperando uma pessoa cala o robô só no WhatsApp: no painel ninguém da
   // equipe responde, e a espera (vinda de uma conversa no WhatsApp) deixava o

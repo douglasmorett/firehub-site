@@ -45,11 +45,13 @@ async function estado(contatoId: string) {
     // Sempre "Suporte FireHub": o nome do robô do WhatsApp não aparece aqui (Douglas, 20/11/2026).
     atendente: "Suporte FireHub",
     // "digitando…" só quando o robô vai mesmo responder a última mensagem do cliente.
-    digitando: roboAtende && !!ultima && ultima.direcao === "ENTRADA" && Date.now() - ultima.criadoEm.getTime() < 3 * 60_000,
+    // Atendido por gente (robo.ts não responde no SITE): sem "digitando…" automático.
+    digitando: false,
     mensagens: mensagens.map((m) => ({
       id: m.id,
       eu: m.direcao === "ENTRADA",
-      nome: m.direcao === "SAIDA" && m.autor !== "ROBO" && m.autor !== "SISTEMA" ? (m.autorNome || "").split(/\s+/)[0] || null : null,
+      // Quem respondeu da equipe não aparece: para o cliente é sempre o Suporte FireHub.
+      nome: null,
       tipo: m.tipo,
       texto: m.texto.replace(SEM_DESCRICAO, ""),
       midiaUrl: m.midiaUrl,
