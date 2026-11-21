@@ -3,7 +3,7 @@
  * Lógica centralizada de processamento de eventos Open Delivery (JotaJá).
  * Usada por: webhook, cron-poll e dashboard-poll — elimina triplicação.
  */
-import { camposDoEspelho, ORIGENS } from "@/lib/espelho-de-integracao";
+import { camposDoEspelho, ORIGENS, produtoRealDoItem } from "@/lib/espelho-de-integracao";
 import { observacaoDoItem } from "@/lib/observacao-do-item";
 import { prisma } from "@/lib/prisma";
 import { lojaBloqueadaPorMensalidade } from "@/lib/loja-bloqueada";
@@ -405,7 +405,7 @@ export async function processJotajaEvent(
       // Espelhos que já existem e cujo nome precisa acompanhar o catálogo do
       // JotaJá (lib/espelho-do-parceiro.ts) — corrigidos antes de gravar.
       const espelhos: { id: string; nome: string }[] = [];
-      const items = rawItemsList.map((i: any) => {
+      const items = await Promise.all(rawItemsList.map(async (i: any) => {
         const itemName = i.name || i.productName || i.title || i.label || "Item Jotajá";
         const options = extrairOpcoesDoItem(i);
         const optionNames = options.map((o: any) => `${o.quantity > 1 ? o.quantity + 'x ' : ''}${o.name}`);
@@ -452,6 +452,12 @@ export async function processJotajaEvent(
         const itemId = idDoItemJotaja(i);
         const espelhoId = idDoEspelhoJotaja(itemId, franchiseeIdToUse, donosDosIds.get(`jotaja-${itemId}`), contasDaLoja);
         espelhos.push({ id: espelhoId, nome: itemName });
+        const produtoReal = await produtoRealDoItem({
+          franchiseeId: franchiseeIdToUse,
+          idDoEspelho: espelhoId,
+          codigoExterno: i.externalCode ?? null,
+          nomeDoItem: itemName,
+        });
 
         return {
           price: Math.round(itemPrice * 100) / 100,
@@ -461,7 +467,7 @@ export async function processJotajaEvent(
           // 365 itens em 30 dias — ver lib/observacao-do-item.ts.
           notes: observacaoDoItem(i),
           comboSelections: comboSelectionsJson,
-          menuProduct: {
+          menuProduct: produtoReal ? { connect: { id: produtoReal } } : {
             // O id é o do item no CATÁLOGO do JotaJá, o mesmo em todo pedido
             // daquele produto: o nome do espelho é o nome BASE, nunca o nome
             // com as opções deste pedido (as opções vão em `comboSelections`,
@@ -483,7 +489,7 @@ export async function processJotajaEvent(
             } as any,
           },
         };
-      });
+      }));
       // Espelho que já existe com outro nome (renomeado no JotaJá, ou nascido
       // com as opções no nome): corrige antes de gravar o pedido.
       await Promise.all(espelhos.map((e) => corrigirNomeDoEspelho(e.id, e.nome, franchiseeIdToUse, "JotaJá")));

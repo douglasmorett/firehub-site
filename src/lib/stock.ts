@@ -1,6 +1,7 @@
 import { prisma } from "./prisma";
 import { avisarMovimentoDeEstoque } from "./pausa-pelo-estoque-no-banco";
-import { PREFIXOS_DE_ESPELHO } from "./cardapio-interno";
+import { CATEGORIAS_DE_INTEGRACAO, PREFIXOS_DE_ESPELHO, SEM_PRODUTO_DE_INTEGRACAO } from "./cardapio-interno";
+import { nomesCompativeis } from "./espelho-de-integracao";
 import {
   ROTULO_DA_ETAPA, ehPedidoCancelado, etapaAntesDoCancelamento, marcaDoDesperdicio, type EtapaDoDesperdicio,
 } from "./desperdicio-do-cancelado";
@@ -288,7 +289,7 @@ export function acharOpcaoDoCombo(indice: IndiceDeOpcoes, escolha: EscolhaDeComb
  *
  * @param orderId ID do pedido aceito
  */
-export async function deductStockForOrder(orderId: string) {
+export async function deductStockForOrder(orderId: string): Promise<"FALHOU" | void> {
   try {
     // Checar e marcar atomicamente usando updateMany com condição.
     // Se `stockDeductedForOrderId` já estiver preenchido, o count será 0 e paramos.
@@ -310,6 +311,10 @@ export async function deductStockForOrder(orderId: string) {
 
     // Verificar idempotência com transação atômica
     const result = await prisma.$transaction(async (tx) => {
+      // Serializa a baixa com a mudança de status. Se o cancelamento
+      // gravar primeiro, não há saída; se a baixa gravar primeiro, o
+      // cancelamento consegue encontrar a movimentação e tratá-la.
+      await tx.$queryRaw`SELECT id FROM "CustomerOrder" WHERE id = ${orderId} FOR NO KEY UPDATE`;
       // Cancelado já produzido e depois REABERTO: a baixa virou desperdício
       // (`marcarBaixaComoDesperdicio`) e o insumo continua fora do saldo. Ela
       // volta a ser venda e a baixa abaixo vê que já existe — sem isto o
@@ -318,11 +323,12 @@ export async function deductStockForOrder(orderId: string) {
       // (`cancelledAt`), para não pesar em todo pedido.
       const situacao = await tx.customerOrder.findUnique({
         where: { id: orderId },
-        select: { status: true, cancelledAt: true },
+        select: { status: true, cancelledAt: true, franchiseeId: true },
       });
-      if (situacao?.cancelledAt && !ehPedidoCancelado(situacao.status)) {
+      if (!situacao || ehPedidoCancelado(situacao.status)) return { skipped: true };
+      if (situacao.cancelledAt) {
         await tx.stockTransaction.updateMany({
-          where: { type: "WASTE", notes: { contains: marcaDoDesperdicio(orderId) } },
+          where: { franchiseeId: situacao.franchiseeId, type: "WASTE", notes: { contains: marcaDoDesperdicio(orderId) } },
           data: { type: "SALE", notes: `Baixa automática - Pedido #${orderId.slice(-6)} (id: ${orderId})` },
         });
       }
@@ -335,8 +341,9 @@ export async function deductStockForOrder(orderId: string) {
       // quem tem venda posterior à última devolução deste pedido.
       const ultimaDevolucao = await tx.stockTransaction.findFirst({
         where: {
+          franchiseeId: situacao.franchiseeId,
           type: "INPUT",
-          notes: { contains: `cancel id: ${orderId}` },
+          notes: { endsWith: `cancel id: ${orderId})` },
         },
         orderBy: { createdAt: "desc" },
         select: { createdAt: true },
@@ -345,8 +352,9 @@ export async function deductStockForOrder(orderId: string) {
       // Verifica se já existe uma transação de estoque para este pedido
       const existing = await tx.stockTransaction.findFirst({
         where: {
+          franchiseeId: situacao.franchiseeId,
           type: "SALE",
-          notes: { contains: `id: ${orderId}` }, // match exato do padrão que geramos abaixo
+          notes: { endsWith: `(id: ${orderId})` },
           ...(ultimaDevolucao ? { createdAt: { gt: ultimaDevolucao.createdAt } } : {}),
         },
         select: { id: true },
@@ -415,6 +423,10 @@ export async function deductStockForOrder(orderId: string) {
       // Lido uma vez por pedido, só se aparecer combo de marketplace sem combo de mesmo nome.
       let produtosAvulsosComFicha: OpcaoDeCombo[] | null = null;
 
+      const produtoDaLoja = { franchiseeId: order.franchiseeId, ...SEM_PRODUTO_DE_INTEGRACAO };
+      type FichaDoProduto = { id: string; name: string; recipeItems: OpcaoDeCombo["menuProduct"]["recipeItems"] };
+      const selectDaFicha = { id: true, name: true, recipeItems: SELECT_DA_OPCAO.menuProduct.select.recipeItems } as const;
+
       let deducted = false;
 
       // ── UMA LINHA POR INSUMO NO PEDIDO INTEIRO ───────────────────────────
@@ -429,7 +441,43 @@ export async function deductStockForOrder(orderId: string) {
 
       for (const item of order.items) {
         const menuProduct = item.menuProduct;
+        const ehEspelho = Boolean(menuProduct?.origemIntegracao)
+          || (menuProduct?.active === false && PREFIXOS_DE_ESPELHO.some((p) => menuProduct.id.startsWith(p)))
+          || CATEGORIAS_DE_INTEGRACAO.includes(menuProduct?.category?.toUpperCase() ?? "");
         const rotuloDoItem = menuProduct?.name || item.productName || "produto removido";
+        const produtoDaFicha: FichaDoProduto | null = menuProduct && !ehEspelho && menuProduct.franchiseeId === order.franchiseeId
+          ? menuProduct
+          : null;
+        let fichaExterna: FichaDoProduto | null = null;
+        if (ehEspelho || !menuProduct) {
+          // O vínculo escolhido pela loja vale mesmo para importadores que
+          // ainda gravam o espelho no pedido e mesmo se o produto foi pausado.
+          if (menuProduct?.vinculadoA && menuProduct.franchiseeId === order.franchiseeId) {
+            fichaExterna = await tx.menuProduct.findFirst({
+              where: { ...produtoDaLoja, id: menuProduct.vinculadoA },
+              select: selectDaFicha,
+            });
+          }
+          // A Wabiz grava externalCode no espelho. O código composto de uma
+          // pizza de vários sabores não identifica um único produto.
+          const codigo = menuProduct?.origemIntegracao === "WABIZ" ? menuProduct.codigoExterno : null;
+          if (!fichaExterna && codigo && /^\d{1,9}$/.test(codigo)) {
+            const candidato = await tx.menuProduct.findFirst({
+              where: { ...produtoDaLoja, codigoPDV: Number(codigo) },
+              select: selectDaFicha,
+            });
+            if (candidato && nomesCompativeis(rotuloDoItem, candidato.name)) fichaExterna = candidato;
+          }
+          if (!fichaExterna && rotuloDoItem !== "produto removido") {
+            const candidatos = await tx.menuProduct.findMany({
+              where: { ...produtoDaLoja, active: true, name: { equals: rotuloDoItem, mode: "insensitive" } },
+              select: selectDaFicha,
+              take: 2,
+            });
+            if (candidatos.length === 1) fichaExterna = candidatos[0];
+          }
+        }
+        const produtoResolvido: FichaDoProduto | null = produtoDaFicha ?? fichaExterna;
 
         // Quanto sai da prateleira por UNIDADE vendida deste item, somando a
         // receita do próprio produto com a das opções escolhidas. Os insumos são
@@ -458,89 +506,22 @@ export async function deductStockForOrder(orderId: string) {
           }
         };
 
-        // ── O PRODUTO-ESPELHO DO MARKETPLACE NÃO TEM, E NÃO PODE TER, FICHA ──
-        //
-        // Pedido de iFood/99Food/Jotajá/Brendi não aponta para o produto do
-        // cardápio: o importador cria um ESPELHO (`ifood-<itemId>`) com
-        // `active:false` e `category:"iFood"`. E a tela de fichas técnicas
-        // exclui exatamente isso — não existe lugar no sistema onde esse
-        // produto possa receber ficha. Ou seja, a baixa do marketplace era
-        // estruturalmente impossível, e é a maior parte do faturamento da
-        // maioria das lojas de delivery.
-        //
-        // A saída sem obrigar o lojista a cadastrar nada duas vezes: quando o
-        // item não tem receita própria, procurar no cardápio DESTA loja um
-        // produto ativo com o mesmo nome e usar a ficha dele. É a ligação que
-        // o lojista faria à mão, feita sozinha — e é exatamente o nome que ele
-        // cadastrou nas duas pontas, porque o cardápio do iFood sai daqui.
-        //
-        // Nome não casa? Não inventa nada: fica sem baixa, e o log diz qual
-        // produto ficou de fora para a tela poder cobrar a ligação depois.
-        let receita = menuProduct?.recipeItems ?? [];
-        if (receita.length === 0 && rotuloDoItem && rotuloDoItem !== "produto removido") {
-          const real = await tx.menuProduct.findFirst({
-            where: {
-              franchiseeId: order.franchiseeId,
-              active: true,
-              name: { equals: rotuloDoItem, mode: "insensitive" },
-              // Nunca casar com outro espelho: dois espelhos com o mesmo nome
-              // fariam a baixa apontar para um produto que também não tem ficha.
-              NOT: { id: { startsWith: "ifood-" } },
-              recipeItems: { some: {} },
-            },
-            select: {
-              id: true,
-              recipeItems: {
-                select: {
-                  stockItemId: true,
-                  quantityConsumed: true,
-                  stockItem: { select: { name: true, unit: true } },
-                },
-              },
-            },
-          });
-          // ── A PIZZA DA WABIZ É O(S) SABOR(ES) ──────────────────────────
-          //
-          // A Wabiz vira "Pizza Calabresa" ou "Pizza 1/2 Calabresa + 1/2
-          // Portuguesa" (lib/wabiz-traducao.ts), e a ficha está no sabor
-          // ("Calabresa"): pelo nome inteiro nunca casava, e a pizza da Wabiz
-          // não baixava nada (NIK, 16/11/2026). Cada sabor entra com a sua
-          // fração — meia ficha de cada no meio a meio.
-          const ehWabiz = order.source === "WABIZ" || String(item.menuProductId || "").startsWith("wabiz-");
-          if (!real && ehWabiz) {
-            const dosSabores: typeof receita = [];
-            for (const { sabor, fracao } of saboresDaPizzaDaWabiz(rotuloDoItem)) {
-              const doSabor = await tx.menuProduct.findFirst({
-                where: {
-                  franchiseeId: order.franchiseeId,
-                  active: true,
-                  name: { equals: sabor, mode: "insensitive" },
-                  NOT: { id: { startsWith: "ifood-" } },
-                  recipeItems: { some: {} },
-                },
-                select: { id: true, recipeItems: SELECT_DA_OPCAO.menuProduct.select.recipeItems },
-              });
-              for (const r of doSabor?.recipeItems ?? []) {
-                dosSabores.push({ ...r, quantityConsumed: r.quantityConsumed * fracao } as (typeof receita)[number]);
-              }
-            }
-            if (dosSabores.length > 0) {
-              receita = dosSabores;
-              console.log(`[Stock] "${rotuloDoItem}" (Wabiz) baixando pela ficha do(s) sabor(es).`);
+        let receita: FichaDoProduto["recipeItems"] = produtoResolvido?.recipeItems ?? [];
+        const ehWabiz = (ehEspelho || !menuProduct) && (order.source === "WABIZ" || menuProduct?.id.startsWith("wabiz-"));
+        if (!produtoResolvido && ehWabiz) {
+          const dosSabores: typeof receita = [];
+          for (const { sabor, fracao } of saboresDaPizzaDaWabiz(rotuloDoItem)) {
+            const candidatos = await tx.menuProduct.findMany({
+              where: { ...produtoDaLoja, active: true, name: { equals: sabor, mode: "insensitive" } },
+              select: selectDaFicha,
+              take: 2,
+            });
+            if (candidatos.length !== 1) continue;
+            for (const r of candidatos[0].recipeItems) {
+              dosSabores.push({ ...r, quantityConsumed: r.quantityConsumed * fracao });
             }
           }
-          if (real) {
-            receita = real.recipeItems as typeof receita;
-            console.log(
-              `[Stock] "${rotuloDoItem}" veio do marketplace sem ficha própria; ` +
-                `usando a ficha técnica do produto do cardápio (${real.id}).`
-            );
-          } else if (receita.length === 0 && menuProduct && !menuProduct.recipeItems?.length) {
-            console.warn(
-              `[Stock] ⚠️ "${rotuloDoItem}" (pedido ${order.id}) não tem ficha técnica e ` +
-                `não achei produto de mesmo nome no cardápio — nada foi baixado por este item.`
-            );
-          }
+          receita = dosSabores;
         }
 
         for (const recipeItem of receita) {
@@ -555,66 +536,27 @@ export async function deductStockForOrder(orderId: string) {
 
         const escolhas = normalizarEscolhasDoCombo(item.comboSelections);
         if (escolhas.length > 0) {
-          let opcoes = item.menuProductId ? opcoesPorProduto.get(item.menuProductId) ?? [] : [];
-          let donoDasOpcoes = item.menuProductId;
-
-          // ── O COMBO DO MARKETPLACE ABRE PELO COMBO DO CARDÁPIO ───────────
-          //
-          // O pedido do iFood/99 aponta para um ESPELHO (`ifood-...`) sem
-          // grupos: as escolhas ficavam sem baixa, e a esfiha do combo do iFood
-          // — a maior parte da Hakim — não tirava nada do estoque. O mesmo
-          // critério da ficha, logo acima: o produto ATIVO de mesmo nome no
-          // cardápio, com grupos, empresta as opções dele.
-          if (opcoes.length === 0 && rotuloDoItem && rotuloDoItem !== "produto removido") {
-            const real = await tx.menuProduct.findFirst({
-              where: {
-                franchiseeId: order.franchiseeId,
-                active: true,
-                name: { equals: rotuloDoItem, mode: "insensitive" },
-                NOT: { id: { startsWith: "ifood-" } },
-                comboGroups: { some: {} },
-              },
-              select: { id: true },
-            });
-            if (real) {
-              if (!opcoesPorProduto.has(real.id)) {
-                opcoesPorProduto.set(real.id, await tx.comboGroupItem.findMany({
-                  where: { comboGroup: { menuProductId: real.id } },
-                  select: SELECT_DA_OPCAO,
-                }));
-              }
-              opcoes = opcoesPorProduto.get(real.id) ?? [];
-              donoDasOpcoes = real.id;
+          let donoDasOpcoes = produtoResolvido?.id;
+          let opcoes: OpcaoDeCombo[] = [];
+          if (donoDasOpcoes) {
+            if (!opcoesPorProduto.has(donoDasOpcoes)) {
+              opcoesPorProduto.set(donoDasOpcoes, await tx.comboGroupItem.findMany({
+                where: { comboGroup: { menuProductId: donoDasOpcoes } },
+                select: SELECT_DA_OPCAO,
+              }));
             }
+            opcoes = opcoesPorProduto.get(donoDasOpcoes) ?? [];
           }
 
-          // Combo que só existe no marketplace ("Combo Imperial Mix" no iFood
-          // da Hakim, sem combo de mesmo nome no cardápio): cada escolha casa
-          // com o produto AVULSO do cardápio que tem ficha ("Esfirra de
-          // Carne"). Combo e nome que começa com número ("4 Esfirras de
-          // Carne") ficam fora: também terminam em "carne" e tornariam o nome
-          // curto ambíguo. Só para o espelho que o cardápio NÃO conhece pelo
-          // nome: a "Esfirra de M&M" do iFood traz a opção "Chocolate ao Leite",
-          // que é o recheio dela, não outra esfiha. Produto de verdade sem
-          // grupo segue sem baixa das escolhas, como sempre.
-          const ehEspelho = PREFIXOS_DE_ESPELHO.some((p) => String(item.menuProductId || "").startsWith(p));
-          const conhecidoPeloNome = ehEspelho && opcoes.length === 0 && Boolean(await tx.menuProduct.findFirst({
-            where: {
-              franchiseeId: order.franchiseeId,
-              active: true,
-              name: { equals: rotuloDoItem, mode: "insensitive" },
-              NOT: { id: { startsWith: "ifood-" } },
-            },
-            select: { id: true },
-          }));
-          if (opcoes.length === 0 && ehEspelho && !conhecidoPeloNome) {
+          // Alguns combos só existem no marketplace. Sem produto correspondente,
+          // usamos fichas avulsas da loja para as escolhas que casam sem ambiguidade.
+          if (opcoes.length === 0 && ehEspelho && !produtoResolvido) {
             if (!produtosAvulsosComFicha) {
               const avulsos = await tx.menuProduct.findMany({
                 where: {
-                  franchiseeId: order.franchiseeId,
+                  ...produtoDaLoja,
                   active: true,
                   isCombo: false,
-                  NOT: { id: { startsWith: "ifood-" } },
                   recipeItems: { some: {} },
                 },
                 select: { id: true, name: true, recipeItems: SELECT_DA_OPCAO.menuProduct.select.recipeItems },
@@ -702,6 +644,9 @@ export async function deductStockForOrder(orderId: string) {
         }
 
         if (consumoPorUnidade.size === 0) {
+          if (ehEspelho && !produtoResolvido) {
+            console.warn(`[Stock] Item de integração sem vínculo: "${rotuloDoItem}" (pedido ${order.id}). Vincule em Itens das integrações.`);
+          }
           console.log(`[Stock] "${rotuloDoItem}" sem ficha técnica (nem no produto, nem nas opções escolhidas).`);
           continue;
         }
@@ -832,6 +777,7 @@ export async function deductStockForOrder(orderId: string) {
       return;
     }
     console.error(`[Stock] Erro ao realizar baixa de estoque para pedido ${orderId}:`, error);
+    return "FALHOU" as const;
   }
 }
 

@@ -32,7 +32,7 @@ const ficha = (...itens: [string, number][]) =>
 const db: { insumos: any[]; produtos: any[]; pedidos: any[]; movs: any[] } = {
   insumos: [insumo("frango", "Frango desfiado"), insumo("calab", "Calabresa fatiada"), insumo("presunto", "Presunto"), insumo("mus", "Muçarela")],
   produtos: [
-    { id: "p-esfiha", franchiseeId: LOJA, name: "Esfiha Frango", active: true, isCombo: false, recipeItems: ficha(["frango", 30]) },
+    { id: "p-esfiha", franchiseeId: LOJA, name: "Esfiha Frango", codigoPDV: 81, active: true, isCombo: false, recipeItems: ficha(["frango", 30]) },
     { id: "p-calab", franchiseeId: LOJA, name: "Calabresa", active: true, isCombo: false, recipeItems: ficha(["calab", 200], ["mus", 250]) },
     { id: "p-port", franchiseeId: LOJA, name: "Portuguesa", active: true, isCombo: false, recipeItems: ficha(["presunto", 150], ["mus", 250]) },
     // Espelhos: sem ficha, inativos — é o que o importador cria.
@@ -52,6 +52,8 @@ const comInsumo = (r: any) => {
 const casaProduto = (p: any, w: any = {}) => {
   if (w.id && typeof w.id === "string" && p.id !== w.id) return false;
   if (w.franchiseeId && p.franchiseeId !== w.franchiseeId) return false;
+  if (w.codigoPDV !== undefined && p.codigoPDV !== w.codigoPDV) return false;
+  if (w.origemIntegracao === null && p.origemIntegracao) return false;
   if (w.active !== undefined && p.active !== w.active) return false;
   if (w.isCombo !== undefined && p.isCombo !== w.isCombo) return false;
   if (w.name?.equals && p.name.toLowerCase() !== String(w.name.equals).toLowerCase()) return false;
@@ -69,6 +71,7 @@ const pedidoCompleto = (o: any) => ({
 });
 
 const prismaFalso: any = {
+  $queryRaw: async () => [],
   $transaction: async (fn: any) => fn(prismaFalso),
   user: {
     findUnique: async ({ where }: any) => (where?.id === LOJA ? { id: LOJA, role: "FRANCHISEE", food99MerchantId: "m1" } : null),
@@ -92,6 +95,7 @@ const prismaFalso: any = {
   },
   comboGroupItem: { findMany: async () => [] },
   menuProduct: {
+    findUnique: async ({ where }: any) => db.produtos.find((p) => p.id === where.id) ?? null,
     findFirst: async ({ where }: any) => {
       const p = db.produtos.find((x) => casaProduto(x, where));
       return p ? { id: p.id, name: p.name, recipeItems: p.recipeItems.map(comInsumo) } : null;
@@ -101,7 +105,7 @@ const prismaFalso: any = {
   },
   stockTransaction: {
     findFirst: async ({ where }: any) =>
-      db.movs.find((m) => m.type === where.type && (!where.notes?.contains || String(m.notes).includes(where.notes.contains))) || null,
+      db.movs.find((m) => m.type === where.type && (!where.notes?.contains || String(m.notes).includes(where.notes.contains)) && (!where.notes?.endsWith || String(m.notes).endsWith(where.notes.endsWith))) || null,
     create: async ({ data }: any) => {
       if (db.movs.some((m) => m.sourceRef === data.sourceRef)) throw Object.assign(new Error("único"), { code: "P2002" });
       db.movs.push({ ...data });
@@ -141,6 +145,7 @@ stub("../src/lib/food99-status-do-evento", { aplicarStatusDoEvento99: async () =
 stub("../src/lib/food99-lojas", { donoDoAppShopId: async () => LOJA, donoDoShopId: async () => LOJA });
 stub("../src/lib/food99-api", { detalheDoPedido: async () => null });
 stub("../src/lib/distancia-da-entrega", { pontoEDistanciaDoParceiro: async () => ({ km: null, ponto: null }) });
+const food99SemMock: typeof import("../src/lib/food99-pedido") = require("../src/lib/food99-pedido");
 stub("../src/lib/food99-pedido", {
   traduzirPedido99Food: (o: any) => ({
     orderId: o.order_id, appShopId: "shop99", shopId: "m1", numeroNoParceiro: "403016",
@@ -167,6 +172,11 @@ async function main() {
 
   // ── 1. 99Food ──────────────────────────────────────────────────────────────
   console.log("── 99Food ──");
+  const itemComCodigo = food99SemMock.traduzirItem({ name: "Esfiha de Frango", app_external_id: "81" });
+  const [mapeado] = await food99SemMock.itens99ParaPrisma([itemComCodigo], LOJA);
+  confere("Código PDV válido conecta o item ao cadastro da própria loja", mapeado.menuProduct.connect?.id, "p-esfiha");
+  const [diferente] = await food99SemMock.itens99ParaPrisma([{ ...itemComCodigo, nome: "Suco de laranja" }], LOJA);
+  confere("Mesmo número com nome incompatível fica para vínculo manual", Boolean(diferente.menuProduct.connectOrCreate), true);
   const chega = async (orderId: string) => {
     const req = new NextRequest("http://localhost/api/99food/webhook", {
       method: "POST",
@@ -183,7 +193,7 @@ async function main() {
 
   aceitaSozinho = false;
   const novo = await chega("99-2");
-  confere("nascendo NOVO não baixa (a baixa vem no aceite do lojista)", [novo?.status, baixas(novo.id)], ["NOVO", {}]);
+  confere("webhook delega a baixa do pedido NOVO ao gatilho comum", [novo?.status, baixas(novo.id)], ["NOVO", {}]);
 
   await deductStockForOrder(aceito.id);
   confere("baixa de novo no mesmo pedido não dobra", baixas(aceito.id), { frango: 60 });
@@ -209,6 +219,26 @@ async function main() {
   const meia = pedido("w3", "WABIZ", { productName: "Pizza 1/2 Calabresa + 1/2 Portuguesa | Borda Catupiry", menuProductId: "wabiz-nik-1+2" });
   await deductStockForOrder(meia);
   confere("\"Pizza 1/2 Calabresa + 1/2 Portuguesa | Borda Catupiry\" baixa meia ficha de cada", baixas(meia), { calab: 100, mus: 250, presunto: 75 });
+
+  db.produtos.push({
+    id: "brendi-alias", franchiseeId: LOJA, name: "Especial da casa",
+    active: false, origemIntegracao: "BRENDI", vinculadoA: "p-esfiha", recipeItems: [],
+  });
+  const vinculado = pedido("b1", "BRENDI", { menuProductId: "brendi-alias" });
+  await deductStockForOrder(vinculado);
+  confere("vínculo manual usa a ficha mesmo com nome diferente", baixas(vinculado), { frango: 30 });
+  const cancelado = pedido("c1", "BRENDI", { menuProductId: "brendi-alias" });
+  db.pedidos.find((p) => p.id === cancelado).status = "CANCELADO";
+  await deductStockForOrder(cancelado);
+  confere("pedido cancelado antes da baixa não mexe no saldo", baixas(cancelado), {});
+
+  db.produtos.push({
+    id: "p-esfiha-ambigua", franchiseeId: LOJA, name: "Esfiha Frango",
+    active: true, recipeItems: ficha(["mus", 30]),
+  });
+  const ambigua = pedido("n3", "99FOOD", { menuProductId: "99food_esf" });
+  await deductStockForOrder(ambigua);
+  confere("dois produtos de mesmo nome exigem vínculo", baixas(ambigua), {});
 
   const ifood = pedido("f1", "IFOOD", { productName: "Pizza Calabresa", menuProductId: "ifood-pz" });
   await deductStockForOrder(ifood);

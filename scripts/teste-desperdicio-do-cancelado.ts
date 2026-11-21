@@ -65,6 +65,7 @@ const banco = { ordem: 0, pedidos: [] as Linha[], movimentos: [] as Linha[], ins
 const casa = (l: Linha, where: Linha = {}): boolean => Object.entries(where).every(([k, v]) => {
   if (v && typeof v === "object" && !(v instanceof Date)) {
     if ("contains" in v) return String(l[k] ?? "").includes(v.contains);
+    if ("endsWith" in v) return String(l[k] ?? "").endsWith(v.endsWith);
     if ("startsWith" in v) return String(l[k] ?? "").startsWith(v.startsWith);
     if ("gt" in v) return l[k] > v.gt;
     if ("in" in v) return v.in.includes(l[k]);
@@ -80,6 +81,7 @@ const aplicar = (l: Linha, data: Linha) => {
   }
 };
 const falso: any = {
+  $queryRaw: async () => [],
   customerOrder: { findUnique: async ({ where }: any) => banco.pedidos.find((p) => p.id === where.id) ?? null },
   stockTransaction: {
     findFirst: async ({ where }: any) => banco.movimentos.filter((m) => casa(m, where)).sort((a, b) => b.createdAt - a.createdAt)[0] ?? null,
@@ -107,7 +109,7 @@ async function estoque() {
   console.log("\n— Estoque do cancelamento (Prisma em memória) —");
   const { deductStockForOrder, tratarEstoqueDoCancelamento } = await import("../src/lib/stock");
   banco.insumos.push({ id: "queijo", franchiseeId: "loja", name: "Queijo", unit: "g", quantity: 1000 });
-  const pizza = { quantity: 1, comboSelections: null, menuProductId: "p1", productName: "Pizza", menuProduct: { name: "Pizza", recipeItems: [{ stockItemId: "queijo", quantityConsumed: 200, stockItem: { name: "Queijo", unit: "g" } }] } };
+  const pizza = { quantity: 1, comboSelections: null, menuProductId: "p1", productName: "Pizza", menuProduct: { id: "p1", franchiseeId: "loja", name: "Pizza", recipeItems: [{ stockItemId: "queijo", quantityConsumed: 200, stockItem: { name: "Queijo", unit: "g" } }] } };
   const novo = (id: string) => {
     const p: Linha = { id, franchiseeId: "loja", dailyOrderNumber: 7, franchisee: { storeTimezone: "America/Sao_Paulo" }, status: "ACEITO", cancelledAt: null, items: [{ ...pizza, prontoEm: null }] };
     banco.pedidos.push(p);

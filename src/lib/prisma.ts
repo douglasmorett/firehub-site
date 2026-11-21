@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 import { carimboDeStatus } from './order-stages'
+import { pedidoDeveBaixarEstoque } from './estoque-status-pedido'
 import { gravouAlgo, lojaDaGravacao, marcarNovidade, operacaoGrava, sqlGravaNaFila } from './novidade-da-loja'
 
 /**
@@ -60,6 +61,30 @@ function estoqueDoCancelamento(ids: string[], tentativa = 0) {
         estoqueDoCancelamento(pendentes, tentativa + 1)
       })
       .catch((e) => console.error('[Stock] Erro ao carregar o estoque do cancelamento:', e?.message || e))
+  }, espera)
+}
+
+// A baixa acompanha a entrada de qualquer canal. A leitura depois da
+// gravação também cobre pedidos criados dentro de uma transação.
+function baixaDoPedido(id: unknown, status: unknown, tentativa = 0): void {
+  if (typeof window !== 'undefined' || typeof id !== 'string' || !pedidoDeveBaixarEstoque(status)) return
+  const espera = ESPERAS_DO_ESTOQUE_MS[tentativa]
+  if (espera == null) return
+  setTimeout(() => {
+    import('./stock')
+      .then(async ({ deductStockForOrder }) => {
+        const pedido = await prisma.customerOrder.findUnique({ where: { id }, select: { status: true } })
+        if (!pedidoDeveBaixarEstoque(pedido?.status)) {
+          baixaDoPedido(id, status, tentativa + 1)
+          return
+        }
+        const resultado = await deductStockForOrder(id)
+        if (resultado === 'FALHOU') baixaDoPedido(id, status, tentativa + 1)
+      })
+      .catch((e) => {
+        console.error('[Stock] Erro ao disparar a baixa:', e?.message || e)
+        baixaDoPedido(id, status, tentativa + 1)
+      })
   }, espera)
 }
 
@@ -150,12 +175,14 @@ function criarClient() {
             const id = (resultado as { id?: unknown })?.id
             if (typeof id === 'string') foodyDoStatus([id])
           }
+          baixaDoPedido((resultado as { id?: unknown })?.id, args.data.status)
           avisarCelularDaLoja((resultado as { id?: unknown })?.id)
           return resultado
         },
         async update({ args, query }) {
           args.data = comCarimbos(args.data)
           const resultado = await query(args)
+          baixaDoPedido(typeof args.where?.id === 'string' ? args.where.id : (resultado as { id?: unknown })?.id, args.data.status)
           if (cancela(args.data)) {
             const id = typeof args.where?.id === 'string' ? args.where.id : (resultado as { id?: unknown })?.id
             if (typeof id === 'string') estoqueDoCancelamento([id])
@@ -200,6 +227,7 @@ function criarClient() {
           }
           // A escrita condicional de um pedido só (rascunho do robô → pedido).
           const alvoDoAviso = (args.where as { id?: unknown } | undefined)?.id
+          if ((resultado as { count?: number })?.count) baixaDoPedido(alvoDoAviso, args.data.status)
           if (avisoDeEntrada(args.data) && typeof alvoDoAviso === 'string' && (resultado as { count?: number })?.count) {
             avisarCelularDaLoja(alvoDoAviso)
           }
@@ -209,10 +237,14 @@ function criarClient() {
           }
           return resultado
         },
-        upsert({ args, query }) {
+        async upsert({ args, query }) {
           args.create = comCarimbos(args.create)
           args.update = comCarimbos(args.update)
-          return query(args)
+          const resultado = await query(args)
+          const pedido = resultado as { id?: unknown; status?: unknown }
+          const status = pedido.status ?? (args.update.status === args.create.status ? args.create.status : undefined)
+          baixaDoPedido(pedido.id ?? args.where.id, status)
+          return resultado
         },
       },
     },
