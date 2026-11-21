@@ -11,10 +11,18 @@
  *                                                "pronto para retirar" manda o
  *                                                cliente até a loja)
  *   SAIU_ENTREGA      → 5 Saiu para entrega
+ *                     → 4 Pronto para retirar   na retirada: o painel grava o
+ *                                                "pronto no balcão" como
+ *                                                SAIU_ENTREGA (lib/status-para-o-cliente.ts)
  *   ENTREGUE          → 6 Finalizado            sem notificação, como a doc pede
  *   CANCELADO         → 7 Cancelado             motivo vai na mensagem
+ *
+ * NIK Esfihas, 20/11/2026 (Danilo): o cliente da retirada pela Wabiz não
+ * recebia o aviso — a Wabiz recebia "saiu para entrega" num pedido que ele
+ * vem buscar. Teste: scripts/teste-wabiz-status.ts.
  */
 import { mudarStatusWabiz, WABIZ_STATUS } from "@/lib/wabiz-api";
+import { ehRetirada } from "@/lib/status-para-o-cliente";
 
 /** Canal decide — `openDeliveryOrderId` é compartilhado com JotaJá, 99Food e Brendi. */
 export function ehPedidoWabiz(pedido: {
@@ -40,7 +48,7 @@ export function statusWabizDoFireHub(status: string, deliveryType?: string | nul
       return String(deliveryType || "").toUpperCase() === "DELIVERY" ? null : WABIZ_STATUS.PRONTO_PARA_RETIRAR;
     case "SAIU_ENTREGA":
     case "SAIU_PARA_ENTREGA":
-      return WABIZ_STATUS.SAIU_PARA_ENTREGA;
+      return ehRetirada(deliveryType) ? WABIZ_STATUS.PRONTO_PARA_RETIRAR : WABIZ_STATUS.SAIU_PARA_ENTREGA;
     case "ENTREGUE":
     case "FINALIZADO":
       return WABIZ_STATUS.FINALIZADO;
