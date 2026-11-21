@@ -14,6 +14,10 @@ import { CORES_DA_URGENCIA, textoDaUrgencia, urgenciaDaEntrega, type LimitesDaUr
 import { Botao } from "./Botao";
 import { cor, raio, reais } from "./tema";
 
+// Mesma família na medição e no desenho, mesmo com fonte do fabricante.
+// A escala de acessibilidade continua habilitada.
+const fonteDosIdentificadores = Platform.OS === "android" ? "sans-serif" : undefined;
+
 /**
  * "Abrir com…" (Lucas, Frangoso, 03/10/2026: "no outro você clica no
  * endereço e ele pergunta qual navegador abrir"). No Android, o geo: chama a
@@ -98,13 +102,14 @@ export function CartaoDoPedido({
         <View style={s.ordem}>
           <Text style={s.ordemTexto}>{ordem}º</Text>
         </View>
-        <Text style={s.numero}>#{pedido.numero}</Text>
+        <Text style={s.numero}>Pedido #{pedido.numero}</Text>
+      </View>
+      <View style={s.identificacao}>
         {pedido.refDaPlataforma ? (
           <View style={s.etiqueta}>
-            <Text style={s.etiquetaTexto}>app {pedido.refDaPlataforma}</Text>
+            <Text style={s.etiquetaTexto}>App #{pedido.refDaPlataforma}</Text>
           </View>
         ) : null}
-        <View style={{ flex: 1 }} />
         {pedido.routeSchedule?.routeNumber ? (
           <View style={[s.rota, { backgroundColor: pedido.routeSchedule.color || cor.azul }]}>
             <Text style={s.rotaTexto}>{pedido.routeSchedule.routeNumber}</Text>
@@ -207,7 +212,6 @@ export function CartaoDoPedido({
           >
             <Ionicons name="bag-handle" size={18} color={sacolaAberta ? "#FFFFFF" : cor.texto} />
             <Text style={[s.sacolaTitulo, sacolaAberta && { color: "#FFFFFF" }]}>Ver pedido</Text>
-            <View style={{ flex: 1 }} />
             <Text style={[s.sacolaResumo, sacolaAberta && { color: "#E2E8F0" }]}>
               {pedido.sacola.bebidas > 0 ? "🥤 " : ""}
               {pedido.sacola.resumo}
@@ -317,16 +321,20 @@ const s = StyleSheet.create({
     gap: 10,
     boxShadow: "0 4px 10px rgba(37,99,235,0.12)",
   },
-  cabeca: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
+  // Largura distribuída pelo cartão: a medição intrínseca do texto em
+  // negrito no Android pode cortar o último dígito (#19 -> #1).
+  // Identificadores não têm limite de linhas; fonte ampliada aumenta a altura.
+  cabeca: { flexDirection: "row", alignItems: "center", gap: 8 },
+  identificacao: { gap: 6 },
   ordem: { width: 30, height: 30, borderRadius: 15, backgroundColor: cor.azul, alignItems: "center", justifyContent: "center" },
   ordemTexto: { color: "#FFFFFF", fontWeight: "900", fontSize: 13 },
-  numero: { fontSize: 22, fontWeight: "900", color: cor.texto, fontVariant: ["tabular-nums"] },
+  numero: { flex: 1, fontSize: 22, fontWeight: "900", color: cor.texto, fontFamily: fonteDosIdentificadores, fontVariant: ["tabular-nums"] },
   etiqueta: { backgroundColor: "#F1F5F9", borderWidth: 1, borderColor: cor.borda, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
-  etiquetaTexto: { fontSize: 11, fontWeight: "800", color: cor.textoSuave },
+  etiquetaTexto: { fontSize: 11, fontWeight: "800", color: cor.textoSuave, fontFamily: fonteDosIdentificadores },
   rota: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
-  rotaTexto: { color: "#FFFFFF", fontWeight: "900", fontSize: 12 },
+  rotaTexto: { color: "#FFFFFF", fontWeight: "900", fontSize: 12, fontFamily: fonteDosIdentificadores },
   canal: { backgroundColor: cor.azulClaro, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
-  canalTexto: { color: cor.azulEscuro, fontWeight: "800", fontSize: 12 },
+  canalTexto: { color: cor.azulEscuro, fontWeight: "800", fontSize: 12, fontFamily: fonteDosIdentificadores },
   cliente: { fontSize: 17, fontWeight: "800", color: cor.texto },
   endereco: {
     flexDirection: "row",
@@ -365,8 +373,8 @@ const s = StyleSheet.create({
     backgroundColor: "#F8FAFC",
   },
   sacolaBotaoAberto: { backgroundColor: cor.topo, borderColor: cor.topo },
-  sacolaTitulo: { fontWeight: "900", fontSize: 15, color: cor.texto },
-  sacolaResumo: { fontSize: 13, fontWeight: "700", color: cor.textoSuave },
+  sacolaTitulo: { flex: 1, fontWeight: "900", fontSize: 15, color: cor.texto },
+  sacolaResumo: { flex: 1, fontSize: 13, fontWeight: "700", color: cor.textoSuave, textAlign: "right" },
   item: { backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: cor.borda, borderRadius: raio.pequeno, padding: 9, gap: 3 },
   itemBebida: { backgroundColor: cor.azulClaro, borderColor: cor.azulBorda },
   itemNome: { fontWeight: "900", fontSize: 15, color: cor.texto },
