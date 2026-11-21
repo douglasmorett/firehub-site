@@ -1492,7 +1492,7 @@ export default function VendaPresencialPage() {
                     background: paymentMethod === m ? "#C92E09" : "#fff",
                     color: paymentMethod === m ? "#fff" : "#334155",
                     fontWeight: 700, fontSize: "0.75rem", cursor: "pointer", fontFamily: "inherit" }}>
-                  {m === "Conta Funcionário" ? "👤 Conta Funcionário" : ehFormaPropria(m) ? `🪙 ${rotuloDaForma(m)}` : compacto && ICONE_DA_FORMA[m] ? `${ICONE_DA_FORMA[m]} ${m}` : m}
+                  {m === "Conta Funcionário" ? "👤 Fiado cliente / funcionário" : ehFormaPropria(m) ? `🪙 ${rotuloDaForma(m)}` : compacto && ICONE_DA_FORMA[m] ? `${ICONE_DA_FORMA[m]} ${m}` : m}
                 </button>
               ))}
               {/* Dividir entre formas, igual à mesa: metade no Pix, metade em dinheiro. */}
