@@ -27,7 +27,7 @@ export type Pessoa = {
   cpf: string | null; pix: string | null; pixTipo: string | null; pixOrigem: string | null; pixAtualizadoEm: string | null;
   obs: string | null; ativo: boolean; origem: "link" | "painel"; detalhe: string | null; diariaDaOrigem: number | null;
 };
-export type ConfigDoLink = { codigo: string; prazoInscricaoHoras: number; permiteDesistir: boolean; prazoDesistenciaHoras: number; funcoesNoLink: string[]; linkAtivo: boolean };
+export type ConfigDoLink = { codigo: string; prazoInscricaoHoras: number; permiteDesistir: boolean; prazoDesistenciaHoras: number; funcoesNoLink: string[]; linkAtivo: boolean; telefoneAviso: string };
 export type DadosDaEscala = {
   hoje: string; de: string; ate: string; ehDono: boolean;
   loja: { nome: string; logo: string | null };

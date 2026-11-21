@@ -47,7 +47,7 @@ import {
   primeiroNome, situacaoDasVagas, somarDias, telefoneUtilizavel, tipoDaChave, turnoJaTerminou,
 } from "@/lib/escala-da-equipe/regras";
 import { lerCorpo, respostaDoErro } from "@/lib/escala-da-equipe/sessao";
-import { avisarDepois, caminhoDoLinkPessoal } from "@/lib/escala-da-equipe/aviso";
+import { avisarDepois, avisarDonoDepois, caminhoDoLinkPessoal } from "@/lib/escala-da-equipe/aviso";
 
 export const dynamic = "force-dynamic";
 
@@ -114,7 +114,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ codigo:
     const l = await lojaDoLink(codigo);
 
     if (acao === "desistir") {
-      await desistirPeloLink(l.lojaId, String(corpo.inscricaoId || ""), String(corpo.chave || ""), (t) => desistenciaAberta(t, l.agora, l.config));
+      const saiu = await desistirPeloLink(l.lojaId, String(corpo.inscricaoId || ""), String(corpo.chave || ""), (t) => desistenciaAberta(t, l.agora, l.config));
+      if (saiu) avisarDonoDepois(l.lojaId, { tipo: "desistiu", nome: saiu.nome, turno: saiu.turno });
       return NextResponse.json({ ok: true });
     }
 
@@ -199,6 +200,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ codigo:
       },
     });
     avisarDepois(l.lojaId, pessoa, "link");
+    avisarDonoDepois(l.lojaId, { tipo: "inscreveu", nome: pessoa.nome, turno: r.turno });
     return NextResponse.json({
       ok: true, inscricaoId: r.id, chave: r.chave,
       pessoa: { nome: primeiroNome(pessoa.nome), tipo: ROTULO[pessoa.tipo] },

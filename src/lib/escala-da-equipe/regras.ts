@@ -314,9 +314,11 @@ export type ConfigDaEscala = {
   funcoesNoLink: string[];
   /** Link desligado: a página mostra "inscrições fechadas". */
   linkAtivo: boolean;
+  /** WhatsApp do dono que recebe o aviso de quem se inscreveu e de quem desistiu (só dígitos; vazio = sem aviso). */
+  telefoneAviso: string;
 };
 
-export const CONFIG_PADRAO: ConfigDaEscala = { prazoInscricaoHoras: 2, permiteDesistir: true, prazoDesistenciaHoras: 24, funcoesNoLink: [], linkAtivo: true };
+export const CONFIG_PADRAO: ConfigDaEscala = { prazoInscricaoHoras: 2, permiteDesistir: true, prazoDesistenciaHoras: 24, funcoesNoLink: [], linkAtivo: true, telefoneAviso: "" };
 
 const horas = (v: unknown, padrao: number) => {
   const n = Math.floor(Number(v));
@@ -339,6 +341,7 @@ export function lerConfigDaEscala(raw: Partial<Record<keyof ConfigDaEscala, unkn
     prazoDesistenciaHoras: horas(r.prazoDesistenciaHoras, CONFIG_PADRAO.prazoDesistenciaHoras),
     funcoesNoLink,
     linkAtivo: r.linkAtivo === undefined ? CONFIG_PADRAO.linkAtivo : r.linkAtivo === true,
+    telefoneAviso: String(r.telefoneAviso ?? "").replace(/\D/g, "").slice(0, 15),
   };
 }
 

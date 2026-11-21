@@ -141,6 +141,11 @@ export default function LinkDeInscricao({ config, nomeDaLoja, funcoesUsadas, onS
               </>
             ) : <span style={{ fontSize: 12, color: "#64748B" }}>Quem se inscreveu e não puder ir tem de falar com a loja.</span>}
           </div>
+          <label style={{ gridColumn: "1 / -1" }}>
+            <span style={S.rotulo}>WhatsApp para receber os avisos (quem se inscreveu e quem desistiu)</span>
+            <input inputMode="tel" placeholder="22 99999-1234" value={c.telefoneAviso} onChange={(e) => setC({ ...c, telefoneAviso: e.target.value.replace(/[^\d()\s+-]/g, "").slice(0, 20) })} style={S.campo} />
+            <span style={{ fontSize: 12, color: "#64748B" }}>O aviso sai do WhatsApp da própria loja (o robô) para este número, na hora em que a pessoa se inscreve ou desiste pelo link. Deixe vazio para não receber. Use um número diferente do WhatsApp da loja.</span>
+          </label>
           <div style={{ gridColumn: "1 / -1" }}>
             <span style={S.rotulo}>Funções que aparecem no link {todas && <span style={{ fontWeight: 600, color: "#64748B" }}>(todas)</span>}</span>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>

@@ -37,7 +37,7 @@ import { executarDDL } from "@/lib/ddl-do-boot";
 import { acertosDoPeriodo } from "@/lib/acerto-pago";
 import {
   CONFIG_PADRAO, acertoQueCobre, acharPeloTelefone, chaveDaFuncao, chaveDaPessoa, chaveDoTelefone, dataValida, diaDoExpedienteDoTurno, diaEMes, diariaDoTurno,
-  dividirValor, lerChavePix, lerConfigDaEscala, lerValorEmReais, normalizarFuncao, numeroDoDia, ordenarTurnos, termosDoTurno, turnosSeSobrepoem,
+  dividirValor, lerChavePix, lerConfigDaEscala, lerValorEmReais, normalizarFuncao, numeroDoDia, ordenarTurnos, telefoneUtilizavel, termosDoTurno, turnosSeSobrepoem,
   type ConfigDaEscala, type DadosDoTurno, type FormaDePagamento, type ItemDePagamento, type OrigemDaInscricao, type PagamentoFeito,
   type StatusDoAviso, type TipoDePessoa, type TipoDePix, type TurnoDaPessoa, type ValorDaDiaria,
 } from "./regras";
@@ -148,6 +148,8 @@ const DDL = [
   `CREATE INDEX IF NOT EXISTS "EscalaPagamento_lojaId_data_idx" ON "EscalaPagamento"("lojaId", "data")`,
   // A despesa do Financeiro que o pagamento do FREELANCER gerou (12/11/2026).
   `ALTER TABLE "EscalaPagamento" ADD COLUMN IF NOT EXISTS "despesaId" TEXT`,
+  // ── 21/11/2026 (Lucas/Frangoso): o WhatsApp do dono que recebe o aviso de quem se inscreveu e de quem desistiu.
+  `ALTER TABLE "EscalaConfig" ADD COLUMN IF NOT EXISTS "telefoneAviso" TEXT`,
   // ── 13/11/2026 (Lucas/Frangoso) ──────────────────────────────────────────
   // O aceite pelo WhatsApp: na inscrição fica a situação ATUAL (aceito quando,
   // a mensagem saiu quando e como); a prova completa vai para EscalaAceite.
@@ -225,7 +227,7 @@ function novoCodigo(): string {
 
 export type ConfigComLink = ConfigDaEscala & { codigo: string };
 
-type LinhaDaConfig = { codigo: string; prazoInscricaoHoras: number; permiteDesistir: boolean; prazoDesistenciaHoras: number; funcoesNoLink: unknown; linkAtivo: boolean };
+type LinhaDaConfig = { codigo: string; prazoInscricaoHoras: number; permiteDesistir: boolean; prazoDesistenciaHoras: number; funcoesNoLink: unknown; linkAtivo: boolean; telefoneAviso?: string | null };
 const daLinha = (l: LinhaDaConfig): ConfigComLink => ({ ...lerConfigDaEscala(l as any), codigo: l.codigo });
 
 /** A configuração da loja — criada (com código novo) na primeira vez que a tela abre. */
@@ -245,10 +247,11 @@ export async function configDaLoja(lojaId: string): Promise<ConfigComLink> {
 export async function salvarConfig(lojaId: string, entrada: unknown, quem: string): Promise<ConfigComLink> {
   const atual = await configDaLoja(lojaId);
   const c = lerConfigDaEscala({ ...atual, ...(entrada && typeof entrada === "object" ? entrada : {}) } as any);
+  if (c.telefoneAviso && !telefoneUtilizavel(c.telefoneAviso)) throw new ErroDaEscala("Digite o WhatsApp que recebe os avisos com DDD (ex.: 22 99999-1234).", 400);
   await prisma.$executeRaw(Prisma.sql`
     UPDATE "EscalaConfig" SET "prazoInscricaoHoras" = ${c.prazoInscricaoHoras}, "permiteDesistir" = ${c.permiteDesistir},
       "prazoDesistenciaHoras" = ${c.prazoDesistenciaHoras}, "funcoesNoLink" = ${JSON.stringify(c.funcoesNoLink)}::jsonb,
-      "linkAtivo" = ${c.linkAtivo}, "atualizadoPor" = ${quem.slice(0, 120)}, "updatedAt" = now()
+      "linkAtivo" = ${c.linkAtivo}, "telefoneAviso" = ${c.telefoneAviso || null}, "atualizadoPor" = ${quem.slice(0, 120)}, "updatedAt" = now()
     WHERE "lojaId" = ${lojaId}`);
   return { ...c, codigo: atual.codigo };
 }
@@ -643,21 +646,23 @@ export async function tirarInscricao(lojaId: string, inscricaoId: string): Promi
  * Desistir pelo link: só com a chave que o aparelho recebeu ao se inscrever
  * (ninguém tira o colega digitando o telefone dele), e dentro do prazo da loja.
  */
-export async function desistirPeloLink(lojaId: string, inscricaoId: string, chave: string, podeDesistir: (turno: LinhaDoTurno) => boolean): Promise<void> {
+export async function desistirPeloLink(lojaId: string, inscricaoId: string, chave: string, podeDesistir: (turno: LinhaDoTurno) => boolean): Promise<{ nome: string; turno: LinhaDoTurno } | null> {
   await garantirTabelasDaEscala();
-  const [i] = await prisma.$queryRaw<(LinhaDoTurno & { chaveHash: string | null })[]>(Prisma.sql`
-    SELECT i."chaveHash", t."id", to_char(t."data", 'YYYY-MM-DD') AS "data", t."inicio", t."fim", t."funcao", t."vagas", t."obs"
+  const [i] = await prisma.$queryRaw<(LinhaDoTurno & { chaveHash: string | null; nomeDaPessoa: string })[]>(Prisma.sql`
+    SELECT i."chaveHash", i."nome" AS "nomeDaPessoa", t."id", to_char(t."data", 'YYYY-MM-DD') AS "data", t."inicio", t."fim", t."funcao", t."vagas", t."obs"
     FROM "EscalaInscricao" i JOIN "EscalaTurno" t ON t."id" = i."turnoId"
     WHERE i."id" = ${inscricaoId} AND i."lojaId" = ${lojaId}`);
   if (!i) throw new ErroDaEscala("Essa inscrição já não existe (a loja pode ter tirado).", 404);
   if (!i.chaveHash || !chave || hashDaChave(chave) !== i.chaveHash) throw new ErroDaEscala("Só dá para desistir pelo mesmo celular que fez a inscrição. Fale com a loja.", 403);
   if (!podeDesistir(i)) throw new ErroDaEscala("O prazo para desistir pelo link acabou. Fale direto com a loja.", 409);
-  await prisma.$transaction(async (tx) => {
+  const saiu = await prisma.$transaction(async (tx) => {
     const [ainda] = await tx.$queryRaw<{ id: string }[]>(Prisma.sql`SELECT "id" FROM "EscalaInscricao" WHERE "id" = ${inscricaoId} AND "lojaId" = ${lojaId} FOR UPDATE`);
-    if (!ainda) return;
+    if (!ainda) return false;
     await recusarSeJaPago(tx, [inscricaoId], () => "A loja já registrou o pagamento deste turno. Para sair, fale com a loja.");
     await tx.$executeRaw(Prisma.sql`DELETE FROM "EscalaInscricao" WHERE "id" = ${inscricaoId} AND "lojaId" = ${lojaId}`);
+    return true;
   });
+  return saiu ? { nome: i.nomeDaPessoa, turno: i } : null;
 }
 
 /** As inscrições futuras de uma pessoa (o "Minhas inscrições" do link). */

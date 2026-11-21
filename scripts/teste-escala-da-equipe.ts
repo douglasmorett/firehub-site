@@ -131,6 +131,7 @@ confere("lista vazia = todas as funções", funcaoNoLink("Cozinha", []), true);
 confere("só Motoboy no link: Cozinha não aparece", funcaoNoLink("Cozinha", ["Motoboy"]), false);
 confere("…e motoboy (minúsculo) aparece", funcaoNoLink("motoboy", ["Motoboy"]), true);
 confere("sem nada gravado vale o padrão (desistir até 24 h antes)", lerConfigDaEscala(null).prazoDesistenciaHoras, 24);
+confere("telefone de aviso do dono: só dígitos; sem nada = vazio (sem aviso)", [lerConfigDaEscala({ telefoneAviso: "(22) 99999-1234" }).telefoneAviso, lerConfigDaEscala(null).telefoneAviso], ["22999991234", ""]);
 
 console.log("\n— Quem é quem pelo telefone —");
 const pessoas = [

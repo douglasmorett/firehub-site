@@ -107,3 +107,40 @@ export function avisarDepois(lojaId: string, quem: { tipo: TipoDePessoa; id: str
     console.warn("[Escala] Aviso de aceite sem after():", e?.message?.slice(0, 120));
   }
 }
+
+// ── O aviso para o DONO ─────────────────────────────────────────────────────
+
+/**
+ * Lucas/Frangoso, 21/11/2026: "preciso saber quem se inscreveu e quem tirou o
+ * nome, senão só descubro quando a pessoa não aparece". Sai do WhatsApp DA
+ * LOJA para o número que o dono cadastrou na aba Link de inscrição
+ * (`telefoneAviso`); sem número, não sai nada. Só para o que a PESSOA faz
+ * pelo link — o que o gerente faz no painel ele já sabe. Nunca lança.
+ */
+export async function avisarDono(
+  lojaId: string,
+  o: { tipo: "inscreveu" | "desistiu"; nome: string; turno: { data: string; inicio: string; fim: string; funcao: string } },
+): Promise<void> {
+  try {
+    const config = await configDaLoja(lojaId);
+    if (!telefoneUtilizavel(config.telefoneAviso)) return;
+    const [, m, d] = o.turno.data.split("-");
+    const quando = `${d}/${m} das ${o.turno.inicio} às ${o.turno.fim}`;
+    const texto = o.tipo === "inscreveu"
+      ? `✅ *Escala:* ${o.nome} se inscreveu como ${o.turno.funcao} no dia ${quando}.`
+      : `⚠️ *Escala:* ${o.nome} DESISTIU do turno de ${o.turno.funcao} no dia ${quando}. Veja se alguém pode cobrir.`;
+    const r = await enviarPelaLoja(lojaId, config.telefoneAviso, texto);
+    if (!r.ok) console.warn(`[Escala] Aviso ao dono não saiu: ${r.erro}`);
+  } catch (err: any) {
+    console.error("[Escala] Aviso ao dono falhou:", err?.message || err);
+  }
+}
+
+/** Depois da resposta, como o aviso da pessoa (o envio espera o "digitando…" do gateway). */
+export function avisarDonoDepois(lojaId: string, o: Parameters<typeof avisarDono>[1]): void {
+  try {
+    after(() => avisarDono(lojaId, o));
+  } catch (e: any) {
+    console.warn("[Escala] Aviso ao dono sem after():", e?.message?.slice(0, 120));
+  }
+}
